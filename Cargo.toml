@@ -1,0 +1,17 @@
+[package]
+name = "mrzavec"
+version = "0.1.0"
+edition = "2024"
+license = "BSD-3-Clause"
+
+[dependencies]
+bevy = "0.19"
+ctrlc = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
