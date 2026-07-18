@@ -12,6 +12,69 @@ Stable Rust is required.
 cargo run
 ```
 
+### Build and embed the web version
+
+Install the WASM target and the `wasm-bindgen` CLI version used by the lockfile,
+then build the browser package:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.126 --locked
+./scripts/build-wasm.sh
+python3 -m http.server 8000
+```
+
+Open <http://localhost:8000/web/>. The files required for deployment are
+`web/index.html` and the generated `web/pkg/` directory. They must be served
+over HTTP; the server must send `.wasm` as `application/wasm`. Production
+servers should also compress the WASM response with Brotli or gzip.
+
+The repeatable browser smoke suite uses installed Chrome plus Playwright's
+Firefox and WebKit engines:
+
+```sh
+npm install
+npx playwright install firefox webkit
+npm run test:web
+```
+
+To embed Mrzavec in another page, create the canvas before initializing the
+module:
+
+```html
+<canvas id="mrzavec" tabindex="0"></canvas>
+<script type="module">
+  import init from "/games/mrzavec/pkg/mrzavec.js";
+  const canvas = document.querySelector("#mrzavec");
+  canvas.addEventListener("pointerdown", () => canvas.focus());
+  await init();
+</script>
+```
+
+The Bevy app targets `#mrzavec` at its fixed 824×480 logical resolution and
+prevents browser default key handling while the game has focus. CSS may scale
+the canvas while preserving its `824 / 480` aspect ratio. In a single-page app,
+mount the canvas before importing/initializing the package and initialize it
+only once.
+
+The browser uses `localStorage` rather than server files. `file` and `score`
+options are logical local slots (`default` and `local` initially), and the
+score table is private to the current browser profile. A successful normal
+restore consumes its saved slot; the most recently saved logical slot is
+selected automatically at the next startup, and wizard saves remain reusable.
+The explicit `S` command is the authoritative save operation and, as on native,
+stops the game after success. Reload the page to restore and continue. Browser
+close and reload events do not create automatic checkpoints because those
+events are not reliable and doing so would change Rogue's single-use-save
+rules.
+
+Private browsing, disabled storage, corrupt data, or quota exhaustion is
+reported inside the game and does not overwrite or consume an existing valid
+entry. The `!` shell command reports that it is unavailable; native CLI,
+signals, environment variables, filesystem locking, and path semantics do not
+apply to the web build. WebGL2 is the supported compatibility path; WebGPU is
+not required.
+
 Historical launcher modes are also available:
 
 ```sh
@@ -83,6 +146,8 @@ cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets --all-features
 cargo build --release
+cargo check --target wasm32-unknown-unknown
+cargo build --profile wasm-release --target wasm32-unknown-unknown
 ```
 
 Project structure:
@@ -90,7 +155,8 @@ Project structure:
 - `game`, `generation`, `map`, `player`, `monster`, `combat`, `item`, and
   `effects` contain the deterministic turn simulation.
 - `command` defines the complete normal and master key set.
-- `save` and `score` provide the versioned save and local score-table formats.
+- `save` and `score` provide pure codecs/ranking plus native-file and browser
+  storage integration; `platform` defines the testable browser storage seam.
 - `main.rs` contains launcher/platform integration plus Bevy keyboard, prompt,
   modal, message, and 80×24 glyph-grid presentation state.
 - `FEATURE_PARITY.md`, `PORTING_NOTES.md`, and `BUG_FIXES.md` record the source

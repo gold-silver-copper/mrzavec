@@ -1,0 +1,10 @@
+{
+  "name": "mrzavec-web-smoke",
+  "private": true,
+  "scripts": {
+    "test:web": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}

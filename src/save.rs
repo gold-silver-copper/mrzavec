@@ -1,14 +1,94 @@
-use crate::Game;
+use crate::{
+    Game,
+    platform::{
+        KeyValueStorage, StorageError, WEB_ACTIVE_SAVE_KEY, logical_slot, save_storage_key,
+    },
+};
+use std::io;
+#[cfg(not(target_arch = "wasm32"))]
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
+
+#[cfg(not(target_arch = "wasm32"))]
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+pub fn encode_game(game: &Game) -> io::Result<Vec<u8>> {
+    serde_json::to_vec(game).map_err(io::Error::other)
+}
+
+pub fn decode_game(bytes: &[u8]) -> io::Result<Game> {
+    let game: Game = serde_json::from_slice(bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    if game.save_version != 12 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unsupported save version",
+        ));
+    }
+    if game.end != crate::game::EndState::Playing || game.player.stats.hp <= 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "cannot restore a finished or dead game",
+        ));
+    }
+    Ok(game)
+}
+
+pub fn save_to_storage(
+    game: &Game,
+    slot: &str,
+    storage: &impl KeyValueStorage,
+) -> Result<(), StorageError> {
+    let json = serde_json::to_string(game)
+        .map_err(|error| StorageError::new("encode save", error.to_string()))?;
+    let previous_slot = storage.get_item(WEB_ACTIVE_SAVE_KEY)?;
+    storage.set_item(WEB_ACTIVE_SAVE_KEY, logical_slot(slot))?;
+    if let Err(write_error) = storage.set_item(&save_storage_key(slot), &json) {
+        let rollback = match previous_slot {
+            Some(previous_slot) => storage.set_item(WEB_ACTIVE_SAVE_KEY, &previous_slot),
+            None => storage.remove_item(WEB_ACTIVE_SAVE_KEY),
+        };
+        return match rollback {
+            Ok(()) => Err(write_error),
+            Err(rollback_error) => Err(StorageError::new(
+                "write save",
+                format!("{write_error}; active-slot rollback also failed: {rollback_error}"),
+            )),
+        };
+    }
+    Ok(())
+}
+
+pub fn storage_has_save(slot: &str, storage: &impl KeyValueStorage) -> Result<bool, StorageError> {
+    storage
+        .get_item(&save_storage_key(slot))
+        .map(|value| value.is_some())
+}
+
+pub fn restore_from_storage(
+    slot: &str,
+    storage: &impl KeyValueStorage,
+) -> Result<Option<Game>, StorageError> {
+    let key = save_storage_key(slot);
+    let Some(json) = storage.get_item(&key)? else {
+        return Ok(None);
+    };
+    let mut game = decode_game(json.as_bytes())
+        .map_err(|error| StorageError::new("decode save", error.to_string()))?;
+    game.options.save_file = slot.to_owned();
+    if !game.wizard {
+        storage.remove_item(&key)?;
+    }
+    Ok(Some(game))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save(game: &Game, path: &Path) -> io::Result<()> {
-    let bytes = serde_json::to_vec(game).map_err(io::Error::other)?;
+    let bytes = encode_game(game)?;
     let (tmp, mut file) = create_temporary(path)?;
     let result = (|| {
         file.write_all(&bytes)?;
@@ -22,6 +102,7 @@ pub fn save(game: &Game, path: &Path) -> io::Result<()> {
     }
     result
 }
+#[cfg(not(target_arch = "wasm32"))]
 fn create_temporary(path: &Path) -> io::Result<(PathBuf, File)> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let name = path
@@ -46,6 +127,7 @@ fn create_temporary(path: &Path) -> io::Result<(PathBuf, File)> {
         "could not create a unique temporary save file",
     ))
 }
+#[cfg(not(target_arch = "wasm32"))]
 fn set_save_permissions(file: &File) -> io::Result<()> {
     let mut permissions = file.metadata()?.permissions();
     #[cfg(unix)]
@@ -57,26 +139,12 @@ fn set_save_permissions(file: &File) -> io::Result<()> {
     permissions.set_readonly(true);
     file.set_permissions(permissions)
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load(path: &Path) -> io::Result<Game> {
     let bytes = fs::read(path)?;
-    decode(&bytes)
+    decode_game(&bytes)
 }
-fn decode(bytes: &[u8]) -> io::Result<Game> {
-    let game: Game = serde_json::from_slice(bytes).map_err(io::Error::other)?;
-    if game.save_version != 12 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "unsupported save version",
-        ));
-    }
-    if game.end != crate::game::EndState::Playing || game.player.stats.hp <= 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "cannot restore a finished or dead game",
-        ));
-    }
-    Ok(game)
-}
+#[cfg(not(target_arch = "wasm32"))]
 pub fn restore(path: &Path) -> io::Result<Game> {
     let metadata = fs::symlink_metadata(path)?;
     if metadata.file_type().is_symlink() {
@@ -105,7 +173,7 @@ pub fn restore(path: &Path) -> io::Result<Game> {
     }
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
-    let mut game = decode(&bytes)?;
+    let mut game = decode_game(&bytes)?;
     game.options.save_file = path.to_string_lossy().into_owned();
     if game.wizard {
         return Ok(game);
@@ -146,6 +214,166 @@ pub fn restore(path: &Path) -> io::Result<Game> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{cell::RefCell, collections::HashMap};
+
+    #[derive(Default)]
+    struct MemoryStorage {
+        values: RefCell<HashMap<String, String>>,
+        fail_reads: bool,
+        fail_writes: bool,
+        fail_save_writes: bool,
+        fail_removals: bool,
+    }
+
+    impl KeyValueStorage for MemoryStorage {
+        fn get_item(&self, key: &str) -> Result<Option<String>, StorageError> {
+            if self.fail_reads {
+                return Err(StorageError::new("read", "storage unavailable"));
+            }
+            Ok(self.values.borrow().get(key).cloned())
+        }
+
+        fn set_item(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            if self.fail_writes
+                || (self.fail_save_writes && key.starts_with(crate::platform::WEB_SAVE_PREFIX))
+            {
+                return Err(StorageError::new("write", "quota exceeded"));
+            }
+            self.values
+                .borrow_mut()
+                .insert(key.to_owned(), value.to_owned());
+            Ok(())
+        }
+
+        fn remove_item(&self, key: &str) -> Result<(), StorageError> {
+            if self.fail_removals {
+                return Err(StorageError::new("remove", "storage unavailable"));
+            }
+            self.values.borrow_mut().remove(key);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn pure_codec_round_trips_and_rejects_corruption() {
+        let game = Game::new(98);
+        assert_eq!(decode_game(&encode_game(&game).unwrap()).unwrap(), game);
+        assert_eq!(
+            decode_game(b"not a save").unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        let mut incompatible = Game::new(99);
+        incompatible.save_version -= 1;
+        assert_eq!(
+            decode_game(&encode_game(&incompatible).unwrap())
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn normal_browser_restore_is_single_use_but_wizard_restore_is_reusable() {
+        let storage = MemoryStorage::default();
+        save_to_storage(&Game::new(1), "campaign", &storage).unwrap();
+        assert_eq!(
+            storage.get_item(WEB_ACTIVE_SAVE_KEY).unwrap().as_deref(),
+            Some("campaign")
+        );
+        assert!(storage_has_save("campaign", &storage).unwrap());
+        assert!(
+            restore_from_storage("campaign", &storage)
+                .unwrap()
+                .is_some()
+        );
+        assert!(!storage_has_save("campaign", &storage).unwrap());
+
+        let mut wizard = Game::new(2);
+        wizard.set_wizard(true);
+        save_to_storage(&wizard, "wizard", &storage).unwrap();
+        assert!(
+            restore_from_storage("wizard", &storage)
+                .unwrap()
+                .unwrap()
+                .wizard
+        );
+        assert!(storage_has_save("wizard", &storage).unwrap());
+    }
+
+    #[test]
+    fn corrupt_browser_restore_is_not_consumed() {
+        let storage = MemoryStorage::default();
+        storage
+            .values
+            .borrow_mut()
+            .insert(save_storage_key("default"), "broken".into());
+        assert!(restore_from_storage("default", &storage).is_err());
+        assert!(storage_has_save("default", &storage).unwrap());
+    }
+
+    #[test]
+    fn browser_read_and_remove_failures_are_propagated_without_data_loss() {
+        let key = save_storage_key("default");
+        let json = serde_json::to_string(&Game::new(3)).unwrap();
+        let unavailable = MemoryStorage {
+            values: RefCell::new(HashMap::from([(key.clone(), json.clone())])),
+            fail_reads: true,
+            ..Default::default()
+        };
+        assert!(restore_from_storage("default", &unavailable).is_err());
+        assert_eq!(unavailable.values.borrow().get(&key).unwrap(), &json);
+
+        let cannot_consume = MemoryStorage {
+            values: RefCell::new(HashMap::from([(key.clone(), json.clone())])),
+            fail_removals: true,
+            ..Default::default()
+        };
+        assert!(restore_from_storage("default", &cannot_consume).is_err());
+        assert_eq!(cannot_consume.values.borrow().get(&key).unwrap(), &json);
+    }
+
+    #[test]
+    fn browser_write_failure_preserves_an_existing_save() {
+        let key = save_storage_key("default");
+        let storage = MemoryStorage {
+            values: RefCell::new(HashMap::from([(key.clone(), "old save".into())])),
+            fail_writes: true,
+            ..Default::default()
+        };
+        assert!(save_to_storage(&Game::new(3), "default", &storage).is_err());
+        assert_eq!(storage.values.borrow().get(&key).unwrap(), "old save");
+    }
+
+    #[test]
+    fn browser_save_failure_restores_the_previous_active_slot() {
+        let existing_key = save_storage_key("existing");
+        let storage = MemoryStorage {
+            values: RefCell::new(HashMap::from([
+                (WEB_ACTIVE_SAVE_KEY.into(), "existing".into()),
+                (existing_key.clone(), "old save".into()),
+            ])),
+            fail_save_writes: true,
+            ..Default::default()
+        };
+
+        assert!(save_to_storage(&Game::new(4), "new", &storage).is_err());
+        assert_eq!(
+            storage.get_item(WEB_ACTIVE_SAVE_KEY).unwrap().as_deref(),
+            Some("existing")
+        );
+        assert_eq!(
+            storage.values.borrow().get(&existing_key).unwrap(),
+            "old save"
+        );
+        assert!(
+            !storage
+                .values
+                .borrow()
+                .contains_key(&save_storage_key("new"))
+        );
+    }
+
     #[test]
     fn round_trip_preserves_rng_and_state() {
         let p = std::env::temp_dir().join(format!("mrzavec-test-{}.json", std::process::id()));

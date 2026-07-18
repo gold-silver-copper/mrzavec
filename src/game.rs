@@ -325,8 +325,9 @@ impl Default for Knowledge {
 }
 impl Default for Options {
     fn default() -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        let mut options = Self {
+        let options = Self {
             fruit: "slime-mold".into(),
             terse: false,
             fight_flush: false,
@@ -337,11 +338,26 @@ impl Default for Options {
             // `playit` selects INV_CLEAR whenever the terminal can clear to
             // end-of-line. The Bevy glyph surface always has that ability.
             inventory_style: InventoryStyle::Clear,
+            #[cfg(not(target_arch = "wasm32"))]
             name: std::env::var("USER").unwrap_or_else(|_| "player".into()),
+            #[cfg(target_arch = "wasm32")]
+            name: "player".into(),
+            #[cfg(not(target_arch = "wasm32"))]
             save_file: format!("{home}/.rogue.save.json"),
+            #[cfg(target_arch = "wasm32")]
+            save_file: "default".into(),
+            #[cfg(not(target_arch = "wasm32"))]
             score_file: format!("{home}/.rogue.scores.json"),
+            #[cfg(target_arch = "wasm32")]
+            score_file: "local".into(),
+            #[cfg(not(target_arch = "wasm32"))]
             lock_file: format!("{home}/.rogue.scores.lock"),
+            #[cfg(target_arch = "wasm32")]
+            lock_file: "unused".into(),
         };
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut options = options;
+        #[cfg(not(target_arch = "wasm32"))]
         if let Ok(value) = std::env::var("ROGUEOPTS") {
             options.apply_rogue_options(&value);
         }
@@ -428,8 +444,13 @@ pub fn normalize_option_string(value: &str) -> String {
     let Some(rest) = value.strip_prefix('~') else {
         return value;
     };
+    #[cfg(target_arch = "wasm32")]
+    return rest.trim_start_matches('/').to_owned();
+    #[cfg(not(target_arch = "wasm32"))]
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    #[cfg(not(target_arch = "wasm32"))]
     let rest = rest.trim_start_matches('/');
+    #[cfg(not(target_arch = "wasm32"))]
     if rest.is_empty() {
         home
     } else {
