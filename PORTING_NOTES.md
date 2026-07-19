@@ -95,8 +95,11 @@ unavailable. Native shell behavior is unchanged.
 
 The `flush` option is retained in saves and the option editor, but its
 terminal-typeahead behavior is naturally inert because Bevy receives discrete
-key presses. A complete run command is likewise simulated between rendered
-frames, so `jump` cannot change intermediate window refreshes; it still has the
+key presses. Plain `hjklyubn` movement supplies application-level key repeat
+after 300 ms and then every 100 ms, consistently across native and browser
+builds; prompts, modifiers, and blocked input reset it. A complete run command
+is likewise simulated between rendered frames, so `jump` cannot change
+intermediate window refreshes; it still has the
 reference gameplay-RNG effect of suppressing hallucination `visuals` redraws
 while a run continues.
 

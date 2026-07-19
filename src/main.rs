@@ -10,9 +10,9 @@ use mrzavec::{
     map::Pos,
     save, score,
 };
-use std::collections::VecDeque;
 #[cfg(test)]
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{collections::VecDeque, time::Duration};
 #[cfg(not(target_arch = "wasm32"))]
 use std::{
     ffi::OsString,
@@ -31,6 +31,18 @@ const MODAL_PAGE_ROWS: usize = MODAL_MORE_ROW;
 const KEYBINDING_FIRST_TEXT: &str =
     "Move h/j/k/l  Inventory i  Quaff q  Read r  Eat e  Wield w  Drop d";
 const KEYBINDING_SECOND_TEXT: &str = "Wear W  Take off T  Throw t  Zap z  Search s  Rest .  Help ?";
+const MOVEMENT_REPEAT_DELAY: Duration = Duration::from_millis(300);
+const MOVEMENT_REPEAT_INTERVAL: Duration = Duration::from_millis(100);
+const MOVEMENT_KEYS: [(KeyCode, char); 8] = [
+    (KeyCode::KeyH, 'h'),
+    (KeyCode::KeyJ, 'j'),
+    (KeyCode::KeyK, 'k'),
+    (KeyCode::KeyL, 'l'),
+    (KeyCode::KeyY, 'y'),
+    (KeyCode::KeyU, 'u'),
+    (KeyCode::KeyB, 'b'),
+    (KeyCode::KeyN, 'n'),
+];
 const ROGUE_RELEASE: &str = "2026-07-17";
 
 fn version_message(game: &Game) -> String {
@@ -157,6 +169,75 @@ enum Pending {
 struct Cell(usize);
 #[derive(Component)]
 struct Glyph;
+
+#[derive(Resource, Default)]
+struct MovementRepeat {
+    key: Option<KeyCode>,
+    remaining: Duration,
+}
+
+impl MovementRepeat {
+    fn reset(&mut self) {
+        self.key = None;
+        self.remaining = Duration::ZERO;
+    }
+
+    fn update(
+        &mut self,
+        keys: &ButtonInput<KeyCode>,
+        delta: Duration,
+        enabled: bool,
+    ) -> Option<char> {
+        if !enabled {
+            self.reset();
+            return None;
+        }
+
+        if let Some((key, _)) = MOVEMENT_KEYS
+            .iter()
+            .copied()
+            .find(|(key, _)| keys.just_pressed(*key))
+        {
+            self.key = Some(key);
+            self.remaining = MOVEMENT_REPEAT_DELAY;
+            return None;
+        }
+
+        let held = self.key.filter(|key| keys.pressed(*key)).and_then(|key| {
+            MOVEMENT_KEYS
+                .iter()
+                .copied()
+                .find(|(candidate, _)| *candidate == key)
+        });
+        let Some((key, ch)) = held else {
+            let Some((key, _)) = MOVEMENT_KEYS
+                .iter()
+                .copied()
+                .find(|(key, _)| keys.pressed(*key))
+            else {
+                self.reset();
+                return None;
+            };
+            self.key = Some(key);
+            self.remaining = MOVEMENT_REPEAT_DELAY;
+            return None;
+        };
+
+        self.key = Some(key);
+        if delta < self.remaining {
+            self.remaining -= delta;
+            return None;
+        }
+        let overrun = delta - self.remaining;
+        let phase_nanos = overrun.as_nanos() % MOVEMENT_REPEAT_INTERVAL.as_nanos();
+        self.remaining = if phase_nanos == 0 {
+            MOVEMENT_REPEAT_INTERVAL
+        } else {
+            MOVEMENT_REPEAT_INTERVAL - Duration::from_nanos(phase_nanos as u64)
+        };
+        Some(ch)
+    }
+}
 
 #[derive(Resource)]
 #[cfg(not(target_arch = "wasm32"))]
@@ -470,6 +551,7 @@ fn game_app(game: Game, wizard_prompt: bool) -> App {
     let message_serial_seen = game.message_serial;
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::BLACK))
+        .insert_resource(MovementRepeat::default())
         .insert_resource(State {
             game,
             modal: wizard_prompt.then(|| password_prompt(Pending::StartupPassword).into()),
@@ -775,10 +857,35 @@ fn setup(mut commands: Commands) {
 
 fn keyboard(
     keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    mut movement_repeat: ResMut<MovementRepeat>,
     mut state: ResMut<State>,
     mut app_exit: MessageWriter<AppExit>,
 ) {
-    if keys.get_just_pressed().next().is_some() {
+    let shifted = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let controlled = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let alt_or_super = [
+        KeyCode::AltLeft,
+        KeyCode::AltRight,
+        KeyCode::SuperLeft,
+        KeyCode::SuperRight,
+    ]
+    .into_iter()
+    .any(|key| keys.pressed(key));
+    let repeated_movement = movement_repeat.update(
+        &keys,
+        time.delta(),
+        !shifted
+            && !controlled
+            && !alt_or_super
+            && !state.message_wait
+            && state.pending.is_none()
+            && state.modal.is_none()
+            && !state.item_inventory_open
+            && state.game.end == mrzavec::game::EndState::Playing
+            && state.game.player.conditions.asleep_turns == 0,
+    );
+    if keys.get_just_pressed().next().is_some() || repeated_movement.is_some() {
         state.preserve_message_case = false;
         if !state.message_wait {
             state.visible_message = None;
@@ -1109,8 +1216,6 @@ fn keyboard(
             return;
         }
     }
-    let shifted = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let controlled = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
     let control = if controlled {
         [
             (KeyCode::KeyH, '\u{8}'),
@@ -1196,38 +1301,33 @@ fn keyboard(
             None
         }
     });
-    let ch = special.or_else(|| {
-        [
-            (KeyCode::KeyH, 'h'),
-            (KeyCode::KeyJ, 'j'),
-            (KeyCode::KeyK, 'k'),
-            (KeyCode::KeyL, 'l'),
-            (KeyCode::KeyY, 'y'),
-            (KeyCode::KeyU, 'u'),
-            (KeyCode::KeyB, 'b'),
-            (KeyCode::KeyN, 'n'),
-            (KeyCode::KeyS, 's'),
-            (KeyCode::KeyI, 'i'),
-            (KeyCode::KeyQ, 'q'),
-            (KeyCode::KeyR, 'r'),
-            (KeyCode::KeyE, 'e'),
-            (KeyCode::KeyW, 'w'),
-            (KeyCode::KeyT, 't'),
-            (KeyCode::KeyP, 'p'),
-            (KeyCode::KeyD, 'd'),
-            (KeyCode::KeyZ, 'z'),
-            (KeyCode::KeyF, 'f'),
-            (KeyCode::KeyM, 'm'),
-            (KeyCode::KeyA, 'a'),
-            (KeyCode::KeyC, 'c'),
-            (KeyCode::KeyG, 'g'),
-            (KeyCode::KeyO, 'o'),
-            (KeyCode::KeyV, 'v'),
-            (KeyCode::KeyX, 'x'),
-        ]
-        .into_iter()
-        .find_map(|(k, c)| keys.just_pressed(k).then_some(c))
-    });
+    let ch = special
+        .or_else(|| {
+            MOVEMENT_KEYS
+                .into_iter()
+                .chain([
+                    (KeyCode::KeyS, 's'),
+                    (KeyCode::KeyI, 'i'),
+                    (KeyCode::KeyQ, 'q'),
+                    (KeyCode::KeyR, 'r'),
+                    (KeyCode::KeyE, 'e'),
+                    (KeyCode::KeyW, 'w'),
+                    (KeyCode::KeyT, 't'),
+                    (KeyCode::KeyP, 'p'),
+                    (KeyCode::KeyD, 'd'),
+                    (KeyCode::KeyZ, 'z'),
+                    (KeyCode::KeyF, 'f'),
+                    (KeyCode::KeyM, 'm'),
+                    (KeyCode::KeyA, 'a'),
+                    (KeyCode::KeyC, 'c'),
+                    (KeyCode::KeyG, 'g'),
+                    (KeyCode::KeyO, 'o'),
+                    (KeyCode::KeyV, 'v'),
+                    (KeyCode::KeyX, 'x'),
+                ])
+                .find_map(|(k, c)| keys.just_pressed(k).then_some(c))
+        })
+        .or(repeated_movement);
     let Some(mut ch) = ch else { return };
     if shifted && ch.is_ascii_alphabetic() {
         ch = ch.to_ascii_uppercase()
@@ -3871,6 +3971,8 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(state(105));
         app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(MovementRepeat::default());
         app.add_message::<AppExit>();
         app.add_systems(Update, keyboard);
         {
@@ -3887,6 +3989,157 @@ mod tests {
             state.modal.as_deref(),
             Some("Character you want help for (* for all): ")
         );
+    }
+
+    #[test]
+    fn held_movement_waits_then_repeats_at_a_steady_interval() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        let mut repeat = MovementRepeat::default();
+        keys.press(KeyCode::KeyH);
+
+        assert_eq!(repeat.update(&keys, Duration::ZERO, true), None);
+        keys.clear();
+        assert_eq!(
+            repeat.update(
+                &keys,
+                MOVEMENT_REPEAT_DELAY - Duration::from_millis(1),
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            repeat.update(&keys, Duration::from_millis(2), true),
+            Some('h')
+        );
+        assert_eq!(
+            repeat.update(
+                &keys,
+                MOVEMENT_REPEAT_INTERVAL - Duration::from_millis(2),
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            repeat.update(&keys, Duration::from_millis(1), true),
+            Some('h')
+        );
+
+        keys.release(KeyCode::KeyH);
+        assert_eq!(repeat.update(&keys, MOVEMENT_REPEAT_INTERVAL, true), None);
+        assert_eq!(repeat.key, None);
+    }
+
+    #[test]
+    fn held_movement_restarts_its_delay_after_input_is_blocked() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        let mut repeat = MovementRepeat::default();
+        keys.press(KeyCode::KeyL);
+        assert_eq!(repeat.update(&keys, Duration::ZERO, true), None);
+        keys.clear();
+        assert_eq!(repeat.update(&keys, MOVEMENT_REPEAT_DELAY, true), Some('l'));
+
+        assert_eq!(repeat.update(&keys, MOVEMENT_REPEAT_INTERVAL, false), None);
+        assert_eq!(repeat.key, None);
+        assert_eq!(repeat.update(&keys, MOVEMENT_REPEAT_INTERVAL, true), None);
+        assert_eq!(
+            repeat.update(
+                &keys,
+                MOVEMENT_REPEAT_DELAY - Duration::from_millis(1),
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            repeat.update(&keys, Duration::from_millis(1), true),
+            Some('l')
+        );
+    }
+
+    #[test]
+    fn keyboard_repeats_held_movement_and_resets_for_modifiers() {
+        let mut initial_state = state(106);
+        initial_state.game.monsters.clear();
+        let starting_turn = initial_state.game.turn;
+        let movement_key = MOVEMENT_KEYS
+            .iter()
+            .find_map(|(key, ch)| {
+                let mut probe = initial_state.game.clone();
+                for _ in 0..4 {
+                    probe.execute(parse(*ch));
+                }
+                (probe.turn == starting_turn + 4 && probe.end == mrzavec::game::EndState::Playing)
+                    .then_some(*key)
+            })
+            .expect("generated level has a direction with four valid movement steps");
+        let mut app = App::new();
+        app.insert_resource(initial_state);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(MovementRepeat::default());
+        app.add_message::<AppExit>();
+        app.add_systems(Update, keyboard);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(movement_key);
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 1);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_DELAY - Duration::from_millis(1));
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 1);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_millis(1));
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 2);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_INTERVAL);
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 3);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::AltLeft);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_INTERVAL);
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 3);
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.release(KeyCode::AltLeft);
+            keys.clear();
+        }
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_INTERVAL);
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 3);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_DELAY);
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 4);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .release(movement_key);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_secs(1));
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 4);
     }
 
     #[test]

@@ -83,8 +83,10 @@ first argument opens the master-build wizard password prompt; `$SEED` then
 selects its dungeon number. A player name beginning with `rogo-` may use
 `$ROGOSEED` in the same way as the reference debugging interface.
 
-Movement uses Rogue's `hjklyubn` keys; uppercase directions run and the
-corresponding control keys run until something interesting is encountered.
+Movement uses Rogue's `hjklyubn` keys. Holding an unmodified movement key walks
+continuously after a 300 ms delay, repeating every 100 ms. Uppercase directions
+run and the corresponding control keys run until something interesting is
+encountered.
 `m` moves without picking up, `f` fights until danger, `F` fights to the death,
 `.` rests, `,` picks up, `s` searches, and `^` identifies an adjacent trap.
 
