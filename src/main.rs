@@ -44,18 +44,13 @@ const MOVEMENT_KEYS: [(KeyCode, char); 8] = [
     (KeyCode::KeyB, 'b'),
     (KeyCode::KeyN, 'n'),
 ];
-const HELD_REPEAT_KEYS: [(KeyCode, char); 9] = [
-    (KeyCode::KeyH, 'h'),
-    (KeyCode::KeyJ, 'j'),
-    (KeyCode::KeyK, 'k'),
-    (KeyCode::KeyL, 'l'),
-    (KeyCode::KeyY, 'y'),
-    (KeyCode::KeyU, 'u'),
-    (KeyCode::KeyB, 'b'),
-    (KeyCode::KeyN, 'n'),
-    (KeyCode::Period, '.'),
-];
+const GLYPH_COLOR: Color = Color::srgb(0.82, 0.82, 0.78);
+const KEYBINDING_DIM_COLOR: Color = Color::srgb(0.55, 0.55, 0.52);
 const ROGUE_RELEASE: &str = "2026-07-17";
+
+fn held_repeat_keys() -> impl Iterator<Item = (KeyCode, char)> {
+    MOVEMENT_KEYS.into_iter().chain([(KeyCode::Period, '.')])
+}
 
 fn version_message(game: &Game) -> String {
     format!(
@@ -201,28 +196,18 @@ impl MovementRepeat {
             return None;
         }
 
-        if let Some((key, _)) = HELD_REPEAT_KEYS
-            .iter()
-            .copied()
-            .find(|(key, _)| keys.just_pressed(*key))
-        {
+        if let Some((key, _)) = held_repeat_keys().find(|(key, _)| keys.just_pressed(*key)) {
             self.key = Some(key);
             self.remaining = MOVEMENT_REPEAT_DELAY;
             return None;
         }
 
-        let held = self.key.filter(|key| keys.pressed(*key)).and_then(|key| {
-            HELD_REPEAT_KEYS
-                .iter()
-                .copied()
-                .find(|(candidate, _)| *candidate == key)
-        });
+        let held = self
+            .key
+            .filter(|key| keys.pressed(*key))
+            .and_then(|key| held_repeat_keys().find(|(candidate, _)| *candidate == key));
         let Some((key, ch)) = held else {
-            let Some((key, _)) = HELD_REPEAT_KEYS
-                .iter()
-                .copied()
-                .find(|(key, _)| keys.pressed(*key))
-            else {
+            let Some((key, _)) = held_repeat_keys().find(|(key, _)| keys.pressed(*key)) else {
                 self.reset();
                 return None;
             };
@@ -851,7 +836,7 @@ fn setup(mut commands: Commands) {
                             ..default()
                         },
                         LineHeight::Px(CELL_H),
-                        TextColor(Color::srgb(0.82, 0.82, 0.78)),
+                        TextColor(GLYPH_COLOR),
                         TextLayout::justify(Justify::Center),
                     ));
                 }
@@ -931,13 +916,17 @@ fn keyboard(
         }
         return;
     }
-    if state.pending.is_some_and(is_item_selection) && keys.just_pressed(KeyCode::Space) {
+    if let Some(pending) = state.pending.filter(|pending| is_item_selection(*pending))
+        && keys.just_pressed(KeyCode::Space)
+    {
         if state
             .modal
             .as_deref()
             .is_some_and(|modal| modal_has_next_page(modal, state.modal_offset))
         {
             state.modal_offset += MODAL_PAGE_ROWS;
+        } else {
+            retry_invalid_item(&mut state, pending, ' ');
         }
         return;
     }
@@ -2756,6 +2745,11 @@ fn retry_invalid_item(state: &mut State, pending: Pending, ch: char) {
     let error = format!("'{}' is not a valid item", control_label(ch));
     state.game.message(&error);
     state.modal = item_menu_text(&state.game, pending, Some(&message_display_text(&error)));
+    if state.modal.is_none() {
+        // A selection is only pending while eligible items exist; if that ever
+        // stops holding, cancel rather than strand a menu-less pending state.
+        state.pending = None;
+    }
     state.modal_offset = 0;
 }
 fn wizard_identify_prompt(state: &mut State) -> Option<String> {
@@ -2835,14 +2829,43 @@ fn rings_text(game: &Game) -> String {
     )
 }
 
+/// One-line question prompts whose modal text stays visible in the event area
+/// (appended after the combined events) instead of replacing the display.
+/// Item menus, pagers, and full-screen views are never rendered inline.
+fn pending_is_inline_prompt(pending: Pending) -> bool {
+    matches!(
+        pending,
+        Pending::PutRingHand(_)
+            | Pending::RemoveRingHand
+            | Pending::ThrowDirection(_)
+            | Pending::ZapDirection(_)
+            | Pending::FightDirection(_)
+            | Pending::MoveDirection
+            | Pending::TrapDirection
+            | Pending::CallText(_)
+            | Pending::AutoCall
+            | Pending::SaveConfirm
+            | Pending::SaveFileText
+            | Pending::SaveOverwrite
+            | Pending::QuitConfirm
+            | Pending::Password
+            | Pending::StartupPassword
+            | Pending::IdentifyGlyph
+            | Pending::Discoveries
+            | Pending::SlowDiscoveryPrompt
+            | Pending::WizardListType
+            | Pending::WizardCreateType
+            | Pending::WizardCreateWhich(_)
+            | Pending::WizardCreateBlessing(_, _)
+            | Pending::WizardCreateGold
+    )
+}
+
 fn has_inline_event_prompt(state: &State) -> bool {
-    state.modal.as_deref().is_some_and(|modal| {
-        state.visible_message.is_some()
-            && state.pending.is_some()
-            && !state.modal_overlay
-            && !modal.contains("--More--")
-            && modal.lines().count() == 1
-    })
+    state.modal.is_some()
+        && state.visible_message.is_some()
+        && !state.modal_overlay
+        && state.pending.is_some_and(pending_is_inline_prompt)
 }
 
 fn render(
@@ -2864,9 +2887,9 @@ fn render(
                 color.0 = if footer_visible
                     && matches!(row, KEYBINDING_FIRST_ROW | KEYBINDING_SECOND_ROW)
                 {
-                    Color::srgb(0.55, 0.55, 0.52)
+                    KEYBINDING_DIM_COLOR
                 } else {
-                    Color::srgb(0.82, 0.82, 0.78)
+                    GLYPH_COLOR
                 };
             }
         }
@@ -2991,15 +3014,14 @@ fn event_sentence(message: &str, preserve_case: bool) -> Option<String> {
     if message.is_empty() {
         return None;
     }
-    let mut sentence = if preserve_case {
-        message.to_owned()
-    } else {
-        message_display_text(message)
-    };
+    if preserve_case {
+        return Some(message.to_owned());
+    }
+    let mut sentence = message_display_text(message);
     if !sentence
         .chars()
         .last()
-        .is_some_and(|ch| matches!(ch, '.' | '!' | '?'))
+        .is_some_and(|ch| matches!(ch, '.' | '!' | '?' | ')' | '"' | '\''))
     {
         sentence.push('.');
     }
@@ -3028,13 +3050,35 @@ fn wrap_terminal_text(text: &str, width: usize) -> Vec<String> {
             continue;
         }
         if x >= width {
-            lines.push(String::new());
-            x = 0;
+            if ch == ' ' {
+                lines.push(String::new());
+                x = 0;
+                continue;
+            }
+            let current = lines.last_mut().unwrap();
+            if let Some(space) = current.rfind(' ') {
+                let carried = current[space + 1..].to_owned();
+                current.truncate(space);
+                x = terminal_text_width(&carried);
+                lines.push(carried);
+            } else {
+                lines.push(String::new());
+                x = 0;
+            }
         }
         lines.last_mut().unwrap().push(ch);
         x = if ch == '\t' { ((x / 8) + 1) * 8 } else { x + 1 };
     }
     lines
+}
+
+fn terminal_text_width(text: &str) -> usize {
+    text.chars().fold(
+        0,
+        |x, ch| {
+            if ch == '\t' { ((x / 8) + 1) * 8 } else { x + 1 }
+        },
+    )
 }
 
 fn write_event_text(out: &mut [char], text: &str) {
@@ -3957,18 +4001,8 @@ mod tests {
 
     #[test]
     fn question_mark_key_opens_complete_help_immediately() {
-        let mut app = App::new();
-        app.insert_resource(state(105));
-        app.insert_resource(ButtonInput::<KeyCode>::default());
-        app.insert_resource(Time::<()>::default());
-        app.insert_resource(MovementRepeat::default());
-        app.add_message::<AppExit>();
-        app.add_systems(Update, keyboard);
-        {
-            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-            keys.press(KeyCode::ShiftLeft);
-            keys.press(KeyCode::Slash);
-        }
+        let mut app = keyboard_app(state(105));
+        press_keys(&mut app, &[KeyCode::ShiftLeft, KeyCode::Slash]);
 
         app.update();
 
@@ -3991,18 +4025,8 @@ mod tests {
             .collect();
         assert!(expected_lines.len() > MODAL_PAGE_ROWS);
 
-        let mut app = App::new();
-        app.insert_resource(initial_state);
-        app.insert_resource(ButtonInput::<KeyCode>::default());
-        app.insert_resource(Time::<()>::default());
-        app.insert_resource(MovementRepeat::default());
-        app.add_message::<AppExit>();
-        app.add_systems(Update, keyboard);
-        {
-            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-            keys.press(KeyCode::ShiftLeft);
-            keys.press(KeyCode::Slash);
-        }
+        let mut app = keyboard_app(initial_state);
+        press_keys(&mut app, &[KeyCode::ShiftLeft, KeyCode::Slash]);
         app.update();
 
         let first = display(app.world().resource::<State>());
@@ -4016,11 +4040,7 @@ mod tests {
         );
         assert!(display_row(&first, MODAL_MORE_ROW).starts_with(" --More--"));
 
-        {
-            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear();
-            keys.press(KeyCode::Space);
-        }
+        press_keys(&mut app, &[KeyCode::Space]);
         app.update();
 
         let state = app.world().resource::<State>();
@@ -4037,22 +4057,14 @@ mod tests {
         );
         assert!(!display_row(&second, MODAL_MORE_ROW).contains("--More--"));
 
-        {
-            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear();
-            keys.press(KeyCode::Space);
-        }
+        press_keys(&mut app, &[KeyCode::Space]);
         app.update();
         let state = app.world().resource::<State>();
         assert_eq!(state.modal_offset, MODAL_PAGE_ROWS);
         assert_eq!(state.pending, Some(Pending::Help));
         assert!(state.modal.is_some());
 
-        {
-            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-            keys.clear();
-            keys.press(KeyCode::Escape);
-        }
+        press_keys(&mut app, &[KeyCode::Escape]);
         app.update();
         let state = app.world().resource::<State>();
         assert!(state.pending.is_none());
@@ -4317,13 +4329,7 @@ mod tests {
                     .then_some(*key)
             })
             .expect("generated level has a direction with four valid movement steps");
-        let mut app = App::new();
-        app.insert_resource(initial_state);
-        app.insert_resource(ButtonInput::<KeyCode>::default());
-        app.insert_resource(Time::<()>::default());
-        app.insert_resource(MovementRepeat::default());
-        app.add_message::<AppExit>();
-        app.add_systems(Update, keyboard);
+        let mut app = keyboard_app(initial_state);
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(movement_key);
@@ -5058,6 +5064,51 @@ mod tests {
     }
 
     #[test]
+    fn event_sentences_leave_parenthesized_and_preserved_case_endings_alone() {
+        assert_eq!(
+            event_sentence("you now have 25 gold pieces (worth 25)", false).as_deref(),
+            Some("You now have 25 gold pieces (worth 25)")
+        );
+        assert_eq!(
+            event_sentence("rogue version 5.4.5 release", true).as_deref(),
+            Some("rogue version 5.4.5 release")
+        );
+    }
+
+    #[test]
+    fn event_wrapping_breaks_at_word_boundaries() {
+        assert_eq!(
+            wrap_terminal_text("You hit the orc. The orc misses!", 12),
+            ["You hit the", "orc. The orc", "misses!"]
+        );
+        assert_eq!(
+            wrap_terminal_text(&"A".repeat(30), 12),
+            ["A".repeat(12), "A".repeat(12), "A".repeat(6)]
+        );
+    }
+
+    #[test]
+    fn retry_with_no_eligible_items_cancels_instead_of_stranding_the_selection() {
+        let mut state = state(324);
+        state.game.player.inventory.clear();
+        state.pending = Some(Pending::Quaff);
+        retry_invalid_item(&mut state, Pending::Quaff, 'x');
+        assert!(state.pending.is_none());
+        assert!(state.modal.is_none());
+    }
+
+    #[test]
+    fn single_line_item_menus_render_full_screen_rather_than_inline() {
+        let mut state = state(325);
+        state.game.player.inventory = vec![pack_item(60_000, ItemKind::Potion, 0, 'a')];
+        state.modal = select_item_menu(&mut state, Pending::Quaff);
+        state.visible_message = Some("You feel dizzy.".into());
+        assert!(!has_inline_event_prompt(&state));
+        let buffer = display(&state);
+        assert!(display_row(&buffer, 0).starts_with("a) "));
+    }
+
+    #[test]
     fn consecutive_messages_render_together_without_more_or_space_waiting() {
         let mut sequence = state(1161);
         sequence.game.message("first message");
@@ -5083,16 +5134,8 @@ mod tests {
         initial_state.game.message("second event");
         collect_messages(&mut initial_state);
         let starting_turn = initial_state.game.turn;
-        let mut app = App::new();
-        app.insert_resource(initial_state);
-        app.insert_resource(ButtonInput::<KeyCode>::default());
-        app.insert_resource(Time::<()>::default());
-        app.insert_resource(MovementRepeat::default());
-        app.add_message::<AppExit>();
-        app.add_systems(Update, keyboard);
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::Period);
+        let mut app = keyboard_app(initial_state);
+        press_keys(&mut app, &[KeyCode::Period]);
 
         app.update();
 
@@ -5142,18 +5185,8 @@ mod tests {
         );
         assert!(!top.contains("--More--"));
 
-        let mut app = App::new();
-        app.insert_resource(prompted);
-        app.insert_resource(ButtonInput::<KeyCode>::default());
-        app.insert_resource(Time::<()>::default());
-        app.insert_resource(MovementRepeat::default());
-        app.add_message::<AppExit>();
-        app.add_systems(Update, keyboard);
-        {
-            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-            keys.press(KeyCode::ShiftLeft);
-            keys.press(KeyCode::KeyD);
-        }
+        let mut app = keyboard_app(prompted);
+        press_keys(&mut app, &[KeyCode::ShiftLeft, KeyCode::KeyD]);
 
         app.update();
 
@@ -5528,7 +5561,7 @@ mod tests {
     }
 
     #[test]
-    fn item_menu_space_only_pages_when_more_content_exists_and_letters_stay_active() {
+    fn item_menu_space_pages_then_retries_like_any_invalid_key() {
         let id = 59_001;
         let mut potion = pack_item(id, ItemKind::Potion, 0, 'a');
         potion.count = 2;
@@ -5552,8 +5585,11 @@ mod tests {
         press_keys(&mut app, &[KeyCode::Space]);
         app.update();
         let state = app.world().resource::<State>();
-        assert_eq!(state.modal_offset, MODAL_PAGE_ROWS);
+        assert_eq!(state.modal_offset, 0);
         assert_eq!(state.pending, Some(Pending::Quaff));
+        let modal = state.modal.as_deref().unwrap();
+        assert!(modal.contains("' ' is not a valid item"));
+        assert!(modal.contains("a) "));
 
         press_keys(&mut app, &[KeyCode::KeyA]);
         app.update();

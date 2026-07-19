@@ -24,9 +24,10 @@ games portable rather than reproducing a platform libc random stream.
 
 The C message accumulator and `endmsg` behavior become a serial-numbered core
 message history plus a nonblocking Bevy-side sentence stream. Consecutive
-events receive normalized punctuation and spacing, wrap across the three newest
-visible rows, and never stop at `--More--`; an associated one-line prompt is
-rendered after the events while remaining immediately actionable. Display-only
+events receive normalized punctuation and spacing, wrap at word boundaries
+across the three newest visible rows, and never stop at `--More--`; an
+associated one-line prompt is rendered after the events while remaining
+immediately actionable. Display-only
 capitalization leaves the raw recall buffer unchanged. Terminal tabs and
 modal/help limits are expanded into the fixed 80×28 grid before rendering; the
 layout is three event rows, 22 dungeon rows, one status row, and a two-row
