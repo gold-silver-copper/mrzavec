@@ -90,16 +90,19 @@ selects its dungeon number. A player name beginning with `rogo-` may use
 `$ROGOSEED` in the same way as the reference debugging interface.
 
 Movement uses Rogue's `hjklyubn` keys. Holding an unmodified movement key walks
-continuously after a 300 ms delay, repeating every 100 ms. Uppercase directions
-run and the corresponding control keys run until something interesting is
-encountered.
+continuously after a 300 ms delay, repeating every 100 ms; holding `.` rests at
+the same cadence. Uppercase directions run and the corresponding control keys
+run until something interesting is encountered.
 `m` moves without picking up, `f` fights until danger, `F` fights to the death,
 `.` rests, `,` picks up, `s` searches, and `^` identifies an adjacent trap.
 
 Item commands are `q` quaff, `r` read, `e` eat, `w` wield, `W` wear armor,
 `T` remove armor, `P`/`R` put on/remove a ring, `d` drop, `t` throw, `z` zap,
 and `c` call an unidentified item. `i` shows the full inventory and `I` its
-picky form. `)`, `]`, `=`, and `@` report current equipment and statistics.
+picky form. Item-selecting commands immediately show every eligible pack entry;
+press its displayed letter or Escape to cancel. Throwing and zapping select the
+item before asking for a direction. `)`, `]`, `=`, and `@` report current
+equipment and statistics.
 
 `>` descends and `<` ascends. `?` opens the complete command help immediately;
 Space advances only when another help page is available, and Escape closes it.

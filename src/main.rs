@@ -44,6 +44,17 @@ const MOVEMENT_KEYS: [(KeyCode, char); 8] = [
     (KeyCode::KeyB, 'b'),
     (KeyCode::KeyN, 'n'),
 ];
+const HELD_REPEAT_KEYS: [(KeyCode, char); 9] = [
+    (KeyCode::KeyH, 'h'),
+    (KeyCode::KeyJ, 'j'),
+    (KeyCode::KeyK, 'k'),
+    (KeyCode::KeyL, 'l'),
+    (KeyCode::KeyY, 'y'),
+    (KeyCode::KeyU, 'u'),
+    (KeyCode::KeyB, 'b'),
+    (KeyCode::KeyN, 'n'),
+    (KeyCode::Period, '.'),
+];
 const ROGUE_RELEASE: &str = "2026-07-17";
 
 fn version_message(game: &Game) -> String {
@@ -105,7 +116,6 @@ struct State {
     modal: Option<String>,
     modal_overlay: bool,
     modal_offset: usize,
-    item_inventory_open: bool,
     preserve_message_case: bool,
     slow_discovery_lines: Vec<String>,
     message_serial_seen: u64,
@@ -129,8 +139,8 @@ enum Pending {
     Drop,
     ThrowSelect,
     ZapSelect,
-    ThrowDirection,
-    ZapDirection,
+    ThrowDirection(u64),
+    ZapDirection(u64),
     FightDirection(bool),
     MoveDirection,
     TrapDirection,
@@ -191,7 +201,7 @@ impl MovementRepeat {
             return None;
         }
 
-        if let Some((key, _)) = MOVEMENT_KEYS
+        if let Some((key, _)) = HELD_REPEAT_KEYS
             .iter()
             .copied()
             .find(|(key, _)| keys.just_pressed(*key))
@@ -202,13 +212,13 @@ impl MovementRepeat {
         }
 
         let held = self.key.filter(|key| keys.pressed(*key)).and_then(|key| {
-            MOVEMENT_KEYS
+            HELD_REPEAT_KEYS
                 .iter()
                 .copied()
                 .find(|(candidate, _)| *candidate == key)
         });
         let Some((key, ch)) = held else {
-            let Some((key, _)) = MOVEMENT_KEYS
+            let Some((key, _)) = HELD_REPEAT_KEYS
                 .iter()
                 .copied()
                 .find(|(key, _)| keys.pressed(*key))
@@ -555,7 +565,6 @@ fn game_app(game: Game, wizard_prompt: bool) -> App {
             modal: wizard_prompt.then(|| password_prompt(Pending::StartupPassword).into()),
             modal_overlay: false,
             modal_offset: 0,
-            item_inventory_open: false,
             preserve_message_case: false,
             slow_discovery_lines: Vec::new(),
             message_serial_seen,
@@ -867,7 +876,7 @@ fn keyboard(
     ]
     .into_iter()
     .any(|key| keys.pressed(key));
-    let repeated_movement = movement_repeat.update(
+    let repeated_input = movement_repeat.update(
         &keys,
         time.delta(),
         !shifted
@@ -875,11 +884,10 @@ fn keyboard(
             && !alt_or_super
             && state.pending.is_none()
             && state.modal.is_none()
-            && !state.item_inventory_open
             && state.game.end == mrzavec::game::EndState::Playing
             && state.game.player.conditions.asleep_turns == 0,
     );
-    if keys.get_just_pressed().next().is_some() || repeated_movement.is_some() {
+    if keys.get_just_pressed().next().is_some() || repeated_input.is_some() {
         state.preserve_message_case = false;
         state.visible_message = None;
     }
@@ -923,15 +931,13 @@ fn keyboard(
         }
         return;
     }
-    if state.item_inventory_open && keys.just_pressed(KeyCode::Space) {
+    if state.pending.is_some_and(is_item_selection) && keys.just_pressed(KeyCode::Space) {
         if state
             .modal
             .as_deref()
             .is_some_and(|modal| modal_has_next_page(modal, state.modal_offset))
         {
             state.modal_offset += MODAL_PAGE_ROWS;
-        } else if let Some(pending) = state.pending {
-            restore_item_prompt(&mut state, pending);
         }
         return;
     }
@@ -1025,12 +1031,6 @@ fn keyboard(
                 .game
                 .finish_action(mrzavec::command::CommandResult::TURN);
         }
-        if state.item_inventory_open
-            && let Some(pending) = state.pending
-        {
-            restore_item_prompt(&mut state, pending);
-            return;
-        }
         if state.pending == Some(Pending::Password) {
             state.game.message("sorry");
             state.pending = None;
@@ -1072,7 +1072,6 @@ fn keyboard(
         state.modal = None;
         state.modal_overlay = false;
         state.modal_offset = 0;
-        state.item_inventory_open = false;
         state.pending = None;
         if continue_count {
             continue_counted_command(&mut state);
@@ -1321,7 +1320,7 @@ fn keyboard(
                 ])
                 .find_map(|(k, c)| keys.just_pressed(k).then_some(c))
         })
-        .or(repeated_movement);
+        .or(repeated_input);
     let Some(mut ch) = ch else { return };
     if shifted && ch.is_ascii_alphabetic() {
         ch = ch.to_ascii_uppercase()
@@ -1332,9 +1331,6 @@ fn keyboard(
         state.count_prefix.clear();
         state.counted_command = None;
         state.game.execute(Command::Rest);
-        return;
-    }
-    if state.item_inventory_open {
         return;
     }
     if let Some(pending) = state.pending {
@@ -1610,47 +1606,22 @@ fn keyboard(
         }
         if matches!(
             pending,
-            Pending::ThrowDirection
-                | Pending::ZapDirection
+            Pending::ThrowDirection(_)
+                | Pending::ZapDirection(_)
                 | Pending::FightDirection(_)
                 | Pending::MoveDirection
                 | Pending::TrapDirection
         ) {
-            if state.item_inventory_open {
-                return;
-            }
             if let Command::Move(direction) = parse(ch.to_ascii_lowercase()) {
                 state.game.remember_message("");
                 let result = match pending {
-                    Pending::ThrowDirection => {
+                    Pending::ThrowDirection(id) => {
                         state.game.last_direction = Some(direction);
-                        if state.game.player.inventory.is_empty() {
-                            state.game.message("you aren't carrying anything");
-                            state
-                                .game
-                                .finish_action(mrzavec::command::CommandResult::TURN);
-                            state.pending = None;
-                            state.modal = None;
-                            continue_counted_command(&mut state);
-                            return;
-                        }
-                        state.modal = select_prompt(&mut state, Pending::ThrowSelect);
-                        return;
+                        state.game.throw_item(id, direction)
                     }
-                    Pending::ZapDirection => {
+                    Pending::ZapDirection(id) => {
                         state.game.last_direction = Some(direction);
-                        if state.game.player.inventory.is_empty() {
-                            state.game.message("you aren't carrying anything");
-                            state
-                                .game
-                                .finish_action(mrzavec::command::CommandResult::TURN);
-                            state.pending = None;
-                            state.modal = None;
-                            continue_counted_command(&mut state);
-                            return;
-                        }
-                        state.modal = select_prompt(&mut state, Pending::ZapSelect);
-                        return;
+                        state.game.zap(id, direction)
                     }
                     Pending::FightDirection(kamikaze) => {
                         state.game.last_direction = Some(direction);
@@ -1673,22 +1644,22 @@ fn keyboard(
             }
             return;
         }
-        if item_selection_title(pending).is_some() && ch == '*' {
-            show_item_inventory(&mut state, pending);
-            return;
-        }
-        if item_selection_title(pending).is_some() && !ch.is_ascii_lowercase() {
+        if is_item_selection(pending) && !ch.is_ascii_lowercase() {
             retry_invalid_item(&mut state, pending, ch);
             return;
         }
         if ch.is_ascii_lowercase() {
             let Some(index) = state.game.inventory_index_for_letter(ch) else {
-                if item_selection_title(pending).is_some() {
+                if is_item_selection(pending) {
                     retry_invalid_item(&mut state, pending, ch);
                 }
                 return;
             };
-            if let Some(id) = state.game.player.inventory.get(index).map(|i| i.id) {
+            if let Some(item) = state.game.player.inventory.get(index)
+                && item.in_pack
+                && item_matches_selection(&state.game, pending, item.kind)
+            {
+                let id = item.id;
                 state.game.remember_message("");
                 let magic_detection = pending == Pending::Quaff
                     && state.game.player.inventory.iter().any(|item| {
@@ -1749,14 +1720,14 @@ fn keyboard(
                         return;
                     }
                     Pending::ThrowSelect => {
-                        let direction = state.game.last_direction.unwrap();
-                        state.game.throw_item(id, direction)
+                        state.modal = direction_prompt(&mut state, Pending::ThrowDirection(id));
+                        return;
                     }
                     Pending::ZapSelect => {
-                        let direction = state.game.last_direction.unwrap();
-                        state.game.zap(id, direction)
+                        state.modal = direction_prompt(&mut state, Pending::ZapDirection(id));
+                        return;
                     }
-                    Pending::ThrowDirection | Pending::ZapDirection => unreachable!(),
+                    Pending::ThrowDirection(_) | Pending::ZapDirection(_) => unreachable!(),
                     Pending::FightDirection(_)
                     | Pending::MoveDirection
                     | Pending::TrapDirection => {
@@ -1809,6 +1780,9 @@ fn keyboard(
                 if show_pending_call(&mut state) {
                     return;
                 }
+            } else if is_item_selection(pending) {
+                retry_invalid_item(&mut state, pending, ch);
+                return;
             }
             state.pending = None;
             state.modal = None;
@@ -1949,9 +1923,9 @@ fn keyboard(
             let prompt = save_confirmation(&state.game);
             Some(remembered_prompt(&mut state, prompt))
         }
-        Command::Quaff => select_action_prompt(&mut state, Pending::Quaff, true),
-        Command::Read => select_action_prompt(&mut state, Pending::Read, true),
-        Command::Eat => select_action_prompt(&mut state, Pending::Eat, true),
+        Command::Quaff => select_action_menu(&mut state, Pending::Quaff, true),
+        Command::Read => select_action_menu(&mut state, Pending::Read, true),
+        Command::Eat => select_action_menu(&mut state, Pending::Eat, true),
         Command::Wield => {
             let cursed_weapon = state.game.player.weapon.is_some_and(|id| {
                 state
@@ -1968,20 +1942,20 @@ fn keyboard(
                     .finish_action(mrzavec::command::CommandResult::TURN);
                 None
             } else {
-                select_action_prompt(&mut state, Pending::Wield, false)
+                select_action_menu(&mut state, Pending::Wield, false)
             }
         }
-        Command::Wear => select_action_prompt(&mut state, Pending::Wear, true),
-        Command::PutOnRing => select_action_prompt(&mut state, Pending::PutRing, true),
-        Command::Drop => select_action_prompt(&mut state, Pending::Drop, true),
-        Command::Throw => direction_prompt(&mut state, Pending::ThrowDirection),
-        Command::Zap => direction_prompt(&mut state, Pending::ZapDirection),
+        Command::Wear => select_action_menu(&mut state, Pending::Wear, true),
+        Command::PutOnRing => select_action_menu(&mut state, Pending::PutRing, true),
+        Command::Drop => select_action_menu(&mut state, Pending::Drop, true),
+        Command::Throw => select_action_menu(&mut state, Pending::ThrowSelect, true),
+        Command::Zap => select_action_menu(&mut state, Pending::ZapSelect, true),
         Command::Fight { kamikaze } => {
             direction_prompt(&mut state, Pending::FightDirection(kamikaze))
         }
         Command::MoveWithoutPickup => direction_prompt(&mut state, Pending::MoveDirection),
         Command::IdentifyTrap => direction_prompt(&mut state, Pending::TrapDirection),
-        Command::Call => select_action_prompt(&mut state, Pending::CallSelect, false),
+        Command::Call => select_action_menu(&mut state, Pending::CallSelect, false),
         Command::ToggleWizard => {
             if state.game.wizard {
                 state.game.set_wizard(false);
@@ -2157,8 +2131,8 @@ fn prompt_resets_last(pending: Pending) -> bool {
             | Pending::Drop
             | Pending::ThrowSelect
             | Pending::ZapSelect
-            | Pending::ThrowDirection
-            | Pending::ZapDirection
+            | Pending::ThrowDirection(_)
+            | Pending::ZapDirection(_)
             | Pending::FightDirection(_)
             | Pending::MoveDirection
             | Pending::TrapDirection
@@ -2431,7 +2405,11 @@ fn show_pending_identification(state: &mut State) -> bool {
             .message("you don't have anything in your pack to identify");
         return false;
     }
-    state.modal = select_prompt(state, Pending::Identify);
+    state.modal = select_item_menu(state, Pending::Identify);
+    if state.modal.is_none() {
+        state.game.pending_identification = None;
+        return false;
+    }
     true
 }
 
@@ -2472,10 +2450,10 @@ fn continue_counted_command(state: &mut State) {
     }
     state.counted_command = (remaining > 1).then_some((command, remaining - 1));
     state.modal = match command {
-        Command::Quaff => select_action_prompt(state, Pending::Quaff, true),
-        Command::Read => select_action_prompt(state, Pending::Read, true),
-        Command::Throw => direction_prompt(state, Pending::ThrowDirection),
-        Command::Zap => direction_prompt(state, Pending::ZapDirection),
+        Command::Quaff => select_action_menu(state, Pending::Quaff, true),
+        Command::Read => select_action_menu(state, Pending::Read, true),
+        Command::Throw => select_action_menu(state, Pending::ThrowSelect, true),
+        Command::Zap => select_action_menu(state, Pending::ZapSelect, true),
         Command::MoveWithoutPickup => direction_prompt(state, Pending::MoveDirection),
         Command::PickyInventory => picky_inventory_prompt(state),
         Command::Wizard(WizardCommand::Create) if state.game.wizard => {
@@ -2664,19 +2642,6 @@ fn food_detection_text(game: &Game) -> String {
         .join("\n")
 }
 
-fn select_prompt(state: &mut State, pending: Pending) -> Option<String> {
-    let prompt = get_item_prompt(&state.game, pending);
-    state.pending = Some(pending);
-    state.item_inventory_open = false;
-    state.modal_offset = 0;
-    state.game.remember_message(&prompt);
-    Some(message_display_text(&prompt))
-}
-fn restore_item_prompt(state: &mut State, pending: Pending) {
-    state.item_inventory_open = false;
-    state.modal_offset = 0;
-    state.modal = select_prompt(state, pending);
-}
 fn direction_prompt(state: &mut State, pending: Pending) -> Option<String> {
     let prompt = if state.game.options.terse {
         "direction: "
@@ -2705,37 +2670,29 @@ fn retry_ring_hand(state: &mut State) {
     state.game.remember_message(&prompt);
     state.modal = Some(message_display_text(&prompt));
 }
-fn item_selection_title(pending: Pending) -> Option<&'static str> {
-    match pending {
-        Pending::Quaff => Some("quaff"),
-        Pending::Read => Some("read"),
-        Pending::Eat => Some("eat"),
-        Pending::Wield => Some("wield"),
-        Pending::Wear => Some("wear"),
-        Pending::PutRing => Some("put on"),
-        Pending::Drop => Some("drop"),
-        Pending::ThrowSelect => Some("throw"),
-        Pending::ZapSelect => Some("zap with"),
-        Pending::Identify => Some("identify"),
-        Pending::CallSelect => Some("call"),
-        Pending::WizardCharge => Some("charge"),
-        _ => None,
-    }
+fn is_item_selection(pending: Pending) -> bool {
+    matches!(
+        pending,
+        Pending::Quaff
+            | Pending::Read
+            | Pending::Eat
+            | Pending::Wield
+            | Pending::Wear
+            | Pending::PutRing
+            | Pending::Drop
+            | Pending::ThrowSelect
+            | Pending::ZapSelect
+            | Pending::Identify
+            | Pending::CallSelect
+            | Pending::WizardCharge
+    )
 }
-fn get_item_prompt(game: &Game, pending: Pending) -> String {
-    let purpose = item_selection_title(pending).expect("only item selections have a purpose");
-    if game.options.terse {
-        format!("{purpose} what? (* for list): ")
-    } else {
-        format!("which object do you want to {purpose}? (* for list): ")
-    }
-}
-fn item_matches_prompt(game: &Game, pending: Pending, kind: ItemKind) -> bool {
+fn item_matches_selection(game: &Game, pending: Pending, kind: ItemKind) -> bool {
     match pending {
         Pending::Quaff => kind == ItemKind::Potion,
         Pending::Read => kind == ItemKind::Scroll,
         Pending::Eat => kind == ItemKind::Food,
-        Pending::Wield | Pending::ThrowSelect => kind == ItemKind::Weapon,
+        Pending::Wield => kind != ItemKind::Armor,
         Pending::Wear => kind == ItemKind::Armor,
         Pending::PutRing => kind == ItemKind::Ring,
         Pending::ZapSelect | Pending::WizardCharge => kind == ItemKind::Stick,
@@ -2751,30 +2708,35 @@ fn item_matches_prompt(game: &Game, pending: Pending, kind: ItemKind) -> bool {
                     matches!(kind, ItemKind::Ring | ItemKind::Stick)
                 }
             }),
-        Pending::Drop => true,
+        Pending::Drop | Pending::ThrowSelect => true,
         _ => false,
     }
 }
-fn show_item_inventory(state: &mut State, pending: Pending) {
-    let mut text = String::new();
-    for (index, item) in state
-        .game
+fn item_menu_text(game: &Game, pending: Pending, feedback: Option<&str>) -> Option<String> {
+    let mut lines = Vec::new();
+    for (index, item) in game
         .player
         .inventory
         .iter()
-        .filter(|item| item.in_pack)
         .enumerate()
+        .filter(|(_, item)| item.in_pack)
     {
-        if !item_matches_prompt(&state.game, pending, item.kind) {
+        if !item_matches_selection(game, pending, item.kind) {
             continue;
         }
         let letter = item.pack_letter.unwrap_or((b'a' + index as u8) as char);
-        text.push_str(&format!(
-            "{letter}) {}\n",
-            state.game.inventory_name(item, false)
-        ));
+        lines.push(format!("{letter}) {}", game.inventory_name(item, false)));
     }
-    if text.is_empty() {
+    if lines.is_empty() {
+        return None;
+    }
+    if let Some(feedback) = feedback {
+        lines.insert(0, feedback.into());
+    }
+    Some(lines.join("\n"))
+}
+fn select_item_menu(state: &mut State, pending: Pending) -> Option<String> {
+    let Some(text) = item_menu_text(&state.game, pending, None) else {
         state.game.message(if state.game.options.terse {
             "nothing appropriate"
         } else {
@@ -2782,21 +2744,19 @@ fn show_item_inventory(state: &mut State, pending: Pending) {
         });
         state.pending = None;
         state.modal = None;
-        state.item_inventory_open = false;
-        return;
-    }
-    text.push_str(" --More--");
+        state.modal_offset = 0;
+        return None;
+    };
+    state.pending = Some(pending);
     state.game.remember_message("");
-    state.modal = Some(text);
     state.modal_offset = 0;
-    state.item_inventory_open = true;
+    Some(text)
 }
 fn retry_invalid_item(state: &mut State, pending: Pending, ch: char) {
     let error = format!("'{}' is not a valid item", control_label(ch));
     state.game.message(&error);
-    let prompt = get_item_prompt(&state.game, pending);
-    state.game.remember_message(&prompt);
-    state.modal = Some(message_display_text(&prompt));
+    state.modal = item_menu_text(&state.game, pending, Some(&message_display_text(&error)));
+    state.modal_offset = 0;
 }
 fn wizard_identify_prompt(state: &mut State) -> Option<String> {
     if state.game.player.inventory.is_empty() {
@@ -2806,7 +2766,7 @@ fn wizard_identify_prompt(state: &mut State) -> Option<String> {
         None
     } else {
         state.game.pending_identification = None;
-        select_prompt(state, Pending::Identify)
+        select_item_menu(state, Pending::Identify)
     }
 }
 fn wizard_charge_prompt(state: &mut State) -> Option<String> {
@@ -2814,10 +2774,10 @@ fn wizard_charge_prompt(state: &mut State) -> Option<String> {
         state.game.message("you aren't carrying anything");
         None
     } else {
-        select_prompt(state, Pending::WizardCharge)
+        select_item_menu(state, Pending::WizardCharge)
     }
 }
-fn select_action_prompt(
+fn select_action_menu(
     state: &mut State,
     pending: Pending,
     empty_consumes_turn: bool,
@@ -2831,7 +2791,7 @@ fn select_action_prompt(
         }
         None
     } else {
-        select_prompt(state, pending)
+        select_item_menu(state, pending)
     }
 }
 #[cfg(test)]
@@ -3630,7 +3590,6 @@ mod tests {
             modal: None,
             modal_overlay: false,
             modal_offset: 0,
-            item_inventory_open: false,
             preserve_message_case: false,
             slow_discovery_lines: Vec::new(),
             message_serial_seen,
@@ -3640,6 +3599,35 @@ mod tests {
             input_buffer: String::new(),
             count_prefix: String::new(),
             counted_command: None,
+        }
+    }
+
+    fn pack_item(id: u64, kind: ItemKind, which: u8, letter: char) -> mrzavec::item::Item {
+        let mut item = mrzavec::item::Item::basic(id, kind, which);
+        item.pack_letter = Some(letter);
+        item
+    }
+
+    fn keyboard_app(initial_state: State) -> App {
+        let mut app = App::new();
+        app.insert_resource(initial_state);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(MovementRepeat::default());
+        app.add_message::<AppExit>();
+        app.add_systems(Update, keyboard);
+        app
+    }
+
+    fn press_keys(app: &mut App, keys_to_press: &[KeyCode]) {
+        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        let pressed: Vec<_> = keys.get_pressed().copied().collect();
+        for key in pressed {
+            keys.release(key);
+        }
+        keys.clear();
+        for key in keys_to_press {
+            keys.press(*key);
         }
     }
 
@@ -4138,6 +4126,182 @@ mod tests {
     }
 
     #[test]
+    fn held_wait_uses_the_movement_delay_and_cadence_without_bursts() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        let mut repeat = MovementRepeat::default();
+        keys.press(KeyCode::Period);
+
+        assert_eq!(repeat.update(&keys, Duration::ZERO, true), None);
+        keys.clear();
+        assert_eq!(
+            repeat.update(
+                &keys,
+                MOVEMENT_REPEAT_DELAY - Duration::from_millis(1),
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            repeat.update(&keys, Duration::from_millis(1), true),
+            Some('.')
+        );
+        assert_eq!(
+            repeat.update(&keys, Duration::from_secs(5), true),
+            Some('.')
+        );
+        assert_eq!(
+            repeat.update(
+                &keys,
+                MOVEMENT_REPEAT_INTERVAL - Duration::from_millis(1),
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            repeat.update(&keys, Duration::from_millis(1), true),
+            Some('.')
+        );
+
+        keys.release(KeyCode::Period);
+        assert_eq!(repeat.update(&keys, MOVEMENT_REPEAT_INTERVAL, true), None);
+        assert_eq!(repeat.key, None);
+    }
+
+    #[test]
+    fn held_wait_and_movement_switch_without_competing_repeat_state() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        let mut repeat = MovementRepeat::default();
+        keys.press(KeyCode::KeyH);
+        assert_eq!(repeat.update(&keys, Duration::ZERO, true), None);
+        keys.clear();
+
+        keys.press(KeyCode::Period);
+        assert_eq!(repeat.update(&keys, MOVEMENT_REPEAT_INTERVAL, true), None);
+        assert_eq!(repeat.key, Some(KeyCode::Period));
+        keys.clear();
+        assert_eq!(repeat.update(&keys, MOVEMENT_REPEAT_DELAY, true), Some('.'));
+
+        keys.press(KeyCode::KeyL);
+        assert_eq!(repeat.update(&keys, MOVEMENT_REPEAT_INTERVAL, true), None);
+        assert_eq!(repeat.key, Some(KeyCode::KeyL));
+        keys.clear();
+        assert_eq!(repeat.update(&keys, MOVEMENT_REPEAT_DELAY, true), Some('l'));
+    }
+
+    #[test]
+    fn keyboard_holds_wait_and_resets_it_for_modifiers_menus_and_release() {
+        let initial_state = state(1061);
+        let starting_turn = initial_state.game.turn;
+        let mut app = keyboard_app(initial_state);
+        press_keys(&mut app, &[KeyCode::Period]);
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 1);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_DELAY - Duration::from_millis(1));
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 1);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_millis(1));
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 2);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_INTERVAL);
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 3);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::AltLeft);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_INTERVAL);
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 3);
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.release(KeyCode::AltLeft);
+            keys.clear();
+        }
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_INTERVAL);
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 3);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_DELAY);
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 4);
+
+        {
+            let mut state = app.world_mut().resource_mut::<State>();
+            state.pending = Some(Pending::Drop);
+            state.modal = Some("a) a mace".into());
+        }
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_INTERVAL);
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 4);
+        {
+            let mut state = app.world_mut().resource_mut::<State>();
+            state.pending = None;
+            state.modal = None;
+        }
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_INTERVAL);
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 4);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(MOVEMENT_REPEAT_DELAY - Duration::from_millis(1));
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 4);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_millis(1));
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 5);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .release(KeyCode::Period);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 5);
+    }
+
+    #[test]
+    fn held_wait_repeat_state_is_disabled_during_sleep_and_game_over() {
+        let mut sleeping = state(1062);
+        sleeping.game.player.conditions.asleep_turns = 2;
+        let mut sleeping_app = keyboard_app(sleeping);
+        press_keys(&mut sleeping_app, &[KeyCode::Period]);
+        sleeping_app.update();
+        assert_eq!(sleeping_app.world().resource::<MovementRepeat>().key, None);
+
+        let mut ended = state(1063);
+        ended.game.end = mrzavec::game::EndState::Quit;
+        ended.score_recorded = true;
+        let turn = ended.game.turn;
+        let mut ended_app = keyboard_app(ended);
+        press_keys(&mut ended_app, &[KeyCode::Period]);
+        ended_app.update();
+        assert_eq!(ended_app.world().resource::<MovementRepeat>().key, None);
+        assert_eq!(ended_app.world().resource::<State>().game.turn, turn);
+    }
+
+    #[test]
     fn keyboard_repeats_held_movement_and_resets_for_modifiers() {
         let mut initial_state = state(106);
         initial_state.game.monsters.clear();
@@ -4558,6 +4722,13 @@ mod tests {
             Some("you aren't carrying anything")
         );
         assert!(charge.pending.is_none());
+
+        let mut identify_menu = state(108);
+        identify_menu.game.wizard = true;
+        identify_menu.game.player.inventory = vec![pack_item(50_100, ItemKind::Armor, 0, 'k')];
+        let menu = wizard_identify_prompt(&mut identify_menu).unwrap();
+        assert!(menu.starts_with("k) "));
+        assert_eq!(identify_menu.pending, Some(Pending::Identify));
     }
 
     #[test]
@@ -4727,21 +4898,21 @@ mod tests {
     #[test]
     fn counted_multistep_command_prompts_for_each_iteration() {
         let mut state = state(4);
+        state.game.player.inventory = vec![pack_item(53_000, ItemKind::Potion, 0, 'a')];
         state.counted_command = Some((Command::Quaff, 2));
 
         continue_counted_command(&mut state);
 
         assert_eq!(state.pending, Some(Pending::Quaff));
         assert_eq!(state.counted_command, Some((Command::Quaff, 1)));
-        assert_eq!(
-            state.modal.as_deref(),
-            Some("Which object do you want to quaff? (* for list): ")
-        );
+        assert!(state.modal.as_deref().unwrap().starts_with("a) "));
+        assert!(!state.modal.as_deref().unwrap().contains("* for list"));
     }
 
     #[test]
     fn final_counted_prompt_becomes_the_repeat_command_at_reference_time() {
         let mut state = state(40);
+        state.game.player.inventory = vec![pack_item(53_001, ItemKind::Potion, 0, 'a')];
         state.game.last_command = Some('s');
         state.game.last_item = Some(123);
         state.counted_command = Some((Command::Quaff, 1));
@@ -4794,11 +4965,11 @@ mod tests {
     }
 
     #[test]
-    fn empty_pack_item_prompts_preserve_reference_turn_rules() {
+    fn empty_pack_item_menus_preserve_reference_turn_rules() {
         let mut consuming = state(30);
         consuming.game.player.inventory.clear();
         let turn = consuming.game.turn;
-        assert!(select_action_prompt(&mut consuming, Pending::Read, true).is_none());
+        assert!(select_action_menu(&mut consuming, Pending::Read, true).is_none());
         assert_eq!(consuming.game.turn, turn + 1);
         assert_eq!(
             consuming.game.messages.last().map(String::as_str),
@@ -4808,33 +4979,34 @@ mod tests {
         let mut free = state(31);
         free.game.player.inventory.clear();
         let turn = free.game.turn;
-        assert!(select_action_prompt(&mut free, Pending::Wield, false).is_none());
+        assert!(select_action_menu(&mut free, Pending::Wield, false).is_none());
         assert_eq!(free.game.turn, turn);
     }
 
     #[test]
-    fn invalid_item_selection_rebuilds_the_prompt_with_unctrl_feedback() {
+    fn invalid_item_selection_keeps_the_menu_with_unctrl_feedback() {
         let mut state = state(114);
-        state.pending = Some(Pending::Quaff);
+        state.game.player.inventory = vec![pack_item(52_000, ItemKind::Potion, 0, 'a')];
+        state.modal = select_item_menu(&mut state, Pending::Quaff);
         retry_invalid_item(&mut state, Pending::Quaff, '\u{8}');
-        assert_eq!(
-            state.modal.as_deref(),
-            Some("Which object do you want to quaff? (* for list): ")
+        let modal = state.modal.as_deref().unwrap();
+        assert!(
+            modal
+                .lines()
+                .next()
+                .unwrap()
+                .contains("'^H' is not a valid item")
         );
+        assert!(modal.contains("a) "));
+        assert!(!modal.contains("* for list"));
         collect_messages(&mut state);
         assert_eq!(
             state.visible_message.as_deref(),
             Some("'^H' is not a valid item.")
         );
-        assert_eq!(
-            state.modal.as_deref(),
-            Some("Which object do you want to quaff? (* for list): ")
-        );
-        assert_eq!(
-            state.game.recall_message,
-            "which object do you want to quaff? (* for list): "
-        );
-        assert!(item_selection_title(Pending::Options(0)).is_none());
+        assert!(state.modal.as_deref().unwrap().contains("a) "));
+        assert_eq!(state.game.recall_message, "'^H' is not a valid item");
+        assert!(!is_item_selection(Pending::Options(0)));
     }
 
     #[test]
@@ -4992,36 +5164,288 @@ mod tests {
     }
 
     #[test]
-    fn get_item_prompt_hides_the_inventory_until_star_and_filters_the_list() {
-        let mut state = state(115);
-        state.game.player.inventory.clear();
-        state
-            .game
-            .player
-            .inventory
-            .push(mrzavec::item::Item::basic(50_000, ItemKind::Potion, 0));
-        state
-            .game
-            .player
-            .inventory
-            .push(mrzavec::item::Item::basic(50_001, ItemKind::Stick, 0));
+    fn every_item_action_menu_is_immediate_and_correctly_filtered() {
+        let mut base = state(115);
+        base.game.player.inventory = vec![
+            pack_item(50_000, ItemKind::Potion, 0, 'a'),
+            pack_item(50_001, ItemKind::Scroll, 0, 'b'),
+            pack_item(50_002, ItemKind::Food, 0, 'c'),
+            pack_item(50_003, ItemKind::Weapon, 0, 'd'),
+            pack_item(50_004, ItemKind::Armor, 0, 'e'),
+            pack_item(50_005, ItemKind::Ring, 0, 'f'),
+            pack_item(50_006, ItemKind::Stick, 0, 'g'),
+            pack_item(50_007, ItemKind::Amulet, 0, 'h'),
+        ];
+        let cases = [
+            (Pending::Quaff, "a)", vec!["b)", "g)"]),
+            (Pending::Read, "b)", vec!["a)", "g)"]),
+            (Pending::Eat, "c)", vec!["a)", "g)"]),
+            (Pending::Wield, "a)", vec!["e)"]),
+            (Pending::Wear, "e)", vec!["d)", "f)"]),
+            (Pending::PutRing, "f)", vec!["e)", "g)"]),
+            (Pending::ThrowSelect, "a)", vec![]),
+            (Pending::ZapSelect, "g)", vec!["a)", "d)"]),
+            (Pending::WizardCharge, "g)", vec!["a)", "d)"]),
+        ];
 
-        let prompt = select_prompt(&mut state, Pending::Quaff).unwrap();
-        assert_eq!(prompt, "Which object do you want to quaff? (* for list): ");
-        assert!(!prompt.contains("Inventory"));
+        for (pending, expected, excluded) in cases {
+            let mut state = state(1151);
+            state.game = base.game.clone();
+            let menu = select_item_menu(&mut state, pending).unwrap();
+            assert!(menu.contains(expected), "{pending:?}: {menu}");
+            for letter in excluded {
+                assert!(!menu.contains(letter), "{pending:?}: {menu}");
+            }
+            assert_eq!(state.pending, Some(pending));
+            assert!(!menu.contains("* for list"));
+            assert!(!menu.contains("--More--"));
+        }
 
-        show_item_inventory(&mut state, Pending::Quaff);
-        let modal = state.modal.as_deref().unwrap();
-        assert!(state.item_inventory_open);
-        assert!(modal.contains("potion"));
-        assert!(!modal.contains("staff"));
+        let mut drop_state = state(1152);
+        drop_state.game = base.game.clone();
+        let drop_menu = select_item_menu(&mut drop_state, Pending::Drop).unwrap();
+        assert_eq!(drop_menu.lines().count(), 8);
 
-        restore_item_prompt(&mut state, Pending::Quaff);
-        state.game.options.terse = true;
+        let mut wield_state = state(11521);
+        wield_state.game = base.game.clone();
+        let wield_menu = select_item_menu(&mut wield_state, Pending::Wield).unwrap();
+        assert_eq!(wield_menu.lines().count(), 7);
+        assert!(!wield_menu.contains("e)"));
+
+        let mut throw_state = state(11522);
+        throw_state.game = base.game.clone();
+        let throw_menu = select_item_menu(&mut throw_state, Pending::ThrowSelect).unwrap();
+        assert_eq!(throw_menu.lines().count(), 8);
+
+        let mut call_state = state(1153);
+        call_state.game = base.game.clone();
+        let call_menu = select_item_menu(&mut call_state, Pending::CallSelect).unwrap();
+        assert!(call_menu.contains("a)"));
+        assert!(call_menu.contains("g)"));
+        assert!(!call_menu.contains("c)"));
+        assert!(!call_menu.contains("h)"));
+
+        let mut identify_state = state(1154);
+        identify_state.game = base.game;
+        identify_state.game.pending_identification = Some(mrzavec::game::IdentifyKind::Potion);
+        let identify_menu = select_item_menu(&mut identify_state, Pending::Identify).unwrap();
+        assert!(identify_menu.contains("a)"));
+        assert_eq!(identify_menu.lines().count(), 1);
+    }
+
+    #[test]
+    fn single_item_menu_stays_open_and_inappropriate_nonempty_pack_is_free() {
+        let mut single = state(1155);
+        single.game.player.inventory = vec![pack_item(51_000, ItemKind::Potion, 0, 'm')];
+        let menu = select_action_menu(&mut single, Pending::Quaff, true).unwrap();
+        assert_eq!(menu.lines().count(), 1);
+        assert!(menu.starts_with("m) "));
+        assert_eq!(single.pending, Some(Pending::Quaff));
+
+        let mut inappropriate = state(1156);
+        inappropriate.game.player.inventory = vec![pack_item(51_001, ItemKind::Stick, 0, 's')];
+        let turn = inappropriate.game.turn;
+        assert!(select_action_menu(&mut inappropriate, Pending::Quaff, true).is_none());
+        assert_eq!(inappropriate.game.turn, turn);
         assert_eq!(
-            select_prompt(&mut state, Pending::Quaff).as_deref(),
-            Some("Quaff what? (* for list): ")
+            inappropriate.game.messages.last().map(String::as_str),
+            Some("you don't have anything appropriate")
         );
+        assert!(inappropriate.pending.is_none());
+    }
+
+    #[test]
+    fn normal_item_commands_open_their_filtered_menus_on_the_first_keypress() {
+        let cases: &[(&[KeyCode], Pending, &str)] = &[
+            (&[KeyCode::KeyQ], Pending::Quaff, "a)"),
+            (&[KeyCode::KeyR], Pending::Read, "b)"),
+            (&[KeyCode::KeyE], Pending::Eat, "c)"),
+            (&[KeyCode::KeyW], Pending::Wield, "d)"),
+            (&[KeyCode::ShiftLeft, KeyCode::KeyW], Pending::Wear, "e)"),
+            (&[KeyCode::ShiftLeft, KeyCode::KeyP], Pending::PutRing, "f)"),
+            (&[KeyCode::KeyD], Pending::Drop, "a)"),
+            (&[KeyCode::KeyT], Pending::ThrowSelect, "d)"),
+            (&[KeyCode::KeyZ], Pending::ZapSelect, "g)"),
+            (&[KeyCode::KeyC], Pending::CallSelect, "a)"),
+        ];
+
+        for (keys, expected_pending, expected_item) in cases {
+            let mut initial_state = state(1157);
+            initial_state.game.player.inventory = vec![
+                pack_item(55_000, ItemKind::Potion, 0, 'a'),
+                pack_item(55_001, ItemKind::Scroll, 0, 'b'),
+                pack_item(55_002, ItemKind::Food, 0, 'c'),
+                pack_item(55_003, ItemKind::Weapon, 0, 'd'),
+                pack_item(55_004, ItemKind::Armor, 0, 'e'),
+                pack_item(55_005, ItemKind::Ring, 0, 'f'),
+                pack_item(55_006, ItemKind::Stick, 0, 'g'),
+            ];
+            let mut app = keyboard_app(initial_state);
+            press_keys(&mut app, keys);
+
+            app.update();
+
+            let state = app.world().resource::<State>();
+            assert_eq!(state.pending, Some(*expected_pending), "{keys:?}");
+            let menu = state.modal.as_deref().unwrap();
+            assert!(menu.contains(expected_item), "{keys:?}: {menu}");
+            assert!(!menu.contains("* for list"), "{keys:?}: {menu}");
+        }
+    }
+
+    #[test]
+    fn item_menu_letters_select_and_escape_or_invalid_letters_do_not_act() {
+        let id = 56_000;
+        let mut initial_state = state(1158);
+        let mut potion = pack_item(id, ItemKind::Potion, 0, 'a');
+        potion.count = 2;
+        initial_state.game.player.inventory = vec![potion];
+        let starting_turn = initial_state.game.turn;
+        let mut app = keyboard_app(initial_state);
+        press_keys(&mut app, &[KeyCode::KeyQ]);
+        app.update();
+
+        press_keys(&mut app, &[KeyCode::KeyZ]);
+        app.update();
+        let state = app.world().resource::<State>();
+        assert_eq!(state.pending, Some(Pending::Quaff));
+        assert!(
+            state
+                .modal
+                .as_deref()
+                .unwrap()
+                .contains("'z' is not a valid item")
+        );
+        assert!(state.modal.as_deref().unwrap().contains("a) "));
+        assert_eq!(state.game.turn, starting_turn);
+
+        press_keys(&mut app, &[KeyCode::Escape]);
+        app.update();
+        let state = app.world().resource::<State>();
+        assert!(state.pending.is_none());
+        assert!(state.modal.is_none());
+        assert_eq!(state.game.player.inventory[0].count, 2);
+        assert_eq!(state.game.turn, starting_turn);
+
+        press_keys(&mut app, &[KeyCode::KeyQ]);
+        app.update();
+        press_keys(&mut app, &[KeyCode::KeyA]);
+        app.update();
+        let state = app.world().resource::<State>();
+        assert_eq!(state.game.player.inventory[0].count, 1);
+        assert_eq!(state.game.last_item, Some(id));
+        assert_eq!(state.game.turn, starting_turn + 1);
+    }
+
+    #[test]
+    fn throw_and_zap_select_items_before_requesting_and_using_a_direction() {
+        let weapon_id = 57_000;
+        let mut throw_state = state(1159);
+        throw_state.game.monsters.clear();
+        throw_state.game.player.inventory = vec![pack_item(weapon_id, ItemKind::Weapon, 0, 'a')];
+        let throw_turn = throw_state.game.turn;
+        let mut throw_app = keyboard_app(throw_state);
+        press_keys(&mut throw_app, &[KeyCode::KeyT]);
+        throw_app.update();
+        assert_eq!(
+            throw_app.world().resource::<State>().pending,
+            Some(Pending::ThrowSelect)
+        );
+        press_keys(&mut throw_app, &[KeyCode::KeyA]);
+        throw_app.update();
+        let throw_direction = throw_app.world().resource::<State>();
+        assert_eq!(
+            throw_direction.pending,
+            Some(Pending::ThrowDirection(weapon_id))
+        );
+        assert_eq!(throw_direction.modal.as_deref(), Some("Which direction? "));
+        press_keys(&mut throw_app, &[KeyCode::KeyH]);
+        throw_app.update();
+        let throw_result = throw_app.world().resource::<State>();
+        assert!(throw_result.pending.is_none());
+        assert_eq!(
+            throw_result.game.last_direction,
+            Some(mrzavec::command::Direction::Left)
+        );
+        assert_eq!(throw_result.game.turn, throw_turn + 1);
+
+        let stick_id = 57_001;
+        let mut zap_state = state(1160);
+        let mut stick = pack_item(stick_id, ItemKind::Stick, 0, 'b');
+        stick.charges = 2;
+        zap_state.game.player.inventory = vec![stick];
+        let zap_turn = zap_state.game.turn;
+        let mut zap_app = keyboard_app(zap_state);
+        press_keys(&mut zap_app, &[KeyCode::KeyZ]);
+        zap_app.update();
+        assert_eq!(
+            zap_app.world().resource::<State>().pending,
+            Some(Pending::ZapSelect)
+        );
+        press_keys(&mut zap_app, &[KeyCode::KeyB]);
+        zap_app.update();
+        assert_eq!(
+            zap_app.world().resource::<State>().pending,
+            Some(Pending::ZapDirection(stick_id))
+        );
+        press_keys(&mut zap_app, &[KeyCode::KeyH]);
+        zap_app.update();
+        let state = zap_app.world().resource::<State>();
+        assert!(state.pending.is_none());
+        assert_eq!(state.game.turn, zap_turn + 1);
+        assert_eq!(state.game.player.inventory[0].charges, 1);
+    }
+
+    #[test]
+    fn ring_call_identify_and_wizard_charge_menus_enter_their_next_states() {
+        let ring_id = 58_000;
+        let mut ring_state = state(1161);
+        ring_state.game.player.inventory = vec![pack_item(ring_id, ItemKind::Ring, 0, 'a')];
+        ring_state.game.player.rings = [None, None];
+        ring_state.modal = select_item_menu(&mut ring_state, Pending::PutRing);
+        let mut ring_app = keyboard_app(ring_state);
+        press_keys(&mut ring_app, &[KeyCode::KeyA]);
+        ring_app.update();
+        let ring_result = ring_app.world().resource::<State>();
+        assert_eq!(ring_result.pending, Some(Pending::PutRingHand(ring_id)));
+        assert!(ring_result.modal.as_deref().unwrap().contains("hand"));
+
+        let call_id = 58_001;
+        let mut call_state = state(1162);
+        call_state.game.player.inventory = vec![pack_item(call_id, ItemKind::Potion, 0, 'a')];
+        call_state.modal = select_item_menu(&mut call_state, Pending::CallSelect);
+        let mut call_app = keyboard_app(call_state);
+        press_keys(&mut call_app, &[KeyCode::KeyA]);
+        call_app.update();
+        let call_result = call_app.world().resource::<State>();
+        assert_eq!(call_result.pending, Some(Pending::CallText(call_id)));
+        assert!(call_result.modal.as_deref().unwrap().contains("call"));
+
+        let identify_id = 58_002;
+        let mut identify_state = state(1163);
+        identify_state.game.player.inventory =
+            vec![pack_item(identify_id, ItemKind::Potion, 0, 'a')];
+        identify_state.game.pending_identification = Some(mrzavec::game::IdentifyKind::Potion);
+        assert!(show_pending_identification(&mut identify_state));
+        let mut identify_app = keyboard_app(identify_state);
+        press_keys(&mut identify_app, &[KeyCode::KeyA]);
+        identify_app.update();
+        let identify_result = identify_app.world().resource::<State>();
+        assert!(identify_result.pending.is_none());
+        assert!(identify_result.game.player.inventory[0].known);
+        assert!(identify_result.game.pending_identification.is_none());
+
+        let stick_id = 58_003;
+        let mut charge_state = state(1164);
+        charge_state.game.wizard = true;
+        charge_state.game.player.inventory = vec![pack_item(stick_id, ItemKind::Stick, 0, 'a')];
+        charge_state.modal = wizard_charge_prompt(&mut charge_state);
+        let mut charge_app = keyboard_app(charge_state);
+        press_keys(&mut charge_app, &[KeyCode::KeyA]);
+        charge_app.update();
+        let state = charge_app.world().resource::<State>();
+        assert!(state.pending.is_none());
+        assert_eq!(state.game.player.inventory[0].charges, 10_000);
     }
 
     #[test]
@@ -5052,29 +5476,105 @@ mod tests {
     }
 
     #[test]
-    fn counted_throw_starts_with_the_reference_direction_prompt() {
+    fn counted_throw_starts_with_the_item_menu() {
         let mut state = state(32);
+        state.game.player.inventory = vec![pack_item(54_000, ItemKind::Weapon, 0, 'a')];
         state.counted_command = Some((Command::Throw, 1));
 
         continue_counted_command(&mut state);
 
-        assert_eq!(state.pending, Some(Pending::ThrowDirection));
-        assert_eq!(state.modal.as_deref(), Some("Which direction? "));
-        assert_eq!(state.game.recall_message, "which direction? ");
+        assert_eq!(state.pending, Some(Pending::ThrowSelect));
+        assert!(state.modal.as_deref().unwrap().starts_with("a) "));
+        assert_eq!(state.game.recall_message, "");
+    }
+
+    #[test]
+    fn counted_and_repeated_throws_preserve_saved_item_and_direction_state() {
+        let id = 59_000;
+        let mut weapon = pack_item(id, ItemKind::Weapon, 0, 'a');
+        weapon.count = 2;
+        let mut counted = state(321);
+        counted.game.monsters.clear();
+        counted.game.player.inventory = vec![weapon.clone()];
+        counted.counted_command = Some((Command::Throw, 2));
+        continue_counted_command(&mut counted);
+        let mut app = keyboard_app(counted);
+        press_keys(&mut app, &[KeyCode::KeyA]);
+        app.update();
+        press_keys(&mut app, &[KeyCode::KeyH]);
+        app.update();
+        let counted_result = app.world().resource::<State>();
+        assert_eq!(counted_result.pending, Some(Pending::ThrowSelect));
+        assert!(counted_result.counted_command.is_none());
+        assert_eq!(counted_result.game.player.inventory[0].count, 1);
+        assert_eq!(counted_result.game.last_item, None);
+        assert_eq!(counted_result.game.previous_item, Some(id));
+        assert_eq!(counted_result.game.last_direction, None);
+        assert_eq!(
+            counted_result.game.previous_direction,
+            Some(mrzavec::command::Direction::Left)
+        );
+
+        let mut repeated = state(322);
+        repeated.game.monsters.clear();
+        repeated.game.player.inventory = vec![weapon];
+        repeated.game.last_item = Some(id);
+        repeated.game.last_direction = Some(mrzavec::command::Direction::Left);
+        let turn = repeated.game.turn;
+        assert!(repeat_selected_command(&mut repeated, Command::Throw));
+        assert_eq!(repeated.game.player.inventory[0].count, 1);
+        assert_eq!(repeated.game.turn, turn + 1);
+        assert!(repeated.pending.is_none());
+    }
+
+    #[test]
+    fn item_menu_space_only_pages_when_more_content_exists_and_letters_stay_active() {
+        let id = 59_001;
+        let mut potion = pack_item(id, ItemKind::Potion, 0, 'a');
+        potion.count = 2;
+        let mut initial_state = state(323);
+        initial_state.game.player.inventory = vec![potion];
+        initial_state.pending = Some(Pending::Quaff);
+        initial_state.modal = Some(
+            (0..32)
+                .map(|line| format!("line {line}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        let mut app = keyboard_app(initial_state);
+        press_keys(&mut app, &[KeyCode::Space]);
+        app.update();
+        assert_eq!(
+            app.world().resource::<State>().modal_offset,
+            MODAL_PAGE_ROWS
+        );
+
+        press_keys(&mut app, &[KeyCode::Space]);
+        app.update();
+        let state = app.world().resource::<State>();
+        assert_eq!(state.modal_offset, MODAL_PAGE_ROWS);
+        assert_eq!(state.pending, Some(Pending::Quaff));
+
+        press_keys(&mut app, &[KeyCode::KeyA]);
+        app.update();
+        let state = app.world().resource::<State>();
+        assert_eq!(state.game.player.inventory[0].count, 1);
+        assert_eq!(state.game.last_item, Some(id));
+        assert!(state.pending.is_none());
     }
 
     #[test]
     fn direction_prompts_preserve_the_reference_forms_with_the_terse_typo_fixed() {
         let mut state = state(2070);
         assert_eq!(
-            direction_prompt(&mut state, Pending::ZapDirection).as_deref(),
+            direction_prompt(&mut state, Pending::ZapDirection(1)).as_deref(),
             Some("Which direction? ")
         );
         assert_eq!(state.game.recall_message, "which direction? ");
 
         state.game.options.terse = true;
         assert_eq!(
-            direction_prompt(&mut state, Pending::ZapDirection).as_deref(),
+            direction_prompt(&mut state, Pending::ZapDirection(1)).as_deref(),
             Some("Direction: ")
         );
         assert_eq!(state.game.recall_message, "direction: ");
@@ -5113,8 +5613,8 @@ mod tests {
             Pending::Drop,
             Pending::ThrowSelect,
             Pending::ZapSelect,
-            Pending::ThrowDirection,
-            Pending::ZapDirection,
+            Pending::ThrowDirection(1),
+            Pending::ZapDirection(1),
             Pending::FightDirection(false),
             Pending::MoveDirection,
             Pending::TrapDirection,

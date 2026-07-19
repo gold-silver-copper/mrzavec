@@ -37,7 +37,10 @@ The three historical inventory display strategies are explicit presentation
 states. Clear-screen is the default on the Bevy display (which always supports
 clearing to end of line); overwrite and slow modes retain their different
 pagination, prompts, RNG-shuffled discovery output, and message-recall side
-effects.
+effects. Action-specific item selection intentionally replaces C `get_item`'s
+letter-first, `*`-to-list prompt with an immediate filtered menu. Its displayed
+pack letters remain directly actionable; throw and zap select the item before
+requesting a direction.
 
 Signed integers preserve master-mode negative gold. A separate `in_pack` flag
 safely represents the C master power command's out-of-pack equipment pointer
@@ -98,10 +101,10 @@ unavailable. Native shell behavior is unchanged.
 
 The `flush` option is retained in saves and the option editor, but its
 terminal-typeahead behavior is naturally inert because Bevy receives discrete
-key presses. Plain `hjklyubn` movement supplies application-level key repeat
-after 300 ms and then every 100 ms, consistently across native and browser
-builds; prompts, modifiers, and blocked input reset it. A complete run command
-is likewise simulated between rendered frames, so `jump` cannot change
+key presses. Plain `hjklyubn` movement and `.` waiting supply application-level
+key repeat after 300 ms and then every 100 ms, consistently across native and
+browser builds; prompts, modifiers, and blocked input reset it. A complete run
+command is likewise simulated between rendered frames, so `jump` cannot change
 intermediate window refreshes; it still has the
 reference gameplay-RNG effect of suppressing hallucination `visuals` redraws
 while a run continues.
