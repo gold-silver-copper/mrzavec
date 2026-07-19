@@ -1,6 +1,7 @@
 use bevy::{prelude::*, text::LineHeight, window::WindowResolution};
 use mrzavec::{
-    DISPLAY_HEIGHT, DISPLAY_WIDTH, Game, KEYBINDING_FIRST_ROW, KEYBINDING_SECOND_ROW, STATUS_ROW,
+    DISPLAY_HEIGHT, DISPLAY_WIDTH, DUNGEON_FIRST_ROW, EVENT_ROWS, Game, KEYBINDING_FIRST_ROW,
+    KEYBINDING_SECOND_ROW, STATUS_ROW,
     command::{Command, WizardCommand, parse},
     item::{
         ARMOR_NAMES, ARMOR_WEIGHTS, ItemKind, POTION_NAMES, POTION_WEIGHTS, RING_NAMES,
@@ -10,9 +11,9 @@ use mrzavec::{
     map::Pos,
     save, score,
 };
+use std::time::Duration;
 #[cfg(test)]
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{collections::VecDeque, time::Duration};
 #[cfg(not(target_arch = "wasm32"))]
 use std::{
     ffi::OsString,
@@ -108,10 +109,7 @@ struct State {
     preserve_message_case: bool,
     slow_discovery_lines: Vec<String>,
     message_serial_seen: u64,
-    message_queue: VecDeque<String>,
     visible_message: Option<String>,
-    message_wait: bool,
-    deferred_modal: Option<(String, bool, usize)>,
     pending: Option<Pending>,
     score_recorded: bool,
     input_buffer: String,
@@ -561,10 +559,7 @@ fn game_app(game: Game, wizard_prompt: bool) -> App {
             preserve_message_case: false,
             slow_discovery_lines: Vec::new(),
             message_serial_seen,
-            message_queue: VecDeque::new(),
             visible_message: None,
-            message_wait: false,
-            deferred_modal: None,
             pending: wizard_prompt.then_some(Pending::StartupPassword),
             score_recorded: false,
             input_buffer: String::new(),
@@ -878,7 +873,6 @@ fn keyboard(
         !shifted
             && !controlled
             && !alt_or_super
-            && !state.message_wait
             && state.pending.is_none()
             && state.modal.is_none()
             && !state.item_inventory_open
@@ -887,15 +881,7 @@ fn keyboard(
     );
     if keys.get_just_pressed().next().is_some() || repeated_movement.is_some() {
         state.preserve_message_case = false;
-        if !state.message_wait {
-            state.visible_message = None;
-        }
-    }
-    if state.message_wait {
-        if keys.just_pressed(KeyCode::Space) {
-            advance_message(&mut state);
-        }
-        return;
+        state.visible_message = None;
     }
     if state.pending.is_none()
         && state.modal.is_none()
@@ -2528,7 +2514,7 @@ fn ground_inventory_modal(state: &mut State) -> Option<String> {
     out.push_str(" --More--");
     state.modal_overlay = state.game.options.inventory_style
         == mrzavec::game::InventoryStyle::Overwrite
-        && out.lines().count() <= 23;
+        && out.lines().count() <= STATUS_ROW;
     Some(out)
 }
 fn wizard_list_prompt(game: &Game) -> String {
@@ -2895,6 +2881,16 @@ fn rings_text(game: &Game) -> String {
     )
 }
 
+fn has_inline_event_prompt(state: &State) -> bool {
+    state.modal.as_deref().is_some_and(|modal| {
+        state.visible_message.is_some()
+            && state.pending.is_some()
+            && !state.modal_overlay
+            && !modal.contains("--More--")
+            && modal.lines().count() == 1
+    })
+}
+
 fn render(
     state: Res<State>,
     cells: Query<(&Cell, &Children)>,
@@ -2904,7 +2900,8 @@ fn render(
         return;
     }
     let buffer = display(&state);
-    let footer_visible = state.modal.is_none() || state.modal_overlay;
+    let footer_visible =
+        state.modal.is_none() || state.modal_overlay || has_inline_event_prompt(&state);
     for (cell, children) in cells {
         for child in children.iter() {
             if let Ok((mut text, mut color)) = glyphs.get_mut(child) {
@@ -2923,8 +2920,10 @@ fn render(
 }
 fn display(state: &State) -> Vec<char> {
     let mut out = vec![' '; DISPLAY_WIDTH * DISPLAY_HEIGHT];
+    let inline_prompt = has_inline_event_prompt(state);
     if let Some(modal) = &state.modal
         && !state.modal_overlay
+        && !inline_prompt
     {
         let all_lines: Vec<&str> = modal.lines().collect();
         let explicit_more = all_lines.last() == Some(&" --More--");
@@ -2950,25 +2949,28 @@ fn display(state: &State) -> Vec<char> {
         }
         return out;
     }
-    if let Some(msg) = state
-        .visible_message
-        .as_ref()
-        .or_else(|| state.game.messages.last())
-    {
-        let displayed = if state.preserve_message_case {
-            msg.clone()
-        } else {
-            message_display_text(msg)
-        };
-        write_terminal_text(&mut out, 0, 0, &displayed, DISPLAY_WIDTH);
-        if state.message_wait {
-            let x = terminal_text_width(&displayed, 0).min(DISPLAY_WIDTH);
-            write_terminal_text(&mut out, 0, x, " --More--", DISPLAY_WIDTH);
+    let mut event_text = state.visible_message.clone().or_else(|| {
+        state
+            .game
+            .messages
+            .last()
+            .and_then(|message| event_sentence(message, state.preserve_message_case))
+    });
+    if inline_prompt && let Some(prompt) = &state.modal {
+        let text = event_text.get_or_insert_with(String::new);
+        if !text.is_empty() {
+            text.push(' ');
         }
+        text.push_str(prompt.trim());
     }
-    for y in 1..STATUS_ROW {
+    if let Some(text) = event_text {
+        write_event_text(&mut out, &text);
+    }
+    for screen_y in DUNGEON_FIRST_ROW..STATUS_ROW {
+        let dungeon_y = screen_y - DUNGEON_FIRST_ROW + 1;
         for x in 0..DISPLAY_WIDTH {
-            out[y * DISPLAY_WIDTH + x] = state.game.glyph_at(Pos::new(x as i32, y as i32))
+            out[screen_y * DISPLAY_WIDTH + x] =
+                state.game.glyph_at(Pos::new(x as i32, dungeon_y as i32))
         }
     }
     let status = status_text(&state.game);
@@ -3030,13 +3032,63 @@ fn write_terminal_text(out: &mut [char], row: usize, start_x: usize, text: &str,
     }
 }
 
-fn terminal_text_width(text: &str, start_x: usize) -> usize {
-    text.chars().fold(
-        start_x,
-        |x, ch| {
-            if ch == '\t' { ((x / 8) + 1) * 8 } else { x + 1 }
-        },
-    )
+fn event_sentence(message: &str, preserve_case: bool) -> Option<String> {
+    let message = message.trim();
+    if message.is_empty() {
+        return None;
+    }
+    let mut sentence = if preserve_case {
+        message.to_owned()
+    } else {
+        message_display_text(message)
+    };
+    if !sentence
+        .chars()
+        .last()
+        .is_some_and(|ch| matches!(ch, '.' | '!' | '?'))
+    {
+        sentence.push('.');
+    }
+    Some(sentence)
+}
+
+fn append_event_message(stream: &mut Option<String>, message: &str, preserve_case: bool) {
+    let Some(sentence) = event_sentence(message, preserve_case) else {
+        *stream = None;
+        return;
+    };
+    let stream = stream.get_or_insert_with(String::new);
+    if !stream.is_empty() {
+        stream.push(' ');
+    }
+    stream.push_str(&sentence);
+}
+
+fn wrap_terminal_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = vec![String::new()];
+    let mut x = 0;
+    for ch in text.chars() {
+        if ch == '\n' {
+            lines.push(String::new());
+            x = 0;
+            continue;
+        }
+        if x >= width {
+            lines.push(String::new());
+            x = 0;
+        }
+        lines.last_mut().unwrap().push(ch);
+        x = if ch == '\t' { ((x / 8) + 1) * 8 } else { x + 1 };
+    }
+    lines
+}
+
+fn write_event_text(out: &mut [char], text: &str) {
+    let lines = wrap_terminal_text(text, DISPLAY_WIDTH);
+    let start = lines.len().saturating_sub(EVENT_ROWS);
+    for (row, line) in lines[start..].iter().enumerate() {
+        write_terminal_text(out, row, 0, line, DISPLAY_WIDTH);
+    }
 }
 
 fn prepare_messages(mut state: ResMut<State>) {
@@ -3046,10 +3098,7 @@ fn prepare_messages(mut state: ResMut<State>) {
 fn collect_messages(state: &mut State) {
     if state.game.end != mrzavec::game::EndState::Playing && state.modal.is_some() {
         state.message_serial_seen = state.game.message_serial;
-        state.message_queue.clear();
         state.visible_message = None;
-        state.message_wait = false;
-        state.deferred_modal = None;
         return;
     }
     if state.game.message_serial < state.message_serial_seen {
@@ -3063,40 +3112,11 @@ fn collect_messages(state: &mut State) {
         return;
     }
     let start = state.game.messages.len().saturating_sub(added);
-    state
-        .message_queue
-        .extend(state.game.messages[start..].iter().cloned());
+    let messages = state.game.messages[start..].to_vec();
     state.message_serial_seen = state.game.message_serial;
-    if !state.message_wait {
-        begin_message_sequence(state);
-    }
-}
-
-fn begin_message_sequence(state: &mut State) {
-    let Some(message) = state.message_queue.pop_front() else {
-        return;
-    };
-    state.visible_message = Some(message);
-    if let Some(modal) = state.modal.take() {
-        state.deferred_modal = Some((modal, state.modal_overlay, state.modal_offset));
-        state.modal_overlay = false;
-        state.modal_offset = 0;
-    }
-    state.message_wait = !state.message_queue.is_empty() || state.deferred_modal.is_some();
-}
-
-fn advance_message(state: &mut State) {
-    if let Some(message) = state.message_queue.pop_front() {
-        state.visible_message = Some(message);
-        state.message_wait = !state.message_queue.is_empty() || state.deferred_modal.is_some();
-        return;
-    }
-    state.message_wait = false;
-    state.visible_message = None;
-    if let Some((modal, overlay, offset)) = state.deferred_modal.take() {
-        state.modal = Some(modal);
-        state.modal_overlay = overlay;
-        state.modal_offset = offset;
+    let preserve_message_case = state.preserve_message_case;
+    for message in messages {
+        append_event_message(&mut state.visible_message, &message, preserve_message_case);
     }
 }
 
@@ -3148,7 +3168,7 @@ fn inventory_modal(state: &mut State) -> Option<String> {
         }
         mrzavec::game::InventoryStyle::Overwrite => {
             let text = inventory_text(&state.game);
-            state.modal_overlay = text.lines().count() <= 23;
+            state.modal_overlay = text.lines().count() <= STATUS_ROW;
             state.pending = Some(Pending::More);
             Some(text)
         }
@@ -3317,7 +3337,7 @@ fn start_discoveries(state: &mut State, kind: char) {
             text.push_str("\n --More--");
             state.modal_overlay = state.game.options.inventory_style
                 == mrzavec::game::InventoryStyle::Overwrite
-                && lines.len() <= 23;
+                && lines.len() <= STATUS_ROW;
             state.modal_offset = 0;
             state.pending = Some(Pending::DiscoveryMore);
             state.modal = Some(text);
@@ -3633,10 +3653,7 @@ mod tests {
             preserve_message_case: false,
             slow_discovery_lines: Vec::new(),
             message_serial_seen,
-            message_queue: VecDeque::new(),
             visible_message: None,
-            message_wait: false,
-            deferred_modal: None,
             pending: None,
             score_recorded: false,
             input_buffer: String::new(),
@@ -3913,10 +3930,10 @@ mod tests {
     }
 
     #[test]
-    fn clear_screen_modal_pages_use_all_twenty_five_content_rows() {
+    fn clear_screen_modal_pages_use_all_twenty_seven_content_rows() {
         let mut state = state(103);
         state.modal = Some(
-            (0..30)
+            (0..32)
                 .map(|line| format!("line {line}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
@@ -3928,13 +3945,13 @@ mod tests {
         state.modal_offset = MODAL_PAGE_ROWS;
         let second = display(&state);
         let second_text = display_row(&second, 0);
-        assert!(second_text.starts_with("line 25"));
+        assert!(second_text.starts_with("line 27"));
     }
 
     #[test]
-    fn normal_display_preserves_game_rows_and_adds_keybinding_footer() {
+    fn normal_display_uses_three_event_rows_then_map_status_and_footer() {
         let mut state = state(104);
-        state.visible_message = Some("hello".into());
+        state.visible_message = Some("Hello.".into());
         let player = state.game.player.pos;
         let expected_player_glyph = state.game.glyph_at(player);
 
@@ -3942,8 +3959,11 @@ mod tests {
 
         assert_eq!(buffer.len(), DISPLAY_WIDTH * DISPLAY_HEIGHT);
         assert!(display_row(&buffer, 0).starts_with("Hello"));
+        assert!(display_row(&buffer, 1).trim().is_empty());
+        assert!(display_row(&buffer, 2).trim().is_empty());
+        let player_screen_row = DUNGEON_FIRST_ROW + player.y as usize - 1;
         assert_eq!(
-            buffer[player.y as usize * DISPLAY_WIDTH + player.x as usize],
+            buffer[player_screen_row * DISPLAY_WIDTH + player.x as usize],
             expected_player_glyph
         );
         let expected_status = status_text(&state.game);
@@ -4482,18 +4502,16 @@ mod tests {
         collect_messages(&mut verbose);
         assert_eq!(
             verbose.visible_message.as_deref(),
-            Some("please type L or R")
+            Some("Please type L or R.")
         );
-        assert!(verbose.message_wait);
-        assert!(verbose.modal.is_none());
+        assert_eq!(verbose.modal.as_deref(), Some("Left hand or right hand? "));
 
         let mut terse = state(117);
         terse.game.options.terse = true;
         retry_ring_hand(&mut terse);
         assert_eq!(terse.modal.as_deref(), Some("Left or right ring? "));
         collect_messages(&mut terse);
-        assert_eq!(terse.visible_message.as_deref(), Some("L or R"));
-        assert!(terse.message_wait);
+        assert_eq!(terse.visible_message.as_deref(), Some("L or R."));
     }
 
     #[test]
@@ -4740,10 +4758,12 @@ mod tests {
         collect_messages(&mut state);
         assert_eq!(
             state.visible_message.as_deref(),
-            Some("'^H' is not a valid item")
+            Some("'^H' is not a valid item.")
         );
-        assert!(state.message_wait);
-        assert!(state.modal.is_none());
+        assert_eq!(
+            state.modal.as_deref(),
+            Some("Which object do you want to quaff? (* for list): ")
+        );
         assert_eq!(
             state.game.recall_message,
             "which object do you want to quaff? (* for list): "
@@ -4787,33 +4807,120 @@ mod tests {
     }
 
     #[test]
-    fn consecutive_messages_and_following_prompts_wait_in_reference_order() {
+    fn event_sentences_normalize_capitalization_punctuation_and_spacing() {
+        let mut stream = None;
+        append_event_message(&mut stream, "  you hit the orc  ", false);
+        append_event_message(&mut stream, "the orc misses!", false);
+        append_event_message(&mut stream, "already punctuated.", false);
+
+        assert_eq!(
+            stream.as_deref(),
+            Some("You hit the orc. The orc misses! Already punctuated.")
+        );
+    }
+
+    #[test]
+    fn consecutive_messages_render_together_without_more_or_space_waiting() {
         let mut sequence = state(1161);
         sequence.game.message("first message");
-        sequence.game.message("second message");
+        sequence.game.message("second message!");
         collect_messages(&mut sequence);
 
-        assert_eq!(sequence.visible_message.as_deref(), Some("first message"));
-        assert!(sequence.message_wait);
-        let first_row: String = display(&sequence).into_iter().take(80).collect();
-        assert!(first_row.starts_with("First message --More--"));
+        assert_eq!(
+            sequence.visible_message.as_deref(),
+            Some("First message. Second message!")
+        );
+        let top = (0..EVENT_ROWS)
+            .map(|row| display_row(&display(&sequence), row))
+            .collect::<String>();
+        assert!(top.starts_with("First message. Second message!"));
+        assert!(!top.contains("--More--"));
+    }
 
-        advance_message(&mut sequence);
-        assert_eq!(sequence.visible_message.as_deref(), Some("second message"));
-        assert!(!sequence.message_wait);
+    #[test]
+    fn combined_events_do_not_block_the_next_gameplay_command() {
+        let mut initial_state = state(1162);
+        initial_state.game.monsters.clear();
+        initial_state.game.message("first event");
+        initial_state.game.message("second event");
+        collect_messages(&mut initial_state);
+        let starting_turn = initial_state.game.turn;
+        let mut app = App::new();
+        app.insert_resource(initial_state);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(MovementRepeat::default());
+        app.add_message::<AppExit>();
+        app.add_systems(Update, keyboard);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Period);
 
-        let mut prompted = state(1162);
-        prompted.pending = Some(Pending::Quaff);
-        prompted.modal = Some("Which object? ".into());
+        app.update();
+
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 1);
+    }
+
+    #[test]
+    fn three_line_event_area_wraps_and_retains_the_newest_content() {
+        let mut state = state(1162);
+        state.visible_message = Some(format!(
+            "{}{}{}{}!",
+            "A".repeat(DISPLAY_WIDTH),
+            "B".repeat(DISPLAY_WIDTH),
+            "C".repeat(DISPLAY_WIDTH),
+            "D".repeat(DISPLAY_WIDTH - 1),
+        ));
+
+        let buffer = display(&state);
+        assert_eq!(display_row(&buffer, 0), "B".repeat(DISPLAY_WIDTH));
+        assert_eq!(display_row(&buffer, 1), "C".repeat(DISPLAY_WIDTH));
+        assert_eq!(
+            display_row(&buffer, 2),
+            format!("{}!", "D".repeat(DISPLAY_WIDTH - 1))
+        );
+    }
+
+    #[test]
+    fn pending_prompt_stays_visible_after_combined_events() {
+        let mut prompted = state(1163);
+        prompted.pending = Some(Pending::Help);
+        prompted.modal = Some("Character you want help for (* for all): ".into());
         prompted.game.message("an effect happened");
+        prompted.game.message("you feel dizzy");
         collect_messages(&mut prompted);
-        assert!(prompted.modal.is_none());
-        assert!(prompted.deferred_modal.is_some());
-        assert!(prompted.message_wait);
 
-        advance_message(&mut prompted);
-        assert_eq!(prompted.modal.as_deref(), Some("Which object? "));
-        assert_eq!(prompted.pending, Some(Pending::Quaff));
+        assert_eq!(
+            prompted.modal.as_deref(),
+            Some("Character you want help for (* for all): ")
+        );
+        assert_eq!(prompted.pending, Some(Pending::Help));
+        let buffer = display(&prompted);
+        let top = (0..EVENT_ROWS)
+            .map(|row| display_row(&buffer, row))
+            .collect::<String>();
+        assert!(top.starts_with(
+            "An effect happened. You feel dizzy. Character you want help for (* for all):"
+        ));
+        assert!(!top.contains("--More--"));
+
+        let mut app = App::new();
+        app.insert_resource(prompted);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(MovementRepeat::default());
+        app.add_message::<AppExit>();
+        app.add_systems(Update, keyboard);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyQ);
+
+        app.update();
+
+        let prompted = app.world().resource::<State>();
+        assert!(prompted.pending.is_none());
+        assert!(prompted.modal.is_none());
+        assert!(prompted.game.messages.last().unwrap().contains("quaff"));
     }
 
     #[test]

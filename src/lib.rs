@@ -15,9 +15,12 @@ pub mod score;
 pub use game::Game;
 
 pub const DISPLAY_WIDTH: usize = 80;
-pub const DISPLAY_HEIGHT: usize = 26;
-pub const STATUS_ROW: usize = 23;
-pub const KEYBINDING_FIRST_ROW: usize = 24;
-pub const KEYBINDING_SECOND_ROW: usize = 25;
+pub const EVENT_ROWS: usize = 3;
+pub const DUNGEON_FIRST_ROW: usize = EVENT_ROWS;
+pub const DUNGEON_ROWS: usize = 22;
+pub const STATUS_ROW: usize = DUNGEON_FIRST_ROW + DUNGEON_ROWS;
+pub const KEYBINDING_FIRST_ROW: usize = STATUS_ROW + 1;
+pub const KEYBINDING_SECOND_ROW: usize = KEYBINDING_FIRST_ROW + 1;
+pub const DISPLAY_HEIGHT: usize = KEYBINDING_SECOND_ROW + 1;
 pub const AMULET_LEVEL: u32 = 26;
 pub const MAX_PACK: usize = 26;
