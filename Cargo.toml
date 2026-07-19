@@ -15,7 +15,7 @@ ctrlc = "3"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"
 wasm-bindgen = "0.2"
-web-sys = { version = "0.3", features = ["Document", "Element", "Storage", "Window"] }
+web-sys = { version = "0.3", features = ["Storage", "Window"] }
 
 [profile.dev]
 opt-level = 1

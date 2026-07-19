@@ -29,15 +29,6 @@ Open <http://localhost:8000/web/>. The files required for deployment are
 over HTTP; the server must send `.wasm` as `application/wasm`. Production
 servers should also compress the WASM response with Brotli or gzip.
 
-The repeatable browser smoke suite uses installed Chrome plus Playwright's
-Firefox and WebKit engines:
-
-```sh
-npm install
-npx playwright install firefox webkit
-npm run test:web
-```
-
 To embed Mrzavec in another page, create the canvas before initializing the
 module:
 
