@@ -908,6 +908,21 @@ fn keyboard(
         continue_counted_command(&mut state);
         return;
     }
+    if state.pending == Some(Pending::Help) {
+        if keys.just_pressed(KeyCode::Escape) {
+            state.pending = None;
+            state.modal = None;
+            state.modal_offset = 0;
+        } else if keys.just_pressed(KeyCode::Space)
+            && state
+                .modal
+                .as_deref()
+                .is_some_and(|modal| modal_has_next_page(modal, state.modal_offset))
+        {
+            state.modal_offset += MODAL_PAGE_ROWS;
+        }
+        return;
+    }
     if state.item_inventory_open && keys.just_pressed(KeyCode::Space) {
         if state
             .modal
@@ -1014,13 +1029,6 @@ fn keyboard(
             && let Some(pending) = state.pending
         {
             restore_item_prompt(&mut state, pending);
-            return;
-        }
-        if state.pending == Some(Pending::Help) {
-            state.game.message(help_for('\u{1b}'));
-            state.preserve_message_case = true;
-            state.pending = None;
-            state.modal = None;
             return;
         }
         if state.pending == Some(Pending::Password) {
@@ -1398,19 +1406,6 @@ fn keyboard(
                 state.modal = None;
             } else {
                 retry_ring_hand(&mut state);
-            }
-            return;
-        }
-        if pending == Pending::Help {
-            state.pending = None;
-            if ch == '*' {
-                state.game.remember_message("");
-                state.pending = Some(Pending::More);
-                state.modal = Some(help_text());
-            } else {
-                state.game.message(help_for(ch));
-                state.preserve_message_case = true;
-                state.modal = None;
             }
             return;
         }
@@ -1902,11 +1897,10 @@ fn keyboard(
             ))
         }
         Command::Help => {
+            state.game.remember_message("");
             state.pending = Some(Pending::Help);
-            Some(remembered_prompt(
-                &mut state,
-                "character you want help for (* for all): ",
-            ))
+            state.modal_offset = 0;
+            Some(help_text())
         }
         Command::Discoveries => {
             state.pending = Some(Pending::Discoveries);
@@ -3420,46 +3414,33 @@ const HELP_ENTRIES: &[(char, &str, bool)] = &[
 ];
 
 fn help_text() -> String {
-    let entries: Vec<_> = HELP_ENTRIES.iter().filter(|(_, _, print)| *print).collect();
-    let rows_count = entries.len().div_ceil(2).min(23);
-    let mut rows = vec![vec![' '; DISPLAY_WIDTH]; rows_count];
-    for (index, (ch, description, _)) in entries.into_iter().take(rows_count * 2).enumerate() {
-        let x = if index >= rows_count { 40 } else { 0 };
-        let y = index % rows_count;
-        let label = if *ch == '\0' {
-            String::new()
-        } else {
-            control_label(*ch)
-        };
-        let mut cursor = x;
-        for value in format!("{label}{description}").chars() {
-            if value == '\t' {
-                cursor = ((cursor / 8) + 1) * 8;
-            } else {
-                if cursor < DISPLAY_WIDTH {
-                    rows[y][cursor] = value;
-                }
-                cursor += 1;
-            }
-        }
-    }
-    let mut text = rows
-        .into_iter()
-        .map(|row| row.into_iter().collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-    text.push_str("\n --More--");
-    text
-}
-
-fn help_for(ch: char) -> String {
     HELP_ENTRIES
         .iter()
-        .find(|(key, _, _)| *key == ch)
-        .map_or_else(
-            || format!("unknown character '{}'", control_label(ch)),
-            |(_, description, _)| format!("{}{description}", control_label(ch)),
-        )
+        .filter(|(_, _, print)| *print)
+        .map(|(ch, description, _)| help_entry_text(*ch, description))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn help_entry_text(ch: char, description: &str) -> String {
+    let label = if ch == '\0' {
+        String::new()
+    } else {
+        control_label(ch)
+    };
+    let mut out = String::new();
+    let mut column = 0;
+    for value in format!("{label}{description}").chars() {
+        if value == '\t' {
+            let next_tab = ((column / 8) + 1) * 8;
+            out.extend(std::iter::repeat_n(' ', next_tab - column));
+            column = next_tab;
+        } else {
+            out.push(value);
+            column += 1;
+        }
+    }
+    out
 }
 
 fn control_label(ch: char) -> String {
@@ -3987,7 +3968,7 @@ mod tests {
     }
 
     #[test]
-    fn question_mark_key_opens_the_help_prompt() {
+    fn question_mark_key_opens_complete_help_immediately() {
         let mut app = App::new();
         app.insert_resource(state(105));
         app.insert_resource(ButtonInput::<KeyCode>::default());
@@ -4005,10 +3986,91 @@ mod tests {
 
         let state = app.world().resource::<State>();
         assert_eq!(state.pending, Some(Pending::Help));
+        assert_eq!(state.modal.as_deref(), Some(help_text().as_str()));
+        assert!(!state.modal.as_deref().unwrap().contains("help for"));
+        assert!(!state.modal.as_deref().unwrap().contains("* for all"));
+        assert!(display_row(&display(state), MODAL_MORE_ROW).starts_with(" --More--"));
+    }
+
+    #[test]
+    fn help_space_pages_only_when_more_content_exists_and_escape_closes() {
+        let initial_state = state(1051);
+        let starting_turn = initial_state.game.turn;
+        let expected_lines: Vec<_> = HELP_ENTRIES
+            .iter()
+            .filter(|(_, _, print)| *print)
+            .map(|(ch, description, _)| help_entry_text(*ch, description))
+            .collect();
+        assert!(expected_lines.len() > MODAL_PAGE_ROWS);
+
+        let mut app = App::new();
+        app.insert_resource(initial_state);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(MovementRepeat::default());
+        app.add_message::<AppExit>();
+        app.add_systems(Update, keyboard);
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ShiftLeft);
+            keys.press(KeyCode::Slash);
+        }
+        app.update();
+
+        let first = display(app.world().resource::<State>());
         assert_eq!(
-            state.modal.as_deref(),
-            Some("Character you want help for (* for all): ")
+            display_row(&first, 0).trim_end(),
+            expected_lines[0].as_str()
         );
+        assert_eq!(
+            display_row(&first, MODAL_PAGE_ROWS - 1).trim_end(),
+            expected_lines[MODAL_PAGE_ROWS - 1].as_str()
+        );
+        assert!(display_row(&first, MODAL_MORE_ROW).starts_with(" --More--"));
+
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear();
+            keys.press(KeyCode::Space);
+        }
+        app.update();
+
+        let state = app.world().resource::<State>();
+        assert_eq!(state.modal_offset, MODAL_PAGE_ROWS);
+        assert_eq!(state.pending, Some(Pending::Help));
+        let second = display(state);
+        assert_eq!(
+            display_row(&second, 0).trim_end(),
+            expected_lines[MODAL_PAGE_ROWS].as_str()
+        );
+        assert_eq!(
+            display_row(&second, expected_lines.len() - MODAL_PAGE_ROWS - 1).trim_end(),
+            expected_lines.last().unwrap().as_str()
+        );
+        assert!(!display_row(&second, MODAL_MORE_ROW).contains("--More--"));
+
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear();
+            keys.press(KeyCode::Space);
+        }
+        app.update();
+        let state = app.world().resource::<State>();
+        assert_eq!(state.modal_offset, MODAL_PAGE_ROWS);
+        assert_eq!(state.pending, Some(Pending::Help));
+        assert!(state.modal.is_some());
+
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear();
+            keys.press(KeyCode::Escape);
+        }
+        app.update();
+        let state = app.world().resource::<State>();
+        assert!(state.pending.is_none());
+        assert!(state.modal.is_none());
+        assert_eq!(state.modal_offset, 0);
+        assert_eq!(state.game.turn, starting_turn);
     }
 
     #[test]
@@ -4378,25 +4440,29 @@ mod tests {
     fn glyph_identification_names_monsters_and_terrain() {
         assert!(identify_glyph_text('D').contains("dragon"));
         assert!(identify_glyph_text('#').contains("passage"));
-        assert!(help_for('q').contains("quaff"));
     }
 
     #[test]
-    fn single_key_help_preserves_fight_modes_controls_and_unknown_form() {
-        assert!(help_for('f').contains("near death"));
-        assert!(help_for('F').contains("either of you dies"));
-        assert!(help_for('\u{8}').starts_with("^H\t"));
-        assert_eq!(help_for(' '), "unknown character ' '");
+    fn complete_help_lists_every_printable_entry_without_truncation() {
+        let expected: Vec<_> = HELP_ENTRIES
+            .iter()
+            .filter(|(_, _, print)| *print)
+            .map(|(ch, description, _)| help_entry_text(*ch, description))
+            .collect();
         let full = help_text();
         let lines: Vec<_> = full.lines().collect();
-        assert_eq!(lines.len(), 24);
-        assert!(full.ends_with(" --More--"));
+
+        assert_eq!(lines, expected);
+        assert_eq!(lines.len(), 49);
         assert!(full.contains("<SHIFT><dir>: run that way"));
         assert!(!full.contains('\t'));
-        assert_eq!(lines[0].chars().nth(40), Some('I'));
-        assert!(!full.contains("shell escape"));
+        assert!(full.contains("fight till death or near death"));
+        assert!(full.contains("fight till either of you dies"));
+        assert!(full.contains("shell escape"));
+        assert!(full.contains("print version, release, dungeon number"));
         assert!(!full.contains("Ctrl-Z"));
         assert!(!full.contains("legal no-op"));
+        assert!(!full.contains("--More--"));
     }
 
     #[test]
@@ -4884,24 +4950,24 @@ mod tests {
     #[test]
     fn pending_prompt_stays_visible_after_combined_events() {
         let mut prompted = state(1163);
-        prompted.pending = Some(Pending::Help);
-        prompted.modal = Some("Character you want help for (* for all): ".into());
+        prompted.pending = Some(Pending::IdentifyGlyph);
+        prompted.modal = Some("What do you want identified? ".into());
         prompted.game.message("an effect happened");
         prompted.game.message("you feel dizzy");
         collect_messages(&mut prompted);
 
         assert_eq!(
             prompted.modal.as_deref(),
-            Some("Character you want help for (* for all): ")
+            Some("What do you want identified? ")
         );
-        assert_eq!(prompted.pending, Some(Pending::Help));
+        assert_eq!(prompted.pending, Some(Pending::IdentifyGlyph));
         let buffer = display(&prompted);
         let top = (0..EVENT_ROWS)
             .map(|row| display_row(&buffer, row))
             .collect::<String>();
-        assert!(top.starts_with(
-            "An effect happened. You feel dizzy. Character you want help for (* for all):"
-        ));
+        assert!(
+            top.starts_with("An effect happened. You feel dizzy. What do you want identified?")
+        );
         assert!(!top.contains("--More--"));
 
         let mut app = App::new();
@@ -4911,16 +4977,18 @@ mod tests {
         app.insert_resource(MovementRepeat::default());
         app.add_message::<AppExit>();
         app.add_systems(Update, keyboard);
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyQ);
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ShiftLeft);
+            keys.press(KeyCode::KeyD);
+        }
 
         app.update();
 
         let prompted = app.world().resource::<State>();
         assert!(prompted.pending.is_none());
         assert!(prompted.modal.is_none());
-        assert!(prompted.game.messages.last().unwrap().contains("quaff"));
+        assert!(prompted.game.messages.last().unwrap().contains("dragon"));
     }
 
     #[test]

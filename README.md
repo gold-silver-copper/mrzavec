@@ -101,12 +101,13 @@ Item commands are `q` quaff, `r` read, `e` eat, `w` wield, `W` wear armor,
 and `c` call an unidentified item. `i` shows the full inventory and `I` its
 picky form. `)`, `]`, `=`, and `@` report current equipment and statistics.
 
-`>` descends and `<` ascends. `?` opens command help, `/` identifies a glyph,
-`D` lists discoveries, `o` edits options, Ctrl-P recalls the last message,
-Ctrl-R redraws, and `v` reports the version. `a` repeats the prior command,
-`S` saves, `Q` quits, and Escape cancels a pending command. `!` runs the
-configured shell; Ctrl-Z is accepted but reports that terminal suspension is
-unavailable in a window.
+`>` descends and `<` ascends. `?` opens the complete command help immediately;
+Space advances only when another help page is available, and Escape closes it.
+`/` identifies a glyph, `D` lists discoveries, `o` edits options, Ctrl-P
+recalls the last message, Ctrl-R redraws, and `v` reports the version. `a`
+repeats the prior command, `S` saves, `Q` quits, and Escape cancels a pending
+command. `!` runs the configured shell; Ctrl-Z is accepted but reports that
+terminal suspension is unavailable in a window.
 
 Decimal prefixes repeat commands, capped at the historical maximum of 255.
 
