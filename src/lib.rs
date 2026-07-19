@@ -15,7 +15,9 @@ pub mod score;
 pub use game::Game;
 
 pub const DISPLAY_WIDTH: usize = 80;
-pub const DISPLAY_HEIGHT: usize = 24;
+pub const DISPLAY_HEIGHT: usize = 26;
 pub const STATUS_ROW: usize = 23;
+pub const KEYBINDING_FIRST_ROW: usize = 24;
+pub const KEYBINDING_SECOND_ROW: usize = 25;
 pub const AMULET_LEVEL: u32 = 26;
 pub const MAX_PACK: usize = 26;

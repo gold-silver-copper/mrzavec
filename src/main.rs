@@ -1,6 +1,6 @@
 use bevy::{prelude::*, text::LineHeight, window::WindowResolution};
 use mrzavec::{
-    DISPLAY_HEIGHT, DISPLAY_WIDTH, Game,
+    DISPLAY_HEIGHT, DISPLAY_WIDTH, Game, KEYBINDING_FIRST_ROW, KEYBINDING_SECOND_ROW, STATUS_ROW,
     command::{Command, WizardCommand, parse},
     item::{
         ARMOR_NAMES, ARMOR_WEIGHTS, ItemKind, POTION_NAMES, POTION_WEIGHTS, RING_NAMES,
@@ -26,6 +26,11 @@ use std::{
 const CELL_W: f32 = 10.0;
 const CELL_H: f32 = 19.0;
 const FONT_SIZE: f32 = 16.0;
+const MODAL_MORE_ROW: usize = DISPLAY_HEIGHT - 1;
+const MODAL_PAGE_ROWS: usize = MODAL_MORE_ROW;
+const KEYBINDING_FIRST_TEXT: &str =
+    "Move h/j/k/l  Inventory i  Quaff q  Read r  Eat e  Wield w  Drop d";
+const KEYBINDING_SECOND_TEXT: &str = "Wear W  Take off T  Throw t  Zap z  Search s  Rest .  Help ?";
 const ROGUE_RELEASE: &str = "2026-07-17";
 
 fn version_message(game: &Game) -> String {
@@ -496,8 +501,8 @@ fn game_window() -> Window {
     let window = Window {
         title: "Rogue 5.4.5 — Mrzavec".into(),
         resolution: WindowResolution::new(
-            (CELL_W * 80.0 + 24.0) as u32,
-            (CELL_H * 24.0 + 24.0) as u32,
+            (CELL_W * DISPLAY_WIDTH as f32 + 24.0) as u32,
+            (CELL_H * DISPLAY_HEIGHT as f32 + 24.0) as u32,
         ),
         resizable: false,
         prevent_default_event_handling: true,
@@ -732,10 +737,10 @@ fn setup(mut commands: Commands) {
             root.spawn((
                 Node {
                     display: Display::Grid,
-                    width: px(CELL_W * 80.0),
-                    height: px(CELL_H * 24.0),
-                    grid_template_columns: RepeatedGridTrack::px(80, CELL_W),
-                    grid_template_rows: RepeatedGridTrack::px(24, CELL_H),
+                    width: px(CELL_W * DISPLAY_WIDTH as f32),
+                    height: px(CELL_H * DISPLAY_HEIGHT as f32),
+                    grid_template_columns: RepeatedGridTrack::px(DISPLAY_WIDTH as u16, CELL_W),
+                    grid_template_rows: RepeatedGridTrack::px(DISPLAY_HEIGHT as u16, CELL_H),
                     ..default()
                 },
                 BackgroundColor(Color::BLACK),
@@ -816,7 +821,7 @@ fn keyboard(
             .as_deref()
             .is_some_and(|modal| modal_has_next_page(modal, state.modal_offset))
         {
-            state.modal_offset += 23;
+            state.modal_offset += MODAL_PAGE_ROWS;
         } else if let Some(pending) = state.pending {
             restore_item_prompt(&mut state, pending);
         }
@@ -828,7 +833,7 @@ fn keyboard(
             .as_deref()
             .is_some_and(|modal| modal_has_next_page(modal, state.modal_offset))
         {
-            state.modal_offset += 23;
+            state.modal_offset += MODAL_PAGE_ROWS;
         } else {
             state.pending = None;
             state.modal = None;
@@ -869,7 +874,7 @@ fn keyboard(
         && !state.modal_overlay
     {
         if modal_has_next_page(modal, state.modal_offset) {
-            state.modal_offset += 23;
+            state.modal_offset += MODAL_PAGE_ROWS;
             return;
         }
         if state.modal_offset > 0 || state.game.end != mrzavec::game::EndState::Playing {
@@ -2793,16 +2798,25 @@ fn rings_text(game: &Game) -> String {
 fn render(
     state: Res<State>,
     cells: Query<(&Cell, &Children)>,
-    mut glyphs: Query<&mut Text, With<Glyph>>,
+    mut glyphs: Query<(&mut Text, &mut TextColor), With<Glyph>>,
 ) {
     if !state.is_changed() {
         return;
     }
     let buffer = display(&state);
+    let footer_visible = state.modal.is_none() || state.modal_overlay;
     for (cell, children) in cells {
         for child in children.iter() {
-            if let Ok(mut text) = glyphs.get_mut(child) {
-                text.0 = buffer[cell.0].to_string()
+            if let Ok((mut text, mut color)) = glyphs.get_mut(child) {
+                text.0 = buffer[cell.0].to_string();
+                let row = cell.0 / DISPLAY_WIDTH;
+                color.0 = if footer_visible
+                    && matches!(row, KEYBINDING_FIRST_ROW | KEYBINDING_SECOND_ROW)
+                {
+                    Color::srgb(0.55, 0.55, 0.52)
+                } else {
+                    Color::srgb(0.82, 0.82, 0.78)
+                };
             }
         }
     }
@@ -2816,9 +2830,13 @@ fn display(state: &State) -> Vec<char> {
         let explicit_more = all_lines.last() == Some(&" --More--");
         let content_count = all_lines.len() - usize::from(explicit_more);
         let remaining = content_count.saturating_sub(state.modal_offset);
-        let has_next_page = remaining > 23;
+        let has_next_page = remaining > MODAL_PAGE_ROWS;
         let reserve_more = explicit_more || has_next_page;
-        let visible = if reserve_more { 23 } else { 24 };
+        let visible = if reserve_more {
+            MODAL_PAGE_ROWS
+        } else {
+            DISPLAY_HEIGHT
+        };
         for (y, line) in all_lines
             .into_iter()
             .skip(state.modal_offset)
@@ -2828,7 +2846,7 @@ fn display(state: &State) -> Vec<char> {
             write_terminal_text(&mut out, y, 0, line, DISPLAY_WIDTH);
         }
         if reserve_more {
-            write_terminal_text(&mut out, 23, 0, " --More--", DISPLAY_WIDTH);
+            write_terminal_text(&mut out, MODAL_MORE_ROW, 0, " --More--", DISPLAY_WIDTH);
         }
         return out;
     }
@@ -2848,27 +2866,41 @@ fn display(state: &State) -> Vec<char> {
             write_terminal_text(&mut out, 0, x, " --More--", DISPLAY_WIDTH);
         }
     }
-    for y in 1..23 {
-        for x in 0..80 {
-            out[y * 80 + x] = state.game.glyph_at(Pos::new(x as i32, y as i32))
+    for y in 1..STATUS_ROW {
+        for x in 0..DISPLAY_WIDTH {
+            out[y * DISPLAY_WIDTH + x] = state.game.glyph_at(Pos::new(x as i32, y as i32))
         }
     }
     let status = status_text(&state.game);
-    write_terminal_text(&mut out, 23, 0, &status, DISPLAY_WIDTH);
+    write_terminal_text(&mut out, STATUS_ROW, 0, &status, DISPLAY_WIDTH);
+    write_terminal_text(
+        &mut out,
+        KEYBINDING_FIRST_ROW,
+        0,
+        KEYBINDING_FIRST_TEXT,
+        DISPLAY_WIDTH,
+    );
+    write_terminal_text(
+        &mut out,
+        KEYBINDING_SECOND_ROW,
+        0,
+        KEYBINDING_SECOND_TEXT,
+        DISPLAY_WIDTH,
+    );
     if let Some(modal) = &state.modal
         && state.modal_overlay
     {
-        let lines: Vec<&str> = modal.lines().take(23).collect();
+        let lines: Vec<&str> = modal.lines().take(STATUS_ROW).collect();
         let width = lines
             .iter()
             .map(|line| line.chars().count())
             .max()
             .unwrap_or(0)
-            .min(78);
-        let start_x = 79usize.saturating_sub(width);
+            .min(DISPLAY_WIDTH - 2);
+        let start_x = (DISPLAY_WIDTH - 1).saturating_sub(width);
         for (y, line) in lines.into_iter().enumerate() {
-            for x in start_x.saturating_sub(1)..80 {
-                out[y * 80 + x] = ' ';
+            for x in start_x.saturating_sub(1)..DISPLAY_WIDTH {
+                out[y * DISPLAY_WIDTH + x] = ' ';
             }
             write_terminal_text(&mut out, y, start_x, line, DISPLAY_WIDTH);
         }
@@ -2880,7 +2912,7 @@ fn modal_has_next_page(modal: &str, offset: usize) -> bool {
     let mut lines = modal.lines();
     let count = lines.by_ref().count();
     let explicit_more = modal.lines().last() == Some(" --More--");
-    count.saturating_sub(usize::from(explicit_more)) > offset + 23
+    count.saturating_sub(usize::from(explicit_more)) > offset + MODAL_PAGE_ROWS
 }
 
 fn write_terminal_text(out: &mut [char], row: usize, start_x: usize, text: &str, max_x: usize) {
@@ -3483,6 +3515,12 @@ fn set_string_option(game: &mut Game, index: usize, input: &str) {
 mod tests {
     use super::*;
 
+    fn display_row(buffer: &[char], row: usize) -> String {
+        buffer[row * DISPLAY_WIDTH..(row + 1) * DISPLAY_WIDTH]
+            .iter()
+            .collect()
+    }
+
     fn state(seed: u64) -> State {
         let game = Game::new(seed);
         let message_serial_seen = game.message_serial;
@@ -3775,7 +3813,7 @@ mod tests {
     }
 
     #[test]
-    fn clear_screen_modal_pages_use_all_twenty_three_content_rows() {
+    fn clear_screen_modal_pages_use_all_twenty_five_content_rows() {
         let mut state = state(103);
         state.modal = Some(
             (0..30)
@@ -3784,13 +3822,71 @@ mod tests {
                 .join("\n"),
         );
         let first = display(&state);
-        let first_text: String = first[23 * 80..24 * 80].iter().collect();
+        let first_text = display_row(&first, MODAL_MORE_ROW);
         assert!(first_text.starts_with(" --More--"));
 
-        state.modal_offset = 23;
+        state.modal_offset = MODAL_PAGE_ROWS;
         let second = display(&state);
-        let second_text: String = second[..80].iter().collect();
-        assert!(second_text.starts_with("line 23"));
+        let second_text = display_row(&second, 0);
+        assert!(second_text.starts_with("line 25"));
+    }
+
+    #[test]
+    fn normal_display_preserves_game_rows_and_adds_keybinding_footer() {
+        let mut state = state(104);
+        state.visible_message = Some("hello".into());
+        let player = state.game.player.pos;
+        let expected_player_glyph = state.game.glyph_at(player);
+
+        let buffer = display(&state);
+
+        assert_eq!(buffer.len(), DISPLAY_WIDTH * DISPLAY_HEIGHT);
+        assert!(display_row(&buffer, 0).starts_with("Hello"));
+        assert_eq!(
+            buffer[player.y as usize * DISPLAY_WIDTH + player.x as usize],
+            expected_player_glyph
+        );
+        let expected_status = status_text(&state.game);
+        assert_eq!(
+            display_row(&buffer, STATUS_ROW).trim_end(),
+            expected_status.trim_end()
+        );
+        assert_eq!(
+            display_row(&buffer, KEYBINDING_FIRST_ROW).trim_end(),
+            KEYBINDING_FIRST_TEXT
+        );
+        assert_eq!(
+            display_row(&buffer, KEYBINDING_SECOND_ROW).trim_end(),
+            KEYBINDING_SECOND_TEXT
+        );
+        assert!(
+            display_row(&buffer, KEYBINDING_SECOND_ROW)
+                .trim_end()
+                .ends_with("Help ?")
+        );
+    }
+
+    #[test]
+    fn question_mark_key_opens_the_help_prompt() {
+        let mut app = App::new();
+        app.insert_resource(state(105));
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.add_message::<AppExit>();
+        app.add_systems(Update, keyboard);
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ShiftLeft);
+            keys.press(KeyCode::Slash);
+        }
+
+        app.update();
+
+        let state = app.world().resource::<State>();
+        assert_eq!(state.pending, Some(Pending::Help));
+        assert_eq!(
+            state.modal.as_deref(),
+            Some("Character you want help for (* for all): ")
+        );
     }
 
     #[test]

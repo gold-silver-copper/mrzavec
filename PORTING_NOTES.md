@@ -26,8 +26,9 @@ The C message accumulator and `endmsg` behavior become a serial-numbered core
 message history plus a Bevy-side queue. Consecutive messages stop at
 `--More--`, following prompts are deferred until the queue is drained, and
 display-only capitalization leaves the raw recall buffer unchanged. Terminal
-tabs and the 23-row modal/help limits are expanded into the fixed 80×24 grid
-before rendering.
+tabs and modal/help limits are expanded into the fixed 80×26 grid before
+rendering; the original 80×24 message-map-status area remains at the same rows,
+with a two-row command reference beneath it.
 
 The three historical inventory display strategies are explicit presentation
 states. Clear-screen is the default on the Bevy display (which always supports
@@ -75,8 +76,9 @@ The browser launcher has no CLI, native environment, signal, or path model. It
 uses a browser-safe `player` name and the logical save/score slots `default` and
 `local`, consumes a saved normal game at startup, and otherwise begins a new
 seeded game. The web canvas is supplied by the host page as `#mrzavec`; the
-fixed 824×480 logical surface preserves the 80×24 grid and may be scaled by the
-page. Explicit `S` remains the authoritative save-and-stop path. No unload or
+fixed 824×518 logical surface preserves the 80×24 play area and adds the two-row
+keybinding footer; it may be scaled by the page. Explicit `S` remains the
+authoritative save-and-stop path. No unload or
 visibility checkpoint is created because browser lifecycle delivery is not
 reliable and a reusable background checkpoint would enable save scumming.
 

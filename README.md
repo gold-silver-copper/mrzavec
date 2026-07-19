@@ -2,7 +2,7 @@
 
 Mrzavec is a Rust/Bevy rewrite of Rogue 5.4.5. The game simulation is kept in
 ordinary serializable Rust data structures and the Bevy application presents it
-as Rogue's 80-column by 24-line glyph display.
+as Rogue's 80-column by 24-line play area with a two-row keybinding footer.
 
 ## Build and run
 
@@ -42,9 +42,9 @@ module:
 </script>
 ```
 
-The Bevy app targets `#mrzavec` at its fixed 824×480 logical resolution and
+The Bevy app targets `#mrzavec` at its fixed 824×518 logical resolution and
 prevents browser default key handling while the game has focus. CSS may scale
-the canvas while preserving its `824 / 480` aspect ratio. In a single-page app,
+the canvas while preserving its `824 / 518` aspect ratio. In a single-page app,
 mount the canvas before importing/initializing the package and initialize it
 only once.
 
@@ -149,6 +149,6 @@ Project structure:
 - `save` and `score` provide pure codecs/ranking plus native-file and browser
   storage integration; `platform` defines the testable browser storage seam.
 - `main.rs` contains launcher/platform integration plus Bevy keyboard, prompt,
-  modal, message, and 80×24 glyph-grid presentation state.
+  modal, message, and 80×26 glyph-grid presentation state.
 - `FEATURE_PARITY.md`, `PORTING_NOTES.md`, and `BUG_FIXES.md` record the source
   comparison and every intentional difference.
