@@ -23,17 +23,25 @@ fixed, serializable xorshift64* stream; this intentionally makes seeded Rust
 games portable rather than reproducing a platform libc random stream.
 
 The C message accumulator and `endmsg` behavior become a serial-numbered core
-message history plus a Bevy-side queue. Consecutive messages stop at
-`--More--`, following prompts are deferred until the queue is drained, and
-display-only capitalization leaves the raw recall buffer unchanged. Terminal
-tabs and the 23-row modal/help limits are expanded into the fixed 80×24 grid
-before rendering.
+message history plus a nonblocking Bevy-side sentence stream. Consecutive
+events receive normalized punctuation and spacing, wrap at word boundaries
+across the three newest visible rows, and never stop at `--More--`; an
+associated one-line prompt is rendered after the events while remaining
+immediately actionable. Display-only
+capitalization leaves the raw recall buffer unchanged. Terminal tabs and
+modal/help limits are expanded into the fixed 80×28 grid before rendering; the
+layout is three event rows, 22 dungeon rows, one status row, and a two-row
+command reference. Explicitly paginated menus and modal views retain their
+Space-driven `--More--` behavior.
 
 The three historical inventory display strategies are explicit presentation
 states. Clear-screen is the default on the Bevy display (which always supports
 clearing to end of line); overwrite and slow modes retain their different
 pagination, prompts, RNG-shuffled discovery output, and message-recall side
-effects.
+effects. Action-specific item selection intentionally replaces C `get_item`'s
+letter-first, `*`-to-list prompt with an immediate filtered menu. Its displayed
+pack letters remain directly actionable; throw and zap select the item before
+requesting a direction.
 
 Signed integers preserve master-mode negative gold. A separate `in_pack` flag
 safely represents the C master power command's out-of-pack equipment pointer
@@ -75,7 +83,8 @@ The browser launcher has no CLI, native environment, signal, or path model. It
 uses a browser-safe `player` name and the logical save/score slots `default` and
 `local`, consumes a saved normal game at startup, and otherwise begins a new
 seeded game. The web canvas is supplied by the host page as `#mrzavec`; the
-fixed 824×480 logical surface preserves the 80×24 grid and may be scaled by the
+fixed 824×556 logical surface preserves the 22-row dungeon view, adds the
+three-row event stream and two-row keybinding footer, and may be scaled by the
 page. Explicit `S` remains the authoritative save-and-stop path. No unload or
 visibility checkpoint is created because browser lifecycle delivery is not
 reliable and a reusable background checkpoint would enable save scumming.
@@ -93,8 +102,11 @@ unavailable. Native shell behavior is unchanged.
 
 The `flush` option is retained in saves and the option editor, but its
 terminal-typeahead behavior is naturally inert because Bevy receives discrete
-key presses. A complete run command is likewise simulated between rendered
-frames, so `jump` cannot change intermediate window refreshes; it still has the
+key presses. Plain `hjklyubn` movement and `.` waiting supply application-level
+key repeat after 300 ms and then every 100 ms, consistently across native and
+browser builds; prompts, modifiers, and blocked input reset it. A complete run
+command is likewise simulated between rendered frames, so `jump` cannot change
+intermediate window refreshes; it still has the
 reference gameplay-RNG effect of suppressing hallucination `visuals` redraws
 while a run continues.
 
