@@ -4,8 +4,20 @@ const SAVE_KEY = "mrzavec.save.v12:default";
 const ACTIVE_SAVE_KEY = "mrzavec.save.active";
 const SCORE_KEY = "mrzavec.scores.v1:local";
 
+async function waitForGameFrames(canvas) {
+  await canvas.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+}
+
 async function waitForGame(page, canvas) {
   await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-game-ready", "true", {
+    timeout: process.env.CI ? 120_000 : 30_000,
+  });
   await expect
     .poll(() => canvas.evaluate((element) => element.width))
     .toBeGreaterThanOrEqual(824);
@@ -15,12 +27,7 @@ async function waitForGame(page, canvas) {
   await expect
     .poll(() => page.evaluate(() => document.activeElement?.id))
     .toBe("mrzavec");
-  await canvas.evaluate(
-    () =>
-      new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
+  await waitForGameFrames(canvas);
 }
 
 async function openGame(page) {
@@ -42,6 +49,13 @@ async function expectCanvasChange(canvas, action) {
       timeout: 30_000,
     })
     .not.toBe(0);
+}
+
+async function confirmPrompt(page, canvas, command) {
+  await expectCanvasChange(canvas, () => page.keyboard.press(command));
+  const prompt = await canvas.screenshot();
+  await page.keyboard.press("y");
+  return prompt;
 }
 
 test("mounts, focuses, handles keyboard commands, and scales responsively", async ({
@@ -97,8 +111,7 @@ test("a keyboard turn reaches the simulation and persisted game state", async ({
   page,
 }) => {
   const { canvas, errors } = await openGame(page);
-  await page.keyboard.press("Shift+S");
-  await page.keyboard.press("y");
+  await confirmPrompt(page, canvas, "Shift+S");
   await expect
     .poll(() => page.evaluate((key) => localStorage.getItem(key), SAVE_KEY))
     .not.toBeNull();
@@ -110,8 +123,8 @@ test("a keyboard turn reaches the simulation and persisted game state", async ({
   await page.reload();
   await waitForGame(page, canvas);
   await page.keyboard.press(".");
-  await page.keyboard.press("Shift+S");
-  await page.keyboard.press("y");
+  await waitForGameFrames(canvas);
+  await confirmPrompt(page, canvas, "Shift+S");
   await expect
     .poll(() =>
       page.evaluate(
@@ -125,8 +138,7 @@ test("a keyboard turn reaches the simulation and persisted game state", async ({
 
 test("the active logical save slot is restored exactly once", async ({ page }) => {
   const { canvas, errors } = await openGame(page);
-  await page.keyboard.press("Shift+S");
-  await page.keyboard.press("y");
+  await confirmPrompt(page, canvas, "Shift+S");
   await expect
     .poll(() => page.evaluate((key) => localStorage.getItem(key), SAVE_KEY))
     .not.toBeNull();
@@ -155,8 +167,7 @@ test("the active logical save slot is restored exactly once", async ({ page }) =
     .toBeNull();
 
   const restored = await canvas.screenshot();
-  await page.keyboard.press("Shift+Q");
-  await page.keyboard.press("y");
+  await confirmPrompt(page, canvas, "Shift+Q");
   await expect
     .poll(() => page.evaluate((key) => localStorage.getItem(key), SCORE_KEY))
     .not.toBeNull();
@@ -179,9 +190,7 @@ test("quota failure is visible and does not stop or create a save", async ({ pag
     };
   });
   const { canvas, errors } = await openGame(page);
-  const prompt = await canvas.screenshot();
-  await page.keyboard.press("Shift+S");
-  await page.keyboard.press("y");
+  const prompt = await confirmPrompt(page, canvas, "Shift+S");
   await expect
     .poll(async () => Buffer.compare(prompt, await canvas.screenshot()))
     .not.toBe(0);
@@ -205,8 +214,7 @@ test("a corrupt save remains available and the game starts safely", async ({ pag
 
 test("a corrupt active slot falls back to a valid default save", async ({ page }) => {
   const { canvas, errors } = await openGame(page);
-  await page.keyboard.press("Shift+S");
-  await page.keyboard.press("y");
+  await confirmPrompt(page, canvas, "Shift+S");
   await expect
     .poll(() => page.evaluate((key) => localStorage.getItem(key), SAVE_KEY))
     .not.toBeNull();
@@ -232,8 +240,7 @@ test("a corrupt active slot falls back to a valid default save", async ({ page }
     await page.evaluate(() => localStorage.getItem("mrzavec.save.v12:campaign")),
   ).toBe("not valid json");
 
-  await page.keyboard.press("Shift+Q");
-  await page.keyboard.press("y");
+  await confirmPrompt(page, canvas, "Shift+Q");
   await expect
     .poll(() => page.evaluate((key) => localStorage.getItem(key), SCORE_KEY))
     .not.toBeNull();

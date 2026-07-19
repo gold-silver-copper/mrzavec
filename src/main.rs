@@ -448,9 +448,32 @@ fn main() {
     game_app(game, false)
         .add_systems(
             Update,
-            (keyboard, finalize_end, prepare_messages, render).chain(),
+            (
+                keyboard,
+                finalize_end,
+                prepare_messages,
+                render,
+                mark_browser_ready,
+            )
+                .chain(),
         )
         .run();
+}
+
+#[cfg(target_arch = "wasm32")]
+fn mark_browser_ready(mut marked: Local<bool>) {
+    if *marked {
+        return;
+    }
+    let Some(canvas) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id("mrzavec"))
+    else {
+        return;
+    };
+    if canvas.set_attribute("data-game-ready", "true").is_ok() {
+        *marked = true;
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
