@@ -1,7 +1,8 @@
 use crate::{
     Game,
     platform::{
-        KeyValueStorage, StorageError, WEB_ACTIVE_SAVE_KEY, logical_slot, save_storage_key,
+        KeyValueStorage, StorageError, WEB_ACTIVE_SAVE_KEY, active_save_slot, logical_slot,
+        save_storage_key,
     },
 };
 use std::io;
@@ -84,6 +85,52 @@ pub fn restore_from_storage(
         storage.remove_item(&key)?;
     }
     Ok(Some(game))
+}
+
+pub fn restore_browser_game(
+    default_slot: &str,
+    storage: &impl KeyValueStorage,
+) -> Result<Option<Game>, StorageError> {
+    let slot = active_save_slot(storage)?
+        .filter(|slot| !slot.is_empty())
+        .unwrap_or_else(|| default_slot.to_owned());
+    match restore_from_storage(&slot, storage) {
+        Ok(Some(game)) => Ok(Some(game)),
+        Ok(None) if slot == default_slot => Ok(None),
+        Ok(None) => {
+            storage.remove_item(WEB_ACTIVE_SAVE_KEY)?;
+            restore_from_storage(default_slot, storage)
+        }
+        Err(error) if slot == default_slot => Err(error),
+        Err(active_error) => {
+            storage
+                .remove_item(WEB_ACTIVE_SAVE_KEY)
+                .map_err(|clear_error| {
+                    StorageError::new(
+                        "restore save",
+                        format!(
+                            "{active_error}; clearing the active slot also failed: {clear_error}"
+                        ),
+                    )
+                })?;
+            match restore_from_storage(default_slot, storage) {
+                Ok(Some(mut game)) => {
+                    game.message(format!(
+                        "could not restore save slot {slot:?}; restored {default_slot:?} instead"
+                    ));
+                    Ok(Some(game))
+                }
+                Ok(None) => Err(active_error),
+                Err(default_error) => Err(StorageError::new(
+                    "restore save",
+                    format!(
+                        "active slot {slot:?} failed: {active_error}; fallback slot \
+                         {default_slot:?} failed: {default_error}"
+                    ),
+                )),
+            }
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -310,6 +357,67 @@ mod tests {
             .insert(save_storage_key("default"), "broken".into());
         assert!(restore_from_storage("default", &storage).is_err());
         assert!(storage_has_save("default", &storage).unwrap());
+    }
+
+    #[test]
+    fn corrupt_active_browser_save_falls_back_without_consuming_the_corrupt_data() {
+        let mut fallback = Game::new(30);
+        fallback.player.gold = 777;
+        let storage = MemoryStorage {
+            values: RefCell::new(HashMap::from([
+                (WEB_ACTIVE_SAVE_KEY.into(), "campaign".into()),
+                (save_storage_key("campaign"), "broken".into()),
+                (
+                    save_storage_key("default"),
+                    serde_json::to_string(&fallback).unwrap(),
+                ),
+            ])),
+            ..Default::default()
+        };
+
+        let restored = restore_browser_game("default", &storage).unwrap().unwrap();
+
+        assert_eq!(restored.player.gold, 777);
+        assert_eq!(restored.options.save_file, "default");
+        assert!(
+            restored
+                .messages
+                .last()
+                .unwrap()
+                .contains("restored \"default\" instead")
+        );
+        assert_eq!(
+            storage
+                .get_item(&save_storage_key("campaign"))
+                .unwrap()
+                .as_deref(),
+            Some("broken")
+        );
+        assert!(!storage_has_save("default", &storage).unwrap());
+        assert_eq!(storage.get_item(WEB_ACTIVE_SAVE_KEY).unwrap(), None);
+    }
+
+    #[test]
+    fn browser_fallback_failure_preserves_both_save_entries() {
+        let storage = MemoryStorage {
+            values: RefCell::new(HashMap::from([
+                (WEB_ACTIVE_SAVE_KEY.into(), "campaign".into()),
+                (save_storage_key("campaign"), "broken campaign".into()),
+                (save_storage_key("default"), "broken default".into()),
+            ])),
+            ..Default::default()
+        };
+
+        let error = restore_browser_game("default", &storage).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("active slot \"campaign\" failed")
+        );
+        assert!(storage_has_save("campaign", &storage).unwrap());
+        assert!(storage_has_save("default", &storage).unwrap());
+        assert_eq!(storage.get_item(WEB_ACTIVE_SAVE_KEY).unwrap(), None);
     }
 
     #[test]

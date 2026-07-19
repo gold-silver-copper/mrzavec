@@ -458,16 +458,7 @@ fn restore_browser_game(
     default_slot: &str,
 ) -> Result<Option<Game>, mrzavec::platform::StorageError> {
     let storage = mrzavec::platform::LocalStorage::open()?;
-    let slot = mrzavec::platform::active_save_slot(&storage)?
-        .filter(|slot| !slot.is_empty())
-        .unwrap_or_else(|| default_slot.to_owned());
-    if let Some(game) = save::restore_from_storage(&slot, &storage)? {
-        return Ok(Some(game));
-    }
-    if slot != default_slot {
-        return save::restore_from_storage(default_slot, &storage);
-    }
-    Ok(None)
+    save::restore_browser_game(default_slot, &storage)
 }
 
 fn game_app(game: Game, wizard_prompt: bool) -> App {
