@@ -15,6 +15,12 @@ async function waitForGame(page, canvas) {
   await expect
     .poll(() => page.evaluate(() => document.activeElement?.id))
     .toBe("mrzavec");
+  await canvas.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
 }
 
 async function openGame(page) {

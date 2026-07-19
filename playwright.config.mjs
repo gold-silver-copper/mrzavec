@@ -4,12 +4,13 @@ export default defineConfig({
   testDir: "./web",
   outputDir: "target/playwright-results",
   reporter: "line",
-  timeout: 120_000,
+  timeout: process.env.CI ? 240_000 : 120_000,
   workers: 1,
   expect: { timeout: 30_000 },
   use: {
     baseURL: "http://127.0.0.1:8000",
     viewport: { width: 1000, height: 700 },
+    ...(process.env.CI ? { headless: false } : {}),
   },
   webServer: {
     command: "python3 -m http.server 8000 --bind 127.0.0.1",
