@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Mrzavec — Rogue 5.4.5</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        background: #111;
+        color: #d1d1c7;
+        font-family: system-ui, sans-serif;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+      }
+
+      main {
+        width: min(100%, 824px);
+        min-width: 0;
+      }
+
+      #mrzavec {
+        display: block;
+        width: 100% !important;
+        max-width: 100%;
+        height: auto !important;
+        aspect-ratio: 824 / 480;
+        outline: 1px solid #333;
+        background: #000;
+      }
+
+      #mrzavec:focus {
+        outline-color: #888;
+      }
+
+      p {
+        margin: 0.75rem;
+        font-size: 0.875rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <canvas
+        id="mrzavec"
+        tabindex="0"
+        aria-label="Mrzavec game; use the keyboard to play"
+      ></canvas>
+      <p id="status">Click the game to focus it, then use Rogue keyboard commands.</p>
+    </main>
+    <script type="module">
+      import init from "./pkg/mrzavec.js";
+
+      const canvas = document.querySelector("#mrzavec");
+      const status = document.querySelector("#status");
+      canvas.addEventListener("pointerdown", () => canvas.focus());
+
+      try {
+        await init();
+        canvas.focus();
+      } catch (error) {
+        status.textContent = `Unable to start Mrzavec: ${error}`;
+        throw error;
+      }
+    </script>
+  </body>
+</html>

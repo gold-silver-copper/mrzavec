@@ -2,13 +2,13 @@ use crate::{
     Game,
     game::EndState,
     item::{ARMOR_CLASS, ItemKind},
+    platform::{KeyValueStorage, StorageError, score_storage_key},
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    fs, io,
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
-};
+#[cfg(test)]
+use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(not(target_arch = "wasm32"))]
+use std::{fs, io, path::Path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Reason {
@@ -119,41 +119,35 @@ pub fn item_worth_after(game: &Game, item: &crate::item::Item, previous: u32) ->
     worth.max(0) as u32
 }
 
-pub fn record(game: &Game, path: &Path) -> io::Result<Vec<ScoreEntry>> {
-    if game.no_score || game.end == EndState::Playing {
-        return existing(path);
-    }
-    let (scores, changed) = ranked(game, path)?;
-    if changed {
-        write(path, &scores)?;
-    }
-    Ok(scores)
+pub fn encode_scores(scores: &[ScoreEntry]) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec_pretty(scores)
 }
-fn ranked(game: &Game, path: &Path) -> io::Result<(Vec<ScoreEntry>, bool)> {
-    let mut scores = existing(path)?;
+
+pub fn decode_scores(bytes: &[u8]) -> Result<Vec<ScoreEntry>, serde_json::Error> {
+    serde_json::from_slice(bytes)
+}
+
+pub fn rank_scores(mut scores: Vec<ScoreEntry>, game: &Game, when: u64) -> (Vec<ScoreEntry>, bool) {
     if game.no_score {
-        return Ok((scores, false));
+        return (scores, false);
     }
     let reason = match game.end {
         EndState::Dead if game.has_amulet => Reason::KilledWithAmulet,
         EndState::Dead => Reason::Killed,
         EndState::Quit => Reason::Quit,
         EndState::Won => Reason::Winner,
-        EndState::Playing => return Ok((scores, false)),
+        EndState::Playing => return (scores, false),
     };
     let name = game.options.name.clone();
-    let when = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
     let new_score = amount(game);
     if new_score == 0 {
-        return Ok((scores, false));
+        return (scores, false);
     }
     if reason != Reason::Winner {
         if scores.iter().any(|entry| {
             entry.name == name && entry.reason != Reason::Winner && entry.score >= new_score
         }) {
-            return Ok((scores, false));
+            return (scores, false);
         }
         scores.retain(|entry| entry.name != name || entry.reason == Reason::Winner);
     }
@@ -169,10 +163,56 @@ fn ranked(game: &Game, path: &Path) -> io::Result<(Vec<ScoreEntry>, bool)> {
         },
         when,
     });
-    scores.sort_by_key(|s| std::cmp::Reverse(s.score));
+    scores.sort_by_key(|score| std::cmp::Reverse(score.score));
     scores.truncate(10);
-    Ok((scores, true))
+    (scores, true)
 }
+
+pub fn scores_from_storage(
+    slot: &str,
+    storage: &impl KeyValueStorage,
+) -> Result<Vec<ScoreEntry>, StorageError> {
+    let Some(json) = storage.get_item(&score_storage_key(slot))? else {
+        return Ok(Vec::new());
+    };
+    decode_scores(json.as_bytes())
+        .map_err(|error| StorageError::new("decode scores", error.to_string()))
+}
+
+pub fn record_in_storage(
+    game: &Game,
+    slot: &str,
+    storage: &impl KeyValueStorage,
+) -> Result<Vec<ScoreEntry>, StorageError> {
+    let scores = scores_from_storage(slot, storage)?;
+    let when = crate::platform::unix_time_seconds();
+    let (scores, changed) = rank_scores(scores, game, when);
+    if changed {
+        let json = serde_json::to_string_pretty(&scores)
+            .map_err(|error| StorageError::new("encode scores", error.to_string()))?;
+        storage.set_item(&score_storage_key(slot), &json)?;
+    }
+    Ok(scores)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn record(game: &Game, path: &Path) -> io::Result<Vec<ScoreEntry>> {
+    if game.no_score || game.end == EndState::Playing {
+        return existing(path);
+    }
+    let (scores, changed) = ranked(game, path)?;
+    if changed {
+        write(path, &scores)?;
+    }
+    Ok(scores)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn ranked(game: &Game, path: &Path) -> io::Result<(Vec<ScoreEntry>, bool)> {
+    let scores = existing(path)?;
+    let when = crate::platform::unix_time_seconds();
+    Ok(rank_scores(scores, game, when))
+}
+#[cfg(not(target_arch = "wasm32"))]
 fn existing(path: &Path) -> io::Result<Vec<ScoreEntry>> {
     match read(path) {
         Ok(scores) => Ok(scores),
@@ -180,8 +220,9 @@ fn existing(path: &Path) -> io::Result<Vec<ScoreEntry>> {
         Err(error) => Err(error),
     }
 }
+#[cfg(not(target_arch = "wasm32"))]
 fn write(path: &Path, scores: &[ScoreEntry]) -> io::Result<()> {
-    let bytes = serde_json::to_vec_pretty(&scores).map_err(io::Error::other)?;
+    let bytes = encode_scores(scores).map_err(io::Error::other)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?
     }
@@ -189,6 +230,7 @@ fn write(path: &Path, scores: &[ScoreEntry]) -> io::Result<()> {
     fs::write(&tmp, bytes)?;
     fs::rename(tmp, path)
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub fn record_locked(game: &Game, path: &Path, lock_path: &Path) -> io::Result<Vec<ScoreEntry>> {
     if game.no_score || game.end == EndState::Playing {
         return existing(path);
@@ -217,8 +259,9 @@ pub fn record_locked(game: &Game, path: &Path, lock_path: &Path) -> io::Result<V
     write(path, &scores)?;
     Ok(scores)
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub fn read(path: &Path) -> io::Result<Vec<ScoreEntry>> {
-    serde_json::from_slice(&fs::read(path)?).map_err(io::Error::other)
+    decode_scores(&fs::read(path)?).map_err(io::Error::other)
 }
 pub fn format(scores: &[ScoreEntry]) -> String {
     let mut out = String::from("Top 10 Rogueists:\n   Score Name\n");
@@ -252,6 +295,77 @@ fn reason_text(reason: Reason) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{cell::RefCell, collections::HashMap};
+
+    #[derive(Default)]
+    struct MemoryStorage(RefCell<HashMap<String, String>>);
+
+    impl KeyValueStorage for MemoryStorage {
+        fn get_item(&self, key: &str) -> Result<Option<String>, StorageError> {
+            Ok(self.0.borrow().get(key).cloned())
+        }
+
+        fn set_item(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.0.borrow_mut().insert(key.into(), value.into());
+            Ok(())
+        }
+
+        fn remove_item(&self, key: &str) -> Result<(), StorageError> {
+            self.0.borrow_mut().remove(key);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn pure_ranking_is_sorted_truncated_and_keeps_one_nonwinner_per_name() {
+        let mut scores = (1..=10)
+            .map(|score| ScoreEntry {
+                score,
+                name: format!("player {score}"),
+                reason: Reason::Quit,
+                cause: None,
+                level: 1,
+                when: 0,
+            })
+            .collect();
+        let mut game = Game::new(1);
+        game.options.name = "player 10".into();
+        game.player.gold = 50;
+        game.end = EndState::Quit;
+        let (ranked, changed) = rank_scores(std::mem::take(&mut scores), &game, 123);
+        assert!(changed);
+        assert_eq!(ranked.len(), 10);
+        assert_eq!(ranked[0].score, 50);
+        assert_eq!(ranked[0].when, 123);
+        assert_eq!(
+            ranked
+                .iter()
+                .filter(|entry| entry.name == "player 10")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn browser_score_storage_round_trips_and_corruption_is_preserved() {
+        let storage = MemoryStorage::default();
+        let mut game = Game::new(2);
+        game.player.gold = 42;
+        game.end = EndState::Quit;
+        assert_eq!(
+            record_in_storage(&game, "local", &storage).unwrap()[0].score,
+            42
+        );
+        assert_eq!(scores_from_storage("local", &storage).unwrap()[0].score, 42);
+
+        let key = score_storage_key("broken");
+        storage
+            .0
+            .borrow_mut()
+            .insert(key.clone(), "not json".into());
+        assert!(record_in_storage(&game, "broken", &storage).is_err());
+        assert_eq!(storage.0.borrow().get(&key).unwrap(), "not json");
+    }
     #[test]
     fn death_takes_ten_percent() {
         let mut g = Game::new(1);

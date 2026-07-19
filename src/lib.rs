@@ -6,6 +6,7 @@ pub mod generation;
 pub mod item;
 pub mod map;
 pub mod monster;
+pub mod platform;
 pub mod player;
 pub mod rng;
 pub mod save;

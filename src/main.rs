@@ -10,15 +10,17 @@ use mrzavec::{
     map::Pos,
     save, score,
 };
+use std::collections::VecDeque;
+#[cfg(test)]
+use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(not(target_arch = "wasm32"))]
 use std::{
-    collections::VecDeque,
     ffi::OsString,
     path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 const CELL_W: f32 = 10.0;
@@ -152,12 +154,14 @@ struct Cell(usize);
 struct Glyph;
 
 #[derive(Resource)]
+#[cfg(not(target_arch = "wasm32"))]
 struct TerminationSignal {
     pending: Arc<AtomicBool>,
     signal_quit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(not(target_arch = "wasm32"))]
 enum Startup {
     Play {
         restore: Option<OsString>,
@@ -170,6 +174,7 @@ enum Startup {
     Die,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_startup(args: impl IntoIterator<Item = OsString>) -> Result<Startup, char> {
     let mut args = args.into_iter().peekable();
     let mut restore = None;
@@ -228,6 +233,7 @@ fn parse_startup(args: impl IntoIterator<Item = OsString>) -> Result<Startup, ch
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_c_number(value: &str) -> Option<u32> {
     let (negative, value) = value
         .strip_prefix('-')
@@ -268,6 +274,20 @@ fn parse_c_integer(value: &str) -> i32 {
     value.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn startup_wizard_seed() -> Option<u64> {
+    std::env::var("SEED")
+        .ok()
+        .and_then(|value| parse_c_number(&value))
+        .map(u64::from)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn startup_wizard_seed() -> Option<u64> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn selected_seed(fallback: u64, options: &mrzavec::game::Options) -> u64 {
     if options.name.starts_with("rogo-")
         && let Ok(value) = std::env::var("ROGOSEED")
@@ -278,6 +298,7 @@ fn selected_seed(fallback: u64, options: &mrzavec::game::Options) -> u64 {
     fallback
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn usage(program: &str, options: &mrzavec::game::Options) -> String {
     format!(
         "Usage: {program} [-SrdVh] [-s [score_file]] [save_file]\n\n\
@@ -294,6 +315,7 @@ fn usage(program: &str, options: &mrzavec::game::Options) -> String {
     )
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let options = mrzavec::game::Options::default();
     let program = std::env::args().next().unwrap_or_else(|| "mrzavec".into());
@@ -305,9 +327,7 @@ fn main() {
             std::process::exit(3);
         }
     };
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(1, |d| d.as_nanos() as u64);
+    let seed = mrzavec::platform::random_seed();
     let seed = selected_seed(seed, &options);
     let (restore, signal_quit, wizard_prompt) = match startup {
         Startup::Version => {
@@ -389,9 +409,62 @@ fn main() {
     if let Err(error) = ctrlc::set_handler(move || signal_flag.store(true, Ordering::SeqCst)) {
         eprintln!("Unable to install terminating-signal handler: {error}");
     }
+    let mut app = game_app(game, wizard_prompt);
+    app.insert_resource(TerminationSignal {
+        pending: termination_pending,
+        signal_quit,
+    })
+    .add_systems(
+        Update,
+        (
+            handle_termination_signal,
+            keyboard,
+            finalize_end,
+            prepare_messages,
+            render,
+        )
+            .chain(),
+    )
+    .run();
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    let seed = mrzavec::platform::random_seed();
+    let options = mrzavec::game::Options::default();
+    let default_slot = options.save_file.clone();
+    let mut game = match restore_browser_game(&default_slot) {
+        Ok(Some(game)) => game,
+        Ok(None) => Game::new(seed),
+        Err(error) => {
+            let mut game = Game::new(seed);
+            game.message(format!("unable to restore browser save: {error}"));
+            game
+        }
+    };
+    if game.options.name.is_empty() {
+        game.options.name = "player".into();
+    }
+    game_app(game, false)
+        .add_systems(
+            Update,
+            (keyboard, finalize_end, prepare_messages, render).chain(),
+        )
+        .run();
+}
+
+#[cfg(target_arch = "wasm32")]
+fn restore_browser_game(
+    default_slot: &str,
+) -> Result<Option<Game>, mrzavec::platform::StorageError> {
+    let storage = mrzavec::platform::LocalStorage::open()?;
+    save::restore_browser_game(default_slot, &storage)
+}
+
+fn game_app(game: Game, wizard_prompt: bool) -> App {
     let message_serial_seen = game.message_serial;
-    App::new()
-        .insert_resource(ClearColor(Color::BLACK))
+    let mut app = App::new();
+    app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(State {
             game,
             modal: wizard_prompt.then(|| password_prompt(Pending::StartupPassword).into()),
@@ -411,37 +484,35 @@ fn main() {
             count_prefix: String::new(),
             counted_command: None,
         })
-        .insert_resource(TerminationSignal {
-            pending: termination_pending,
-            signal_quit,
-        })
         .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Rogue 5.4.5 — Mrzavec".into(),
-                resolution: WindowResolution::new(
-                    (CELL_W * 80.0 + 24.0) as u32,
-                    (CELL_H * 24.0 + 24.0) as u32,
-                ),
-                resizable: false,
-                ..default()
-            }),
+            primary_window: Some(game_window()),
             ..default()
         }))
-        .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                handle_termination_signal,
-                keyboard,
-                finalize_end,
-                prepare_messages,
-                render,
-            )
-                .chain(),
-        )
-        .run();
+        .add_systems(Startup, setup);
+    app
 }
 
+fn game_window() -> Window {
+    let window = Window {
+        title: "Rogue 5.4.5 — Mrzavec".into(),
+        resolution: WindowResolution::new(
+            (CELL_W * 80.0 + 24.0) as u32,
+            (CELL_H * 24.0 + 24.0) as u32,
+        ),
+        resizable: false,
+        prevent_default_event_handling: true,
+        ..default()
+    };
+    #[cfg(target_arch = "wasm32")]
+    let window = Window {
+        canvas: Some("#mrzavec".into()),
+        fit_canvas_to_parent: false,
+        ..window
+    };
+    window
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn apply_termination_signal(game: &mut Game, signal_quit: bool) -> std::io::Result<()> {
     if signal_quit {
         game.death_cause = Some("signal".into());
@@ -452,6 +523,7 @@ fn apply_termination_signal(game: &mut Game, signal_quit: bool) -> std::io::Resu
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn handle_termination_signal(
     mut state: ResMut<State>,
     signal: Res<TerminationSignal>,
@@ -466,15 +538,28 @@ fn handle_termination_signal(
     app_exit.write(AppExit::Success);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn record_game_score(game: &Game) -> Result<Vec<score::ScoreEntry>, String> {
+    score::record_locked(
+        game,
+        std::path::Path::new(&game.options.score_file),
+        std::path::Path::new(&game.options.lock_file),
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn record_game_score(game: &Game) -> Result<Vec<score::ScoreEntry>, String> {
+    let storage = mrzavec::platform::LocalStorage::open().map_err(|error| error.to_string())?;
+    score::record_in_storage(game, &game.options.score_file, &storage)
+        .map_err(|error| error.to_string())
+}
+
 fn finalize_end(mut state: ResMut<State>) {
     if state.score_recorded || state.game.end == mrzavec::game::EndState::Playing {
         return;
     }
-    let table = match score::record_locked(
-        &state.game,
-        std::path::Path::new(&state.game.options.score_file),
-        std::path::Path::new(&state.game.options.lock_file),
-    ) {
+    let table = match record_game_score(&state.game) {
         Ok(scores) => score::format(&scores),
         Err(error) => format!("Unable to read or update score table: {error}"),
     };
@@ -591,9 +676,7 @@ fn death_cause_with_article(game: &Game) -> String {
 }
 
 fn current_year() -> i64 {
-    let days = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs() as i64 / 86_400);
+    let days = (mrzavec::platform::unix_time_seconds() / 86_400) as i64;
     let z = days + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let day_of_era = z - era * 146_097;
@@ -965,10 +1048,9 @@ fn keyboard(
                 Pending::Password | Pending::StartupPassword => {
                     if wizard_password_matches(&input) {
                         if pending == Pending::StartupPassword
-                            && let Ok(value) = std::env::var("SEED")
-                            && let Some(seed) = parse_c_number(&value)
+                            && let Some(seed) = startup_wizard_seed()
                         {
-                            state.game = Game::new(u64::from(seed));
+                            state.game = Game::new(seed);
                         }
                         if pending == Pending::StartupPassword {
                             state.game.set_startup_wizard()
@@ -985,7 +1067,7 @@ fn keyboard(
                         return;
                     }
                     state.game.options.save_file = mrzavec::game::normalize_option_string(&input);
-                    if std::path::Path::new(&state.game.options.save_file).exists() {
+                    if save_exists(&state.game).unwrap_or(false) {
                         state.pending = Some(Pending::SaveOverwrite);
                         state.modal = Some(remembered_prompt(
                             &mut state,
@@ -1754,12 +1836,17 @@ fn keyboard(
             None
         }
         Command::Shell => {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-            if let Err(error) = std::process::Command::new(shell).status() {
-                state
-                    .game
-                    .message(format!("could not start shell: {error}"));
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+                if let Err(error) = std::process::Command::new(shell).status() {
+                    state
+                        .game
+                        .message(format!("could not start shell: {error}"));
+                }
             }
+            #[cfg(target_arch = "wasm32")]
+            state.game.message("shell is unavailable in a web browser");
             None
         }
         Command::Suspend => {
@@ -2038,13 +2125,36 @@ fn save_confirmation(game: &Game) -> String {
     format!("save file ({})? ", game.options.save_file)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn save_exists(game: &Game) -> Result<bool, String> {
+    Ok(std::path::Path::new(&game.options.save_file).exists())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn save_exists(game: &Game) -> Result<bool, String> {
+    let storage = mrzavec::platform::LocalStorage::open().map_err(|error| error.to_string())?;
+    save::storage_has_save(&game.options.save_file, &storage).map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn persist_game(game: &Game) -> Result<String, String> {
+    let path = std::path::PathBuf::from(&game.options.save_file);
+    save::save(game, &path).map_err(|error| error.to_string())?;
+    Ok(path.display().to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn persist_game(game: &Game) -> Result<String, String> {
+    let storage = mrzavec::platform::LocalStorage::open().map_err(|error| error.to_string())?;
+    save::save_to_storage(game, &game.options.save_file, &storage)
+        .map_err(|error| error.to_string())?;
+    Ok(format!("browser slot {}", game.options.save_file))
+}
+
 fn save_and_exit(state: &mut State, app_exit: &mut MessageWriter<AppExit>) {
-    let path = std::path::PathBuf::from(&state.game.options.save_file);
-    match save::save(&state.game, &path) {
-        Ok(()) => {
-            state
-                .game
-                .message(format!("game saved to {}", path.display()));
+    match persist_game(&state.game) {
+        Ok(destination) => {
+            state.game.message(format!("game saved to {destination}"));
             app_exit.write(AppExit::Success);
         }
         Err(error) => {
@@ -3345,6 +3455,9 @@ fn set_boolean_option(game: &mut Game, index: usize, value: bool) {
     }
 }
 fn option_home_directory() -> String {
+    #[cfg(target_arch = "wasm32")]
+    return String::new();
+    #[cfg(not(target_arch = "wasm32"))]
     std::env::var("HOME")
         .unwrap_or_else(|_| ".".into())
         .chars()

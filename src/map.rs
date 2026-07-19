@@ -72,7 +72,7 @@ const fn wall_glyph() -> char {
     '|'
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cell {
     pub terrain: Terrain,
     pub room: Option<u8>,
@@ -83,6 +83,21 @@ pub struct Cell {
     pub wizard_revealed: bool,
     pub trap: Option<Trap>,
     pub trap_revealed: bool,
+}
+
+impl Default for Cell {
+    fn default() -> Self {
+        Self {
+            terrain: Terrain::Void,
+            room: None,
+            passage: None,
+            seen: false,
+            remembered: ' ',
+            wizard_revealed: false,
+            trap: None,
+            trap_revealed: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,5 +149,18 @@ impl Map {
     }
     pub fn clear(&mut self) {
         self.cells.fill(Cell::default());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unexplored_cells_render_as_spaces() {
+        let map = Map::default();
+        let cell = map.get(Pos::new(0, 1)).unwrap();
+        assert!(!cell.seen);
+        assert_eq!(cell.remembered, ' ');
     }
 }

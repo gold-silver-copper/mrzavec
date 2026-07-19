@@ -48,6 +48,14 @@ unlinking, and consumes a normal save before play resumes. As in the master
 build, wizard saves remain reusable and may be hard-linked. Historical
 encrypted C-save compatibility is not reproduced.
 
+The WASM build retains the same JSON codec behind a key/value storage boundary.
+Browser saves use versioned `localStorage` keys derived from logical option
+slots. A normal entry is removed only after successful decoding, while wizard
+entries remain reusable. Corrupt or incompatible entries are retained, and
+storage denial or quota errors are displayed rather than treated as success.
+The browser score list uses the same pure one-best-nonwinner ranking code, but
+is local to the browser profile; no shared leaderboard is implied.
+
 Hallucination glyphs are simulation state rather than frame-time randomness.
 The `visuals` daemon consumes the seeded gameplay RNG once for each eligible
 object, unknown stair, and visible or detected monster after a turn, stores the
@@ -63,6 +71,15 @@ same signal instead records the original untaxed death by `signal`. Deliberate
 handling of process-fault signals such as segmentation violations is omitted;
 attempting Rust serialization after memory corruption would not be safe.
 
+The browser launcher has no CLI, native environment, signal, or path model. It
+uses a browser-safe `player` name and the logical save/score slots `default` and
+`local`, consumes a saved normal game at startup, and otherwise begins a new
+seeded game. The web canvas is supplied by the host page as `#mrzavec`; the
+fixed 824×480 logical surface preserves the 80×24 grid and may be scaled by the
+page. Explicit `S` remains the authoritative save-and-stop path. No unload or
+visibility checkpoint is created because browser lifecycle delivery is not
+reliable and a reusable background checkpoint would enable save scumming.
+
 The local JSON score table uses the configured player name as its identity for
 Rogue's one-best-nonwinner rule; the historical table used the Unix UID.
 
@@ -70,6 +87,9 @@ The original Ctrl-Z terminal job-control command has no direct equivalent in a
 Bevy window. It is accepted as a free command and reports that suspension is
 unavailable. The `!` shell escape remains available and uses `$SHELL`, falling
 back to `/bin/sh`.
+
+In WASM, both job control and the `!` shell escape report that the operation is
+unavailable. Native shell behavior is unchanged.
 
 The `flush` option is retained in saves and the option editor, but its
 terminal-typeahead behavior is naturally inert because Bevy receives discrete
