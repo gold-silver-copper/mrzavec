@@ -92,9 +92,9 @@ fn wizard_password_matches(input: &str) -> bool {
 
 fn password_prompt(pending: Pending) -> &'static str {
     if pending == Pending::StartupPassword {
-        "parola maga: "
+        "parola čarovnika: "
     } else {
-        "parola Maga: "
+        "parola Čarovnika: "
     }
 }
 
@@ -1677,7 +1677,7 @@ fn keyboard(
                                 state.game.message(if terse {
                                     "uže nosiš dva pŕstenja"
                                 } else {
-                                    "uže imaješ pŕstenj na kȯždoj rųkě"
+                                    "uže imaješ pŕstenj na každoj rųkě"
                                 });
                                 mrzavec::command::CommandResult::TURN
                             } else {
@@ -1945,7 +1945,7 @@ fn keyboard(
             } else {
                 state.input_buffer.clear();
                 state.pending = Some(Pending::Password);
-                Some(remembered_prompt(&mut state, "parola Maga: "))
+                Some(remembered_prompt(&mut state, "parola Čarovnika: "))
             }
         }
         Command::RemoveRing => match state.game.player.rings {
@@ -2592,7 +2592,7 @@ fn wizard_map_text(game: &Game) -> String {
 }
 fn magic_detection_text(game: &Game) -> String {
     let mut rows = vec![vec![' '; DISPLAY_WIDTH]; 23];
-    let title = "Čuješ blizkosť čarov na tom stųpnju. --Dalje--";
+    let title = "Čuješ blizkosť čarov na tom stųpenju. --Dalje--";
     for (x, ch) in title.chars().take(DISPLAY_WIDTH).enumerate() {
         rows[0][x] = ch;
     }
@@ -3112,7 +3112,7 @@ fn collect_messages(state: &mut State) {
 }
 
 fn status_text(game: &Game) -> String {
-    let hunger = ["", "Glad", "Slabosť", "Omdlěńje"]
+    let hunger = ["", "Glad", "Slabosť", "Nemoć"]
         .get(game.hungry_state as usize)
         .copied()
         .unwrap_or("");

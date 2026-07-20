@@ -116,3 +116,19 @@ nevidimosť (G 0.90 derivative of O nevidimy). "stealth" → tišina (O,
 - Monster subjects capitalize at render time (existing `uppercase_first`).
 - "by X" (passive agent) → instrumental; "X's" (possessor) → genitive;
   direct objects → accusative (animacy-sensitive via the crate).
+
+## Review pass (steen-legacy + check-text, 2026-07-20)
+
+Every hand-written literal in game.rs/main.rs/score.rs was run through
+slovowiki check-text and cross-checked against steen.free.fr grammar
+(cloned untracked as `steen-legacy/`). ~40 corrections: verb forms
+(leti, padaje, udarjaje, prěstavaješ; unofficial promašati→hybiti,
+zamahati→mahati, odskakuje→odskoči, blyskati→světi, oslabjaje),
+etymological spellings (vȯzduhu, vysoky, Pŕvo, råzpadaje sę),
+vocabulary (iměje→imaje, snęti→sjęti, kȯždoj→každoj, rameno→ramę,
+dosta→dosť, ura→hura, mag→čarovnik, boli→bolja, mihajųći→migajųći,
+stųpnja→stųpenja, odrazu→naglo, koristanju→koristaješ), impersonal
+"jest ti nedobro" for sickness, gender-neutral comparative adverbs
+(silněje/slaběje/lěpje instead of masculine silnějši/slabši/lovkějši),
+hunger status Nemoć. Steen verbs.html confirms -ati 3sg in -aje
+(contracted -a is a variant; the dictionary standard uses -aje).

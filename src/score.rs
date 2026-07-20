@@ -267,7 +267,7 @@ pub fn format(scores: &[ScoreEntry]) -> String {
     let mut out = String::from("Najlěpših 10 rogueistov:\nRezultat Ime\n");
     for (i, s) in scores.iter().enumerate() {
         out.push_str(&format!(
-            "{:2} {:5} {}: {} na stųpnju {}",
+            "{:2} {:5} {}: {} na stųpenju {}",
             i + 1,
             s.score,
             s.name,
@@ -449,7 +449,7 @@ mod tests {
             level: 26,
             when: 0,
         }];
-        assert!(format(&scores).contains("smŕť s Amuletom na stųpnju 26 od drakona."));
+        assert!(format(&scores).contains("smŕť s Amuletom na stųpenju 26 od drakona."));
     }
 
     #[test]
