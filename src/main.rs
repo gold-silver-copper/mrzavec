@@ -3247,10 +3247,21 @@ fn call_default(game: &Game, item: &mrzavec::item::Item) -> String {
         return existing.into();
     }
     match item.kind {
-        ItemKind::Potion => game.appearances.potion_colors[item.which as usize].clone(),
+        ItemKind::Potion => {
+            mrzavec::lang::COLOR_ADJ[game.appearances.potion_colors[item.which as usize]].to_string()
+        }
         ItemKind::Scroll => game.appearances.scroll_titles[item.which as usize].clone(),
-        ItemKind::Ring => game.appearances.ring_stones[item.which as usize].clone(),
-        ItemKind::Stick => game.appearances.stick_materials[item.which as usize].clone(),
+        ItemKind::Ring => {
+            mrzavec::lang::STONE_LEX[game.appearances.ring_stones[item.which as usize]]
+                .lemma
+                .to_string()
+        }
+        ItemKind::Stick => mrzavec::lang::stick_material_lex(
+            game.appearances.stick_is_staff[item.which as usize],
+            game.appearances.stick_materials[item.which as usize],
+        )
+        .lemma
+        .to_string(),
         _ => String::new(),
     }
 }

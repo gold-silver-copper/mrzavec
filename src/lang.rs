@@ -293,6 +293,22 @@ pub fn material_of(l: &Lex) -> String {
     format!("iz {}", gen_sg(l))
 }
 
+/// Stick material: wood for staves, metal for wands.
+pub fn stick_material_lex(is_staff: bool, index: usize) -> Lex {
+    if is_staff { WOOD_LEX[index] } else { METAL_LEX[index] }
+}
+
+/// Decline a word we hold no metadata for (the user-editable fruit name):
+/// dictionary lookup with ending-based fallback.
+pub fn decl_guess(word: &str, case: Case, number: Number) -> String {
+    first_variant(interslavic::noun(word, case, number))
+}
+
+/// Genitive of "food" for "porcija jedy".
+pub fn food_gen() -> String {
+    gen_sg(&FOOD_OF)
+}
+
 // ---------------------------------------------------------------------------
 // Magic-effect names, always genitive after the class head noun
 // ("napitȯk lěčenja"). Every form is produced by the crate at call time.
