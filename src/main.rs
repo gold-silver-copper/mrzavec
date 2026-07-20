@@ -30,8 +30,9 @@ const FONT_SIZE: f32 = 16.0;
 const MODAL_MORE_ROW: usize = DISPLAY_HEIGHT - 1;
 const MODAL_PAGE_ROWS: usize = MODAL_MORE_ROW;
 const KEYBINDING_FIRST_TEXT: &str =
-    "Move h/j/k/l  Inventory i  Quaff q  Read r  Eat e  Wield w  Drop d";
-const KEYBINDING_SECOND_TEXT: &str = "Wear W  Take off T  Throw t  Zap z  Search s  Rest .  Help ?";
+    "Iti h/j/k/l  Torba i  Piti q  Čitati r  Jesti e  Orųž. w  Ostav. d";
+const KEYBINDING_SECOND_TEXT: &str =
+    "Nositi W  Sjęti T  Metnųti t  Žezlo z  Iskati s  Čekati .  Pomoć ?";
 const MOVEMENT_REPEAT_DELAY: Duration = Duration::from_millis(300);
 const MOVEMENT_REPEAT_INTERVAL: Duration = Duration::from_millis(100);
 const MOVEMENT_KEYS: [(KeyCode, char); 8] = [
@@ -54,7 +55,7 @@ fn held_repeat_keys() -> impl Iterator<Item = (KeyCode, char)> {
 
 fn version_message(game: &Game) -> String {
     format!(
-        "rogue version 5.4.5 release {ROGUE_RELEASE} dungeon {} (chongo was here)",
+        "rogue verzija 5.4.5 izdańje {ROGUE_RELEASE} temnica {} (chongo was here)",
         game.dungeon_number
     )
 }
@@ -91,17 +92,17 @@ fn wizard_password_matches(input: &str) -> bool {
 
 fn password_prompt(pending: Pending) -> &'static str {
     if pending == Pending::StartupPassword {
-        "wizard's password: "
+        "parola maga: "
     } else {
-        "wizard's Password: "
+        "parola Maga: "
     }
 }
 
 fn call_prompt(game: &Game) -> &'static str {
     if game.options.terse {
-        "call it: "
+        "nazvati: "
     } else {
-        "what do you want to call it? "
+        "kako hočeš to nazvati? "
     }
 }
 
@@ -380,16 +381,16 @@ fn selected_seed(fallback: u64, options: &mrzavec::game::Options) -> u64 {
 #[cfg(not(target_arch = "wasm32"))]
 fn usage(program: &str, options: &mrzavec::game::Options) -> String {
     format!(
-        "Usage: {program} [-SrdVh] [-s [score_file]] [save_file]\n\n\
-         \t-S\t\tquit instead of saving on a terminating signal\n\
-         \t-r\t\tignored for backward compatibility\n\
-         \t-s [file]\tprint the score list\n\
-         \t-d\t\tkill the rogue and score the result\n\
-         \t-h\t\tprint this help\n\
-         \t-V\t\tprint version information\n\
-         \t[save_file]\trestore a game (default: {})\n\n\
-         Default score file: {}\n\
-         rogue version: 5.4.5 {ROGUE_RELEASE} (chongo was here)",
+        "Upotrěba: {program} [-SrdVh] [-s [fajl_rezultatov]] [fajl_shranjeńja]\n\n\
+         \t-S\t\tpri signalu izhod bez shranjeńja\n\
+         \t-r\t\tignoruje sę (kompatibilnosť)\n\
+         \t-s [fajl]\tpokazati spisȯk rezultatov\n\
+         \t-d\t\tubiti igrača i råzsčitati rezultat\n\
+         \t-h\t\tpokazati tutų pomoć\n\
+         \t-V\t\tpokazati verzijų\n\
+         \t[fajl]\tobnoviti igrų (standardno: {})\n\n\
+         Standardny fajl rezultatov: {}\n\
+         rogue verzija: 5.4.5 {ROGUE_RELEASE} (chongo was here)",
         options.save_file, options.score_file
     )
 }
@@ -401,7 +402,7 @@ fn main() {
     let startup = match parse_startup(std::env::args_os().skip(1)) {
         Ok(startup) => startup,
         Err(flag) => {
-            eprintln!("{program}: ERROR: illegal option -- {flag}");
+            eprintln!("{program}: BLŲD: nepravilna opcija -- {flag}");
             eprintln!("{}", usage(&program, &options));
             std::process::exit(3);
         }
@@ -422,7 +423,7 @@ fn main() {
                 .as_ref()
                 .is_some_and(|path| path.to_string_lossy().len() > 80)
             {
-                eprintln!("ERROR: score path length exceeds 80 characters");
+                eprintln!("BLŲD: pųť fajla rezultatov imaje vyše 80 znakov");
                 std::process::exit(4);
             }
             let path = path.map_or_else(|| PathBuf::from(&options.score_file), PathBuf::from);
@@ -430,7 +431,10 @@ fn main() {
                 Ok(scores) => scores,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
                 Err(error) => {
-                    eprintln!("Unable to read score table {}: {error}", path.display());
+                    eprintln!(
+                        "Ne možno čitati spisȯk rezultatov {}: {error}",
+                        path.display()
+                    );
                     std::process::exit(10);
                 }
             };
@@ -441,7 +445,11 @@ fn main() {
             let mut game = Game::new(seed);
             game.depth = 1;
             game.player.gold = (game.rng.rnd(60) + 2) as i32;
-            game.death_cause = Some("a bat".into());
+            game.death_cause = Some(mrzavec::lang::phrase(
+                &mrzavec::lang::MONSTER_LEX[1],
+                interslavic::Case::Gen,
+                interslavic::Number::Singular,
+            ));
             game.end = mrzavec::game::EndState::Dead;
             let table = match score::record_locked(
                 &game,
@@ -449,13 +457,14 @@ fn main() {
                 std::path::Path::new(&game.options.lock_file),
             ) {
                 Ok(scores) => score::format(&scores),
-                Err(error) => format!("Unable to read or update score table: {error}"),
+                Err(error) => format!("Ne možno čitati ili obnoviti spisȯk rezultatov: {error}"),
             };
             if game.options.tombstone {
                 println!("{}\n\n{table}", tombstone_text(&game));
             } else {
                 println!(
-                    "Killed by a bat with {} gold\n\n{table}",
+                    "Smŕť od {}, s {} zlåtnikov\n\n{table}",
+                    death_cause_gen(&game),
                     score::amount(&game)
                 );
             }
@@ -472,7 +481,7 @@ fn main() {
             Ok(game) => game,
             Err(error) => {
                 eprintln!(
-                    "Unable to restore {}: {error}",
+                    "Ne možno obnoviti {}: {error}",
                     std::path::Path::new(&path).display()
                 );
                 std::process::exit(5);
@@ -486,7 +495,7 @@ fn main() {
     let termination_pending = Arc::new(AtomicBool::new(false));
     let signal_flag = Arc::clone(&termination_pending);
     if let Err(error) = ctrlc::set_handler(move || signal_flag.store(true, Ordering::SeqCst)) {
-        eprintln!("Unable to install terminating-signal handler: {error}");
+        eprintln!("Ne možno instalovati obslugų signala: {error}");
     }
     let mut app = game_app(game, wizard_prompt);
     app.insert_resource(TerminationSignal {
@@ -517,12 +526,12 @@ fn main() {
         Ok(None) => Game::new(seed),
         Err(error) => {
             let mut game = Game::new(seed);
-            game.message(format!("unable to restore browser save: {error}"));
+            game.message(format!("ne možno obnoviti shranjeńje iz browsera: {error}"));
             game
         }
     };
     if game.options.name.is_empty() {
-        game.options.name = "player".into();
+        game.options.name = "igrač".into();
     }
     game_app(game, false)
         .add_systems(
@@ -609,7 +618,7 @@ fn handle_termination_signal(
         return;
     }
     if let Err(error) = apply_termination_signal(&mut state.game, signal.signal_quit) {
-        eprintln!("Automatic save failed: {error}");
+        eprintln!("Avtomatično shranjeńje ne udalo sę: {error}");
     }
     app_exit.write(AppExit::Success);
 }
@@ -637,7 +646,7 @@ fn finalize_end(mut state: ResMut<State>) {
     }
     let table = match record_game_score(&state.game) {
         Ok(scores) => score::format(&scores),
-        Err(error) => format!("Unable to read or update score table: {error}"),
+        Err(error) => format!("Ne možno čitati ili obnoviti spisȯk rezultatov: {error}"),
     };
     if state.game.end == mrzavec::game::EndState::Dead && state.game.options.tombstone {
         state.modal = Some(format!("{}\n\n{}", tombstone_text(&state.game), table));
@@ -646,30 +655,26 @@ fn finalize_end(mut state: ResMut<State>) {
     }
     state.modal = Some(match state.game.end {
         mrzavec::game::EndState::Won => format!(
-            "Congratulations, you have made it to the light of day!\n\nYou escaped the Dungeons of Doom alive.\n\n{}\nFinal score: {}\n\n{}",
+            "Čestitańja, vidiš dnevno světlo!\n\nUspěšno izhodiš iz Temnic Pohibeli.\n\n{}\nKonečny rezultat: {}\n\n{}",
             winner_sales_text(&state.game),
             score::amount(&state.game),
             table
         ),
         mrzavec::game::EndState::Dead if state.game.options.tombstone => format!(
-            "                       __________\n                      /    REST    \\\n                     /      IN      \\\n                    /     PEACE      \\\n\n                 Killed by {}\n                  Gold: {}\n                 Level: {}\n\n{}",
-            state
-                .game
-                .death_cause
-                .as_deref()
-                .unwrap_or("unknown causes"),
+            "                       __________\n                      /  POČIVAJ   \\\n                     /      V       \\\n                    /      MIRU      \\\n\n                 Smŕť od {}\n                  Zlåto: {}\n                 Stųpenj: {}\n\n{}",
+            death_cause_gen(&state.game),
             score::amount(&state.game),
             state.game.depth,
             table
         ),
         mrzavec::game::EndState::Dead => format!(
-            "Killed by {} with {} gold\n\n{}",
-            death_cause_with_article(&state.game),
+            "Smŕť od {}, s {} zlåtnikov\n\n{}",
+            death_cause_gen(&state.game),
             score::amount(&state.game),
             table
         ),
         mrzavec::game::EndState::Quit => format!(
-            "You quit with {} gold pieces\n\n{}",
+            "Izhod s {} zlåtnikami\n\n{}",
             state.game.player.gold, table
         ),
         mrzavec::game::EndState::Playing => unreachable!(),
@@ -688,24 +693,17 @@ fn tombstone_text(game: &Game) -> String {
         }
         line[column..column + value.len()].copy_from_slice(&value);
     }
-    let full_cause = death_cause_with_article(game);
-    let (article, cause) = if let Some(cause) = full_cause.strip_prefix("an ") {
-        ("an", cause)
-    } else if let Some(cause) = full_cause.strip_prefix("a ") {
-        ("a", cause)
-    } else {
-        ("", full_cause.as_str())
-    };
+    let cause = death_cause_gen(game);
     let mut lines: Vec<Vec<char>> = [
         "                       __________",
         "                      /          \\",
-        "                     /    REST    \\",
-        "                    /      IN      \\",
-        "                   /     PEACE      \\",
+        "                     /  POČIVAJ   \\",
+        "                    /      V       \\",
+        "                   /      MIRU      \\",
         "                  /                  \\",
         "                  |                  |",
         "                  |                  |",
-        "                  |   killed by a    |",
+        "                  |     smŕť od      |",
         "                  |                  |",
         "                  |       1980       |",
         "                 *|     *  *  *      | *",
@@ -721,12 +719,7 @@ fn tombstone_text(game: &Game) -> String {
     );
     let gold = format!("{} Au", score::amount(game));
     overlay(&mut lines[7], center(&gold), &gold);
-    match article {
-        "" => overlay(&mut lines[8], 32, " "),
-        "an" => overlay(&mut lines[8], 33, "n"),
-        _ => {}
-    }
-    overlay(&mut lines[9], center(cause), cause);
+    overlay(&mut lines[9], center(&cause), &cause);
     overlay(&mut lines[10], 26, &format!("{:4}", current_year()));
     lines
         .into_iter()
@@ -735,20 +728,15 @@ fn tombstone_text(game: &Game) -> String {
         .join("\n")
 }
 
-fn death_cause_with_article(game: &Game) -> String {
-    let cause = game.death_cause.as_deref().unwrap_or("God");
-    if cause.starts_with("a ")
-        || cause.starts_with("an ")
-        || matches!(cause, "starvation" | "hypothermia")
-    {
-        return cause.into();
+/// Death cause for display after "od". Causes are stored as complete
+/// genitive strings (game.rs `die()`); only the internal "signal" key —
+/// which score.rs compares literally — still needs a genitive rendering.
+fn death_cause_gen(game: &Game) -> String {
+    match game.death_cause.as_deref() {
+        Some("signal") => "signala".into(),
+        Some(cause) => cause.into(),
+        None => "Boga".into(),
     }
-    let article = if cause.starts_with(['a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U']) {
-        "an"
-    } else {
-        "a"
-    };
-    format!("{article} {cause}")
 }
 
 fn current_year() -> i64 {
@@ -773,7 +761,7 @@ fn winner_sales_text(game: &Game) -> String {
     for item in &mut named.player.inventory {
         item.known = true;
     }
-    let mut out = String::from("   Worth  Item\n");
+    let mut out = String::from("    Cěna  Prědmet\n");
     let mut previous_worth = 0;
     for item in game.player.inventory.iter().filter(|item| item.in_pack) {
         let named_item = named
@@ -790,7 +778,7 @@ fn winner_sales_text(game: &Game) -> String {
             named.inventory_name(named_item, false),
         ));
     }
-    out.push_str(&format!("   {:5}  Gold Pieces", game.player.gold));
+    out.push_str(&format!("   {:5}  Zlåtniky", game.player.gold));
     out
 }
 
@@ -960,7 +948,7 @@ fn keyboard(
             let line = state.slow_discovery_lines[next].clone();
             state.game.remember_message(&line);
             state.pending = Some(Pending::SlowDiscovery(next));
-            state.modal = Some(format!("{}  --More--", message_display_text(&line)));
+            state.modal = Some(format!("{}  --Dalje--", message_display_text(&line)));
         } else {
             if let Some(last) = state.slow_discovery_lines.last().cloned() {
                 state.game.remember_message(last);
@@ -1021,7 +1009,7 @@ fn keyboard(
                 .finish_action(mrzavec::command::CommandResult::TURN);
         }
         if state.pending == Some(Pending::Password) {
-            state.game.message("sorry");
+            state.game.message("žalj");
             state.pending = None;
             state.modal = None;
             return;
@@ -1114,9 +1102,9 @@ fn keyboard(
                 ));
             } else {
                 let error = if index == 6 {
-                    "(O, S, or C)"
+                    "(O, S ili C)"
                 } else {
-                    "(T or F)"
+                    "(T ili F)"
                 };
                 state.modal = Some(options_text(&state.game, Some(index), None, Some(error)));
             }
@@ -1152,12 +1140,12 @@ fn keyboard(
                             state.game.set_wizard(true)
                         }
                     } else if pending == Pending::Password {
-                        state.game.message("sorry")
+                        state.game.message("žalj")
                     }
                 }
                 Pending::SaveFileText => {
                     if input.is_empty() {
-                        state.modal = Some(remembered_prompt(&mut state, "file name: "));
+                        state.modal = Some(remembered_prompt(&mut state, "ime fajla: "));
                         return;
                     }
                     state.game.options.save_file = mrzavec::game::normalize_option_string(&input);
@@ -1165,7 +1153,7 @@ fn keyboard(
                         state.pending = Some(Pending::SaveOverwrite);
                         state.modal = Some(remembered_prompt(
                             &mut state,
-                            "File exists.  Do you wish to overwrite it?",
+                            "Fajl uže jest.  Hočeš li prěpisati jego?",
                         ));
                     } else {
                         save_and_exit(&mut state, &mut app_exit);
@@ -1191,8 +1179,8 @@ fn keyboard(
                 Pending::CallText(_) | Pending::AutoCall => {
                     format!("{}{}", call_prompt(&state.game), state.input_buffer)
                 }
-                Pending::SaveFileText => format!("file name: {}", state.input_buffer),
-                Pending::WizardCreateGold => format!("how much?{}", state.input_buffer),
+                Pending::SaveFileText => format!("ime fajla: {}", state.input_buffer),
+                Pending::WizardCreateGold => format!("koliko?{}", state.input_buffer),
                 _ => unreachable!(),
             });
             return;
@@ -1331,7 +1319,7 @@ fn keyboard(
                 (Pending::SaveConfirm, 'n') => {
                     state.input_buffer.clear();
                     state.pending = Some(Pending::SaveFileText);
-                    state.modal = Some(remembered_prompt(&mut state, "file name: "));
+                    state.modal = Some(remembered_prompt(&mut state, "ime fajla: "));
                 }
                 (Pending::SaveOverwrite, 'n') => {
                     state.pending = Some(Pending::SaveConfirm);
@@ -1340,15 +1328,15 @@ fn keyboard(
                 }
                 _ => {
                     let error = if pending == Pending::SaveConfirm {
-                        "please answer Y or N"
+                        "prošų, odgovori Y ili N"
                     } else {
-                        "Please answer Y or N"
+                        "Prošų, odgovori Y ili N"
                     };
                     state.game.message(error);
                     let prompt = if pending == Pending::SaveConfirm {
                         save_confirmation(&state.game)
                     } else {
-                        "File exists.  Do you wish to overwrite it?".into()
+                        "Fajl uže jest.  Hočeš li prěpisati jego?".into()
                     };
                     state.game.remember_message(&prompt);
                     state.modal = Some(message_display_text(&prompt));
@@ -1406,9 +1394,9 @@ fn keyboard(
                 start_discoveries(&mut state, ch);
             } else {
                 let error = if state.game.options.terse {
-                    "Not a type"
+                    "Ne vid"
                 } else {
-                    "Please type one of !?=/ (ESCAPE to quit)"
+                    "Prošų, piši jedin iz !?=/ (ESCAPE za izhod)"
                 };
                 state.game.message(error);
                 let prompt = discoveries_prompt(&state.game);
@@ -1427,7 +1415,7 @@ fn keyboard(
             } else {
                 state
                     .game
-                    .message(format!("'{}' not in pack", control_label(ch)));
+                    .message(format!("'{}' ne jest v torbě", control_label(ch)));
             }
             continue_counted_command(&mut state);
             return;
@@ -1454,7 +1442,7 @@ fn keyboard(
                 if kind == ItemKind::Gold {
                     state.input_buffer.clear();
                     state.pending = Some(Pending::WizardCreateGold);
-                    state.modal = Some(remembered_prompt(&mut state, "how much?"));
+                    state.modal = Some(remembered_prompt(&mut state, "koliko?"));
                 } else if matches!(kind, ItemKind::Food | ItemKind::Amulet) {
                     state.game.wizard_create(kind, 0);
                     state.pending = None;
@@ -1509,7 +1497,7 @@ fn keyboard(
                             &state.game,
                             Some(index),
                             None,
-                            Some("(T or F)"),
+                            Some("(T ili F)"),
                         ));
                         return;
                     }
@@ -1531,7 +1519,7 @@ fn keyboard(
                             &state.game,
                             Some(index),
                             None,
-                            Some("(O, S, or C)"),
+                            Some("(O, S ili C)"),
                         ));
                         return;
                     }
@@ -1586,8 +1574,8 @@ fn keyboard(
                             state.input_buffer
                         )
                     }
-                    Pending::SaveFileText => format!("File name: {}", state.input_buffer),
-                    Pending::WizardCreateGold => format!("How much?{}", state.input_buffer),
+                    Pending::SaveFileText => format!("Ime fajla: {}", state.input_buffer),
+                    Pending::WizardCreateGold => format!("Koliko?{}", state.input_buffer),
                     _ => unreachable!(),
                 });
             }
@@ -1679,9 +1667,9 @@ fn keyboard(
                             if left.is_some() && right.is_some() {
                                 let terse = state.game.options.terse;
                                 state.game.message(if terse {
-                                    "wearing two"
+                                    "uže nosiš dva pŕstenja"
                                 } else {
-                                    "you already have a ring on each hand"
+                                    "uže imaješ pŕstenj na kȯždoj rųkě"
                                 });
                                 mrzavec::command::CommandResult::TURN
                             } else {
@@ -1799,7 +1787,7 @@ fn keyboard(
     let repeated = parsed == Command::Repeat;
     let command = if repeated {
         let Some(last) = state.game.last_command else {
-            state.game.message("you haven't typed a command yet");
+            state.game.message("ješče ne jest komandy");
             return;
         };
         parse(last)
@@ -1854,10 +1842,7 @@ fn keyboard(
         Command::PickyInventory => picky_inventory_prompt(&mut state),
         Command::IdentifyObject => {
             state.pending = Some(Pending::IdentifyGlyph);
-            Some(remembered_prompt(
-                &mut state,
-                "what do you want identified? ",
-            ))
+            Some(remembered_prompt(&mut state, "čto hočeš opoznati? "))
         }
         Command::Help => {
             state.game.remember_message("");
@@ -1890,22 +1875,22 @@ fn keyboard(
                 if let Err(error) = std::process::Command::new(shell).status() {
                     state
                         .game
-                        .message(format!("could not start shell: {error}"));
+                        .message(format!("ne možno otvoriti shell: {error}"));
                 }
             }
             #[cfg(target_arch = "wasm32")]
-            state.game.message("shell is unavailable in a web browser");
+            state.game.message("shell ne jest dostųpny v browseru");
             None
         }
         Command::Suspend => {
             state
                 .game
-                .message("suspend is unavailable in the windowed interface");
+                .message("suspend ne jest dostųpny v grafičnom režimu");
             None
         }
         Command::Quit => {
             state.pending = Some(Pending::QuitConfirm);
-            Some(remembered_prompt(&mut state, "really quit?"))
+            Some(remembered_prompt(&mut state, "istinno izhod?"))
         }
         Command::Save => {
             state.pending = Some(Pending::SaveConfirm);
@@ -1925,7 +1910,7 @@ fn keyboard(
                     .any(|item| item.id == id && item.cursed)
             });
             if cursed_weapon {
-                state.game.message("you can't.  It appears to be cursed");
+                state.game.message("ne možeš.  Izgledaje, že to jest prokleto");
                 state
                     .game
                     .finish_action(mrzavec::command::CommandResult::TURN);
@@ -1952,16 +1937,16 @@ fn keyboard(
             } else {
                 state.input_buffer.clear();
                 state.pending = Some(Pending::Password);
-                Some(remembered_prompt(&mut state, "wizard's Password: "))
+                Some(remembered_prompt(&mut state, "parola Maga: "))
             }
         }
         Command::RemoveRing => match state.game.player.rings {
             [None, None] => {
                 let terse = state.game.options.terse;
                 state.game.message(if terse {
-                    "no rings"
+                    "ne jest pŕstenja"
                 } else {
-                    "you aren't wearing any rings"
+                    "ne nosiš nikakogo pŕstenja"
                 });
                 state
                     .game
@@ -1986,26 +1971,26 @@ fn keyboard(
             }
         },
         Command::CurrentWeapon => {
-            let message = current_message(&state.game, state.game.player.weapon, "wielding", None);
+            let message = current_message(&state.game, state.game.player.weapon, "dŕžiš", None);
             state.game.message(message);
             None
         }
         Command::CurrentArmor => {
-            let message = current_message(&state.game, state.game.player.armor, "wearing", None);
+            let message = current_message(&state.game, state.game.player.armor, "nosiš", None);
             state.game.message(message);
             None
         }
         Command::CurrentRings => {
             for (id, verbose_where, terse_where) in [
-                (state.game.player.rings[0], "on left hand", "(L)"),
-                (state.game.player.rings[1], "on right hand", "(R)"),
+                (state.game.player.rings[0], "na lěvoj rųkě", "(L)"),
+                (state.game.player.rings[1], "na pravoj rųkě", "(R)"),
             ] {
                 let location = if state.game.options.terse {
                     terse_where
                 } else {
                     verbose_where
                 };
-                let message = current_message(&state.game, id, "wearing", Some(location));
+                let message = current_message(&state.game, id, "nosiš", Some(location));
                 state.game.message(message);
             }
             None
@@ -2039,7 +2024,7 @@ fn keyboard(
         }
         Command::Wizard(WizardCommand::Create) if state.game.wizard => {
             state.pending = Some(Pending::WizardCreateType);
-            Some(remembered_prompt(&mut state, "type of item: "))
+            Some(remembered_prompt(&mut state, "vid prědmeta: "))
         }
         _ => None,
     };
@@ -2170,7 +2155,7 @@ fn resolve_quit_confirmation(state: &mut State, ch: char) {
 }
 
 fn save_confirmation(game: &Game) -> String {
-    format!("save file ({})? ", game.options.save_file)
+    format!("shraniti fajl ({})? ", game.options.save_file)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -2196,20 +2181,20 @@ fn persist_game(game: &Game) -> Result<String, String> {
     let storage = mrzavec::platform::LocalStorage::open().map_err(|error| error.to_string())?;
     save::save_to_storage(game, &game.options.save_file, &storage)
         .map_err(|error| error.to_string())?;
-    Ok(format!("browser slot {}", game.options.save_file))
+    Ok(format!("slot {}", game.options.save_file))
 }
 
 fn save_and_exit(state: &mut State, app_exit: &mut MessageWriter<AppExit>) {
     match persist_game(&state.game) {
         Ok(destination) => {
-            state.game.message(format!("game saved to {destination}"));
+            state.game.message(format!("igra shranjena: {destination}"));
             app_exit.write(AppExit::Success);
         }
         Err(error) => {
-            state.game.message(format!("save failed: {error}"));
+            state.game.message(format!("shranjeńje ne udalo sę: {error}"));
             state.pending = Some(Pending::SaveFileText);
             state.input_buffer.clear();
-            state.modal = Some(remembered_prompt(state, "file name: "));
+            state.modal = Some(remembered_prompt(state, "ime fajla: "));
         }
     }
 }
@@ -2284,7 +2269,7 @@ fn repeat_selected_command(state: &mut State, command: Command) -> bool {
             if let Some(id) = item() {
                 begin_manual_call(state, id);
             } else {
-                state.game.message("you ran out");
+                state.game.message("uže ne imaješ togo");
             }
             return true;
         }
@@ -2301,7 +2286,7 @@ fn repeat_selected_command(state: &mut State, command: Command) -> bool {
             show_pending_call(state);
         }
     } else {
-        state.game.message("you ran out");
+        state.game.message("uže ne imaješ togo");
         if matches!(
             command,
             Command::Quaff
@@ -2330,7 +2315,7 @@ fn begin_manual_call(state: &mut State, id: u64) {
         .find(|item| item.id == id)
         .cloned()
     else {
-        state.game.message("you ran out");
+        state.game.message("uže ne imaješ togo");
         state.pending = None;
         state.modal = None;
         return;
@@ -2356,9 +2341,9 @@ fn begin_manual_call(state: &mut State, id: u64) {
         .map(str::to_owned);
     if let Some(guess) = guess {
         state.game.message(if state.game.options.terse {
-            format!("called \"{guess}\"")
+            format!("nazvano «{guess}»")
         } else {
-            format!("Was called \"{guess}\"")
+            format!("Bylo nazvano «{guess}»")
         });
     }
     state.pending = Some(Pending::CallText(id));
@@ -2391,7 +2376,7 @@ fn show_pending_identification(state: &mut State) -> bool {
         state.game.pending_identification = None;
         state
             .game
-            .message("you don't have anything in your pack to identify");
+            .message("ne imaješ v torbě ničego za opoznańje");
         return false;
     }
     state.modal = select_item_menu(state, Pending::Identify);
@@ -2447,7 +2432,7 @@ fn continue_counted_command(state: &mut State) {
         Command::PickyInventory => picky_inventory_prompt(state),
         Command::Wizard(WizardCommand::Create) if state.game.wizard => {
             state.pending = Some(Pending::WizardCreateType);
-            Some(remembered_prompt(state, "type of item: "))
+            Some(remembered_prompt(state, "vid prědmeta: "))
         }
         _ => {
             state.counted_command = None;
@@ -2461,9 +2446,9 @@ fn continue_counted_command(state: &mut State) {
 fn ground_inventory_modal(state: &mut State) -> Option<String> {
     if state.game.floor_items.is_empty() {
         state.game.message(if state.game.options.terse {
-            "empty handed"
+            "prazdne rųky"
         } else {
-            "you are empty handed"
+            "ne imaješ ničego"
         });
         return None;
     }
@@ -2472,7 +2457,7 @@ fn ground_inventory_modal(state: &mut State) -> Option<String> {
         out.push_str(&state.game.inventory_name(item, false));
         out.push('\n');
     }
-    out.push_str(" --More--");
+    out.push_str(" --Dalje--");
     state.modal_overlay = state.game.options.inventory_style
         == mrzavec::game::InventoryStyle::Overwrite
         && out.lines().count() <= STATUS_ROW;
@@ -2480,9 +2465,9 @@ fn ground_inventory_modal(state: &mut State) -> Option<String> {
 }
 fn wizard_list_prompt(game: &Game) -> String {
     if game.options.terse {
-        "what type? ".into()
+        "kaky vid? ".into()
     } else {
-        "for what type of object do you want a list? ".into()
+        "za kaky vid hočeš spisȯk? ".into()
     }
 }
 fn wizard_probability_text(glyph: char) -> Option<String> {
@@ -2504,7 +2489,7 @@ fn wizard_probability_text(glyph: char) -> Option<String> {
         };
         out.push_str(&format!("{label}: {name} ({probability}%)\n"));
     }
-    out.push_str(" --More--");
+    out.push_str(" --Dalje--");
     Some(out)
 }
 fn wizard_kind_count(kind: ItemKind) -> u8 {
@@ -2519,13 +2504,13 @@ fn wizard_kind_count(kind: ItemKind) -> u8 {
 }
 fn wizard_kind_name(kind: ItemKind) -> &'static str {
     match kind {
-        ItemKind::Potion => "potion",
-        ItemKind::Scroll => "scroll",
-        ItemKind::Weapon => "weapon",
-        ItemKind::Armor => "armor",
-        ItemKind::Ring => "ring",
-        ItemKind::Stick => "staff",
-        _ => "item",
+        ItemKind::Potion => "napitȯk",
+        ItemKind::Scroll => "svitȯk",
+        ItemKind::Weapon => "orųžje",
+        ItemKind::Armor => "brȯnja",
+        ItemKind::Ring => "pŕstenj",
+        ItemKind::Stick => "posoh",
+        _ => "prědmet",
     }
 }
 fn wizard_which_prompt(kind: ItemKind) -> String {
@@ -2536,14 +2521,14 @@ fn wizard_which_prompt(kind: ItemKind) -> String {
         (b'a' + highest - 10) as char
     };
     format!(
-        "which {} ({}) do you want? (0-{highest})",
+        "{} ({}) — kake čislo hočeš? (0-{highest})",
         kind.glyph(),
         wizard_kind_name(kind)
     )
 }
 fn resolve_wizard_which(state: &mut State, kind: ItemKind, which: u8) {
     if which >= wizard_kind_count(kind) {
-        let error = format!("invalid {}, try again", wizard_kind_name(kind));
+        let error = format!("nepravilno čislo ({}), ješče raz", wizard_kind_name(kind));
         state.game.message(&error);
         let prompt = wizard_which_prompt(kind);
         state.game.remember_message(&prompt);
@@ -2552,7 +2537,7 @@ fn resolve_wizard_which(state: &mut State, kind: ItemKind, which: u8) {
         || (kind == ItemKind::Ring && matches!(which, 0 | 1 | 7 | 8))
     {
         state.pending = Some(Pending::WizardCreateBlessing(kind, which));
-        state.modal = Some(remembered_prompt(state, "blessing? (+,-,n) "));
+        state.modal = Some(remembered_prompt(state, "blagoslovjeńje? (+,-,n) "));
     } else {
         state.game.wizard_create(kind, which);
         state.pending = None;
@@ -2564,7 +2549,7 @@ fn wizard_map_text(game: &Game) -> String {
     use mrzavec::map::Terrain;
 
     let mut rows = vec![vec![' '; DISPLAY_WIDTH]; 23];
-    for (x, ch) in " --More--".chars().enumerate() {
+    for (x, ch) in " --Dalje--".chars().enumerate() {
         rows[0][x] = ch;
     }
     for (pos, cell) in game.dungeon.map.iter() {
@@ -2599,7 +2584,7 @@ fn wizard_map_text(game: &Game) -> String {
 }
 fn magic_detection_text(game: &Game) -> String {
     let mut rows = vec![vec![' '; DISPLAY_WIDTH]; 23];
-    let title = "You sense the presence of magic on this level. --More--";
+    let title = "Čuješ blizkosť čarov na tom stųpnju. --Dalje--";
     for (x, ch) in title.chars().take(DISPLAY_WIDTH).enumerate() {
         rows[0][x] = ch;
     }
@@ -2616,7 +2601,7 @@ fn magic_detection_text(game: &Game) -> String {
 
 fn food_detection_text(game: &Game) -> String {
     let mut rows = vec![vec![' '; DISPLAY_WIDTH]; 23];
-    let title = "Your nose tingles and you smell food. --More--";
+    let title = "Tvoj nos svŕbi i čuješ zapah jedy. --Dalje--";
     for (x, ch) in title.chars().take(DISPLAY_WIDTH).enumerate() {
         rows[0][x] = ch;
     }
@@ -2633,9 +2618,9 @@ fn food_detection_text(game: &Game) -> String {
 
 fn direction_prompt(state: &mut State, pending: Pending) -> Option<String> {
     let prompt = if state.game.options.terse {
-        "direction: "
+        "strana: "
     } else {
-        "which direction? "
+        "v kojų stranų? "
     };
     state.pending = Some(pending);
     state.game.remember_message(prompt);
@@ -2643,16 +2628,16 @@ fn direction_prompt(state: &mut State, pending: Pending) -> Option<String> {
 }
 fn ring_hand_prompt(game: &Game) -> String {
     if game.options.terse {
-        "left or right ring? ".into()
+        "lěvy ili pravy pŕstenj? ".into()
     } else {
-        "left hand or right hand? ".into()
+        "lěva rųka ili prava rųka? ".into()
     }
 }
 fn retry_ring_hand(state: &mut State) {
     let error = if state.game.options.terse {
-        "L or R"
+        "L ili R"
     } else {
-        "please type L or R"
+        "prošų, L ili R"
     };
     state.game.message(error);
     let prompt = ring_hand_prompt(&state.game);
@@ -2727,9 +2712,9 @@ fn item_menu_text(game: &Game, pending: Pending, feedback: Option<&str>) -> Opti
 fn select_item_menu(state: &mut State, pending: Pending) -> Option<String> {
     let Some(text) = item_menu_text(&state.game, pending, None) else {
         state.game.message(if state.game.options.terse {
-            "nothing appropriate"
+            "ničego prigodnogo"
         } else {
-            "you don't have anything appropriate"
+            "ne imaješ ničego prigodnogo"
         });
         state.pending = None;
         state.modal = None;
@@ -2742,7 +2727,7 @@ fn select_item_menu(state: &mut State, pending: Pending) -> Option<String> {
     Some(text)
 }
 fn retry_invalid_item(state: &mut State, pending: Pending, ch: char) {
-    let error = format!("'{}' is not a valid item", control_label(ch));
+    let error = format!("'{}' ne jest pravilny prědmet", control_label(ch));
     state.game.message(&error);
     state.modal = item_menu_text(&state.game, pending, Some(&message_display_text(&error)));
     if state.modal.is_none() {
@@ -2756,7 +2741,7 @@ fn wizard_identify_prompt(state: &mut State) -> Option<String> {
     if state.game.player.inventory.is_empty() {
         state
             .game
-            .message("you don't have anything in your pack to identify");
+            .message("ne imaješ v torbě ničego za opoznańje");
         None
     } else {
         state.game.pending_identification = None;
@@ -2765,7 +2750,7 @@ fn wizard_identify_prompt(state: &mut State) -> Option<String> {
 }
 fn wizard_charge_prompt(state: &mut State) -> Option<String> {
     if state.game.player.inventory.is_empty() {
-        state.game.message("you aren't carrying anything");
+        state.game.message("ničego ne nosiš");
         None
     } else {
         select_item_menu(state, Pending::WizardCharge)
@@ -2777,7 +2762,7 @@ fn select_action_menu(
     empty_consumes_turn: bool,
 ) -> Option<String> {
     if state.game.player.inventory.is_empty() {
-        state.game.message("you aren't carrying anything");
+        state.game.message("ničego ne nosiš");
         if empty_consumes_turn {
             state
                 .game
@@ -2792,8 +2777,8 @@ fn select_action_menu(
 fn equipment_text(game: &Game, title: &str, id: Option<u64>) -> String {
     let value = id
         .and_then(|id| game.player.inventory.iter().find(|i| i.id == id))
-        .map_or("nothing".into(), |item| game.item_name(item));
-    format!("{title}\n\n{value}\n\nPress Escape")
+        .map_or("ničego".into(), |item| game.item_name(item));
+    format!("{title}\n\n{value}\n\nEscape za izhod")
 }
 fn current_message(game: &Game, id: Option<u64>, how: &str, where_: Option<&str>) -> String {
     let location = where_
@@ -2804,26 +2789,26 @@ fn current_message(game: &Game, id: Option<u64>, how: &str, where_: Option<&str>
         let prefix = if game.options.terse {
             String::new()
         } else {
-            format!("you are {how} (")
+            format!("{how} sejčas: ")
         };
         format!(
             "{prefix}{letter}) {}{location}",
             game.inventory_name(item, true)
         )
     } else if game.options.terse {
-        format!("{how} nothing{location}")
+        format!("ničego{location}")
     } else {
-        format!("you are {how} nothing{location}")
+        format!("ne {how} ničego{location}")
     }
 }
 #[cfg(test)]
 fn rings_text(game: &Game) -> String {
     let ring = |id: Option<u64>| {
         id.and_then(|id| game.player.inventory.iter().find(|item| item.id == id))
-            .map_or("nothing".into(), |item| game.item_name(item))
+            .map_or("ničego".into(), |item| game.item_name(item))
     };
     format!(
-        "Rings\n\nleft: {}\nright: {}\n\nPress Escape",
+        "Pŕstenje\n\nlěvy: {}\npravy: {}\n\nEscape za izhod",
         ring(game.player.rings[0]),
         ring(game.player.rings[1])
     )
@@ -2903,7 +2888,7 @@ fn display(state: &State) -> Vec<char> {
         && !inline_prompt
     {
         let all_lines: Vec<&str> = modal.lines().collect();
-        let explicit_more = all_lines.last() == Some(&" --More--");
+        let explicit_more = all_lines.last() == Some(&" --Dalje--");
         let content_count = all_lines.len() - usize::from(explicit_more);
         let remaining = content_count.saturating_sub(state.modal_offset);
         let has_next_page = remaining > MODAL_PAGE_ROWS;
@@ -2922,7 +2907,7 @@ fn display(state: &State) -> Vec<char> {
             write_terminal_text(&mut out, y, 0, line, DISPLAY_WIDTH);
         }
         if reserve_more {
-            write_terminal_text(&mut out, MODAL_MORE_ROW, 0, " --More--", DISPLAY_WIDTH);
+            write_terminal_text(&mut out, MODAL_MORE_ROW, 0, " --Dalje--", DISPLAY_WIDTH);
         }
         return out;
     }
@@ -2990,7 +2975,7 @@ fn display(state: &State) -> Vec<char> {
 fn modal_has_next_page(modal: &str, offset: usize) -> bool {
     let mut lines = modal.lines();
     let count = lines.by_ref().count();
-    let explicit_more = modal.lines().last() == Some(" --More--");
+    let explicit_more = modal.lines().last() == Some(" --Dalje--");
     count.saturating_sub(usize::from(explicit_more)) > offset + MODAL_PAGE_ROWS
 }
 
@@ -3119,13 +3104,13 @@ fn collect_messages(state: &mut State) {
 }
 
 fn status_text(game: &Game) -> String {
-    let hunger = ["", "Hungry", "Weak", "Faint"]
+    let hunger = ["", "Glad", "Slabosť", "Omdlěńje"]
         .get(game.hungry_state as usize)
         .copied()
         .unwrap_or("");
     let hp_width = game.player.stats.max_hp.to_string().len();
     format!(
-        "Level: {}  Gold: {:<5}  Hp: {:>width$}({:>width$})  Str: {:>2}({})  Arm: {:<2}  Exp: {}/{}  {}",
+        "Stųp: {}  Zlåto: {:<5}  Hp: {:>width$}({:>width$})  Sila: {:>2}({})  Brȯn: {:<2}  Exp: {}/{}  {}",
         game.depth,
         game.player.gold,
         game.player.stats.hp,
@@ -3149,9 +3134,9 @@ fn inventory_modal(state: &mut State) -> Option<String> {
         .count();
     if pack_len == 0 {
         state.game.message(if state.game.options.terse {
-            "empty handed"
+            "prazdne rųky"
         } else {
-            "you are empty handed"
+            "ne imaješ ničego"
         });
         return None;
     }
@@ -3184,7 +3169,7 @@ fn inventory_line(game: &Game, index: usize) -> String {
         .filter(|item| item.in_pack)
         .nth(index)
         .map_or_else(
-            || "Your pack is empty.".into(),
+            || "Tvoja torba jest prazdna.".into(),
             |item| {
                 format!(
                     "{}) {}",
@@ -3196,7 +3181,7 @@ fn inventory_line(game: &Game, index: usize) -> String {
 }
 
 fn slow_inventory_line(game: &Game, index: usize) -> String {
-    format!("{}  --More--", inventory_line(game, index))
+    format!("{}  --Dalje--", inventory_line(game, index))
 }
 
 fn picky_inventory_prompt(state: &mut State) -> Option<String> {
@@ -3208,7 +3193,7 @@ fn picky_inventory_prompt(state: &mut State) -> Option<String> {
         .filter(|item| item.in_pack)
         .collect();
     if pack.is_empty() {
-        state.game.message("you aren't carrying anything");
+        state.game.message("ničego ne nosiš");
         return None;
     }
     if pack.len() == 1 {
@@ -3220,9 +3205,9 @@ fn picky_inventory_prompt(state: &mut State) -> Option<String> {
     }
     state.pending = Some(Pending::PickyInventory);
     let prompt = if state.game.options.terse {
-        "item: "
+        "prědmet: "
     } else {
-        "which item do you wish to inventory: "
+        "kaky prědmet hočeš viděti: "
     };
     state.game.remember_message(prompt);
     Some(message_display_text(prompt))
@@ -3239,7 +3224,7 @@ fn inventory_text(game: &Game) -> String {
         text.push_str(&inventory_line(game, index));
         text.push('\n');
     }
-    text.push_str(" --More--");
+    text.push_str(" --Dalje--");
     text
 }
 fn call_default(game: &Game, item: &mrzavec::item::Item) -> String {
@@ -3268,13 +3253,13 @@ fn call_default(game: &Game, item: &mrzavec::item::Item) -> String {
 fn discovery_lines(game: &mut Game, kind: Option<char>) -> Vec<String> {
     let mut lines = Vec::new();
     let categories = [
-        ('!', ItemKind::Potion, POTION_NAMES.len(), "potion"),
-        ('?', ItemKind::Scroll, SCROLL_NAMES.len(), "scroll"),
-        ('=', ItemKind::Ring, RING_NAMES.len(), "ring"),
-        ('/', ItemKind::Stick, STICK_NAMES.len(), "stick"),
+        ('!', ItemKind::Potion, POTION_NAMES.len(), &mrzavec::lang::POTION),
+        ('?', ItemKind::Scroll, SCROLL_NAMES.len(), &mrzavec::lang::SCROLL),
+        ('=', ItemKind::Ring, RING_NAMES.len(), &mrzavec::lang::RING),
+        ('/', ItemKind::Stick, STICK_NAMES.len(), &mrzavec::lang::WAND),
     ];
     let mut first = true;
-    for (glyph, item_kind, count, singular) in categories {
+    for (glyph, item_kind, count, category) in categories {
         if !kind.is_none_or(|requested| requested == glyph || requested == '*') {
             continue;
         }
@@ -3303,10 +3288,16 @@ fn discovery_lines(game: &mut Game, kind: Option<char>) -> Vec<String> {
             }
         }
         if !found {
+            // "o" governs the locative; the plural form comes from lang::decl.
+            let loc_pl = mrzavec::lang::decl(
+                category,
+                interslavic::Case::Loc,
+                interslavic::Number::Plural,
+            );
             lines.push(if game.options.terse {
-                format!("Nothing about any {singular}s")
+                format!("Ničego o {loc_pl}")
             } else {
-                format!("Haven't discovered anything about any {singular}s")
+                format!("Ničego ne znaješ o {loc_pl}")
             });
         }
     }
@@ -3319,7 +3310,7 @@ fn discoveries_text(game: &mut Game, kind: Option<char>) -> String {
     if !out.is_empty() {
         out.push('\n');
     }
-    out.push_str(" --More--");
+    out.push_str(" --Dalje--");
     out
 }
 
@@ -3331,7 +3322,7 @@ fn start_discoveries(state: &mut State, kind: char) {
                 lines.into_iter().filter(|line| !line.is_empty()).collect();
             state.pending = Some(Pending::SlowDiscoveryPrompt);
             let prompt = discoveries_prompt(&state.game);
-            state.modal = Some(format!("{}  --More--", message_display_text(&prompt)));
+            state.modal = Some(format!("{}  --Dalje--", message_display_text(&prompt)));
         }
         mrzavec::game::InventoryStyle::Overwrite | mrzavec::game::InventoryStyle::Clear
             if lines.len() == 1 =>
@@ -3343,7 +3334,7 @@ fn start_discoveries(state: &mut State, kind: char) {
         }
         mrzavec::game::InventoryStyle::Overwrite | mrzavec::game::InventoryStyle::Clear => {
             let mut text = lines.join("\n");
-            text.push_str("\n --More--");
+            text.push_str("\n --Dalje--");
             state.modal_overlay = state.game.options.inventory_style
                 == mrzavec::game::InventoryStyle::Overwrite
                 && lines.len() <= STATUS_ROW;
@@ -3355,77 +3346,77 @@ fn start_discoveries(state: &mut State, kind: char) {
 }
 fn discoveries_prompt(game: &Game) -> String {
     if game.options.terse {
-        "what type? (* for all)".into()
+        "kaky vid? (* za vse)".into()
     } else {
-        "for what type of object do you want a list? (* for all)".into()
+        "za kaky vid hočeš spisȯk? (* za vse)".into()
     }
 }
 const HELP_ENTRIES: &[(char, &str, bool)] = &[
-    ('?', "\tprints help", true),
-    ('/', "\tidentify object", true),
-    ('h', "\tleft", true),
-    ('j', "\tdown", true),
-    ('k', "\tup", true),
-    ('l', "\tright", true),
-    ('y', "\tup & left", true),
-    ('u', "\tup & right", true),
-    ('b', "\tdown & left", true),
-    ('n', "\tdown & right", true),
-    ('H', "\trun left", false),
-    ('J', "\trun down", false),
-    ('K', "\trun up", false),
-    ('L', "\trun right", false),
-    ('Y', "\trun up & left", false),
-    ('U', "\trun up & right", false),
-    ('B', "\trun down & left", false),
-    ('N', "\trun down & right", false),
-    ('\u{8}', "\trun left until adjacent", false),
-    ('\u{a}', "\trun down until adjacent", false),
-    ('\u{b}', "\trun up until adjacent", false),
-    ('\u{c}', "\trun right until adjacent", false),
-    ('\u{19}', "\trun up & left until adjacent", false),
-    ('\u{15}', "\trun up & right until adjacent", false),
-    ('\u{2}', "\trun down & left until adjacent", false),
-    ('\u{e}', "\trun down & right until adjacent", false),
-    ('\0', "\t<SHIFT><dir>: run that way", true),
-    ('\0', "\t<CTRL><dir>: run till adjacent", true),
-    ('f', "<dir>\tfight till death or near death", true),
-    ('t', "<dir>\tthrow something", true),
-    ('m', "<dir>\tmove onto without picking up", true),
-    ('z', "<dir>\tzap a wand in a direction", true),
-    ('^', "<dir>\tidentify trap type", true),
-    ('s', "\tsearch for trap/secret door", true),
-    ('>', "\tgo down a staircase", true),
-    ('<', "\tgo up a staircase", true),
-    ('.', "\trest for a turn", true),
-    (',', "\tpick something up", true),
-    ('i', "\tinventory", true),
-    ('I', "\tinventory single item", true),
-    ('q', "\tquaff potion", true),
-    ('r', "\tread scroll", true),
-    ('e', "\teat food", true),
-    ('w', "\twield a weapon", true),
-    ('W', "\twear armor", true),
-    ('T', "\ttake armor off", true),
-    ('P', "\tput on ring", true),
-    ('R', "\tremove ring", true),
-    ('d', "\tdrop object", true),
-    ('c', "\tcall object", true),
-    ('a', "\trepeat last command", true),
-    (')', "\tprint current weapon", true),
-    (']', "\tprint current armor", true),
-    ('=', "\tprint current rings", true),
-    ('@', "\tprint current stats", true),
-    ('D', "\trecall what's been discovered", true),
-    ('o', "\texamine/set options", true),
-    ('\u{12}', "\tredraw screen", true),
-    ('\u{10}', "\trepeat last message", true),
-    ('\u{1b}', "\tcancel command, ^[ is the escape key", true),
-    ('S', "\tsave game", true),
-    ('Q', "\tquit", true),
-    ('!', "\tshell escape", true),
-    ('F', "<dir>\tfight till either of you dies", true),
-    ('v', "\tprint version, release, dungeon number", true),
+    ('?', "\tpokazati pomoć", true),
+    ('/', "\topoznati znak", true),
+    ('h', "\tvlěvo", true),
+    ('j', "\tdolu", true),
+    ('k', "\tgorě", true),
+    ('l', "\tvpravo", true),
+    ('y', "\tgorě i vlěvo", true),
+    ('u', "\tgorě i vpravo", true),
+    ('b', "\tdolu i vlěvo", true),
+    ('n', "\tdolu i vpravo", true),
+    ('H', "\tběgati vlěvo", false),
+    ('J', "\tběgati dolu", false),
+    ('K', "\tběgati gorě", false),
+    ('L', "\tběgati vpravo", false),
+    ('Y', "\tběgati gorě i vlěvo", false),
+    ('U', "\tběgati gorě i vpravo", false),
+    ('B', "\tběgati dolu i vlěvo", false),
+    ('N', "\tběgati dolu i vpravo", false),
+    ('\u{8}', "\tběgati vlěvo do prěškody", false),
+    ('\u{a}', "\tběgati dolu do prěškody", false),
+    ('\u{b}', "\tběgati gorě do prěškody", false),
+    ('\u{c}', "\tběgati vpravo do prěškody", false),
+    ('\u{19}', "\tběgati gorě i vlěvo do prěškody", false),
+    ('\u{15}', "\tběgati gorě i vpravo do prěškody", false),
+    ('\u{2}', "\tběgati dolu i vlěvo do prěškody", false),
+    ('\u{e}', "\tběgati dolu i vpravo do prěškody", false),
+    ('\0', "\t<SHIFT><dir>: běgati v tų stranų", true),
+    ('\0', "\t<CTRL><dir>: běgati do prěškody", true),
+    ('f', "<dir>\tboriti sę do smŕti ili skoro do smŕti", true),
+    ('t', "<dir>\tmetnųti něčto", true),
+    ('m', "<dir>\titi bez vzęťja prědmeta", true),
+    ('z', "<dir>\tužiti žezlo", true),
+    ('^', "<dir>\topoznati vid pasti", true),
+    ('s', "\tiskati pasť/tajne dveri", true),
+    ('>', "\titi dolu", true),
+    ('<', "\titi gorě", true),
+    ('.', "\tčekati jedin hod", true),
+    (',', "\tvzęti něčto", true),
+    ('i', "\tpokazati torbų", true),
+    ('I', "\tpokazati jedin prědmet", true),
+    ('q', "\tpiti napitȯk", true),
+    ('r', "\tčitati svitȯk", true),
+    ('e', "\tjesti jedų", true),
+    ('w', "\tdŕžati orųžje", true),
+    ('W', "\tnositi brȯnjų", true),
+    ('T', "\tsjęti brȯnjų", true),
+    ('P', "\tnaděti pŕstenj", true),
+    ('R', "\tsjęti pŕstenj", true),
+    ('d', "\tostaviti prědmet", true),
+    ('c', "\tnazvati prědmet", true),
+    ('a', "\tpovtoriti poslědnjų komandų", true),
+    (')', "\tpokazati orųžje v rųkě", true),
+    (']', "\tpokazati brȯnjų", true),
+    ('=', "\tpokazati pŕsteni", true),
+    ('@', "\tpokazati tvoje stańje", true),
+    ('D', "\tpokazati, čto uže znaješ", true),
+    ('o', "\tpokazati/měnjati opcije", true),
+    ('\u{12}', "\tobnoviti ekran", true),
+    ('\u{10}', "\tpovtoriti poslědnjų věsť", true),
+    ('\u{1b}', "\tanulovati komandų, ^[ jest knopka escape", true),
+    ('S', "\tshraniti igrų", true),
+    ('Q', "\tizhod", true),
+    ('!', "\totvoriti shell", true),
+    ('F', "<dir>\tboriti sę dokolě někto ne umre", true),
+    ('v', "\tpokazati verzijų, izdańje, čislo temnice", true),
 ];
 
 fn help_text() -> String {
@@ -3469,73 +3460,63 @@ fn control_label(ch: char) -> String {
 
 fn identify_glyph_text(ch: char) -> String {
     let description = if ch.is_ascii_uppercase() {
-        mrzavec::monster::MONSTERS[(ch as u8 - b'A') as usize].name
+        mrzavec::lang::phrase(
+            &mrzavec::lang::MONSTER_LEX[(ch as u8 - b'A') as usize],
+            interslavic::Case::Nom,
+            interslavic::Number::Singular,
+        )
     } else {
         match ch {
-            '|' | '-' => "wall of a room",
-            '*' => "gold",
-            '%' => "a staircase",
-            '+' => "door",
-            '.' => "room floor",
-            '@' => "you",
-            '#' => "passage",
-            '^' => "trap",
-            '!' => "potion",
-            '?' => "scroll",
-            ':' => "food",
-            ')' => "weapon",
-            ' ' => "solid rock",
-            ']' => "armor",
-            ',' => "the Amulet of Yendor",
-            '=' => "ring",
-            '/' => "wand or staff",
-            _ => "unknown character",
+            '|' | '-' => "stěna komnaty",
+            '*' => "zlåto",
+            '%' => "stųpenišče",
+            '+' => "dveri",
+            '.' => "tlo komnaty",
+            '@' => "ty",
+            '#' => "prohod",
+            '^' => "pasť",
+            '!' => "napitȯk",
+            '?' => "svitȯk",
+            ':' => "jeda",
+            ')' => "orųžje",
+            ' ' => "tvŕda skala",
+            ']' => "brȯnja",
+            ',' => "Amulet Jendora",
+            '=' => "pŕstenj",
+            '/' => "žezlo ili posoh",
+            _ => "neznany znak",
         }
+        .to_string()
     };
     format!("'{}': {description}", control_label(ch))
 }
 const OPTION_COUNT: usize = 12;
 const OPTION_LABELS: [(&str, &str); OPTION_COUNT] = [
-    ("Terse output", "terse"),
-    ("Flush typeahead during battle", "flush"),
-    ("Show position only at end of run", "jump"),
-    ("Show the lamp-illuminated floor", "seefloor"),
-    ("Follow turnings in passageways", "passgo"),
-    ("Print out tombstone when killed", "tombstone"),
-    ("Inventory style", "inven"),
-    ("Name", "name"),
-    ("Fruit", "fruit"),
-    ("Save file", "file"),
-    ("Score file", "score"),
-    ("Lock file", "lock"),
+    ("Kråtke věsti", "terse"),
+    ("Ignorovati pisańje podčas boja", "flush"),
+    ("Pokazati pozicijų jedino na koncu běga", "jump"),
+    ("Pokazati osvětljeno tlo", "seefloor"),
+    ("Slědovati povråtam v prohodah", "passgo"),
+    ("Pokazati kamenj groba po smŕti", "tombstone"),
+    ("Stiľ torby", "inven"),
+    ("Ime", "name"),
+    ("Ovoć", "fruit"),
+    ("Fajl shranjeńja", "file"),
+    ("Fajl rezultatov", "score"),
+    ("Fajl zamka", "lock"),
 ];
 fn option_value(game: &Game, index: usize) -> String {
     match index {
-        0 => if game.options.terse { "True" } else { "False" }.into(),
-        1 => if game.options.fight_flush {
-            "True"
-        } else {
-            "False"
-        }
-        .into(),
-        2 => if game.options.jump { "True" } else { "False" }.into(),
-        3 => if game.options.see_floor {
-            "True"
-        } else {
-            "False"
-        }
-        .into(),
-        4 => if game.options.passgo { "True" } else { "False" }.into(),
-        5 => if game.options.tombstone {
-            "True"
-        } else {
-            "False"
-        }
-        .into(),
+        0 => if game.options.terse { "Da" } else { "Ne" }.into(),
+        1 => if game.options.fight_flush { "Da" } else { "Ne" }.into(),
+        2 => if game.options.jump { "Da" } else { "Ne" }.into(),
+        3 => if game.options.see_floor { "Da" } else { "Ne" }.into(),
+        4 => if game.options.passgo { "Da" } else { "Ne" }.into(),
+        5 => if game.options.tombstone { "Da" } else { "Ne" }.into(),
         6 => match game.options.inventory_style {
-            mrzavec::game::InventoryStyle::Overwrite => "Overwrite",
-            mrzavec::game::InventoryStyle::Slow => "Slow",
-            mrzavec::game::InventoryStyle::Clear => "Clear",
+            mrzavec::game::InventoryStyle::Overwrite => "Prěpisati",
+            mrzavec::game::InventoryStyle::Slow => "Pomalo",
+            mrzavec::game::InventoryStyle::Clear => "Očistiti",
         }
         .into(),
         7 => game.options.name.clone(),
@@ -3587,7 +3568,7 @@ fn finish_options(state: &mut State) {
     state.input_buffer.clear();
     state.pending = Some(Pending::More);
     state.modal = Some(format!(
-        "{} --More--",
+        "{} --Dalje--",
         options_text(&state.game, None, None, None)
     ));
 }
@@ -3698,30 +3679,30 @@ mod tests {
         let lines: Vec<_> = text.lines().collect();
 
         assert_eq!(lines.len(), OPTION_COUNT);
-        assert_eq!(lines[0], "Terse output (\"terse\"): True");
-        assert_eq!(lines[1], "Flush typeahead during battle (\"flush\"): False");
+        assert_eq!(lines[0], "Kråtke věsti (\"terse\"): Da");
+        assert_eq!(
+            lines[1],
+            "Ignorovati pisańje podčas boja (\"flush\"): Ne"
+        );
         assert_eq!(
             lines[2],
-            "Show position only at end of run (\"jump\"): False"
+            "Pokazati pozicijų jedino na koncu běga (\"jump\"): Ne"
         );
-        assert_eq!(
-            lines[3],
-            "Show the lamp-illuminated floor (\"seefloor\"): True"
-        );
+        assert_eq!(lines[3], "Pokazati osvětljeno tlo (\"seefloor\"): Da");
         assert_eq!(
             lines[4],
-            "Follow turnings in passageways (\"passgo\"): False"
+            "Slědovati povråtam v prohodah (\"passgo\"): Ne"
         );
         assert_eq!(
             lines[5],
-            "Print out tombstone when killed (\"tombstone\"): True"
+            "Pokazati kamenj groba po smŕti (\"tombstone\"): Da"
         );
-        assert_eq!(lines[6], "Inventory style (\"inven\"): Slow");
-        assert_eq!(lines[7], "Name (\"name\"): Rodney");
-        assert_eq!(lines[8], "Fruit (\"fruit\"): mango");
-        assert!(lines[9].starts_with("Save file (\"file\"): "));
-        assert!(lines[10].starts_with("Score file (\"score\"): "));
-        assert!(lines[11].starts_with("Lock file (\"lock\"): "));
+        assert_eq!(lines[6], "Stiľ torby (\"inven\"): Pomalo");
+        assert_eq!(lines[7], "Ime (\"name\"): Rodney");
+        assert_eq!(lines[8], "Ovoć (\"fruit\"): mango");
+        assert!(lines[9].starts_with("Fajl shranjeńja (\"file\"): "));
+        assert!(lines[10].starts_with("Fajl rezultatov (\"score\"): "));
+        assert!(lines[11].starts_with("Fajl zamka (\"lock\"): "));
     }
 
     #[test]
@@ -3745,7 +3726,7 @@ mod tests {
 
         advance_option(&mut state, OPTION_COUNT - 1);
         assert_eq!(state.pending, Some(Pending::More));
-        assert!(state.modal.as_deref().unwrap().ends_with(" --More--"));
+        assert!(state.modal.as_deref().unwrap().ends_with(" --Dalje--"));
     }
 
     #[test]
@@ -3757,7 +3738,7 @@ mod tests {
         let erased = options_text(&game, Some(7), Some(""), None);
 
         assert!(initial.lines().nth(7).unwrap().ends_with("Old Name"));
-        assert_eq!(erased.lines().nth(7).unwrap(), "Name (\"name\"): ");
+        assert_eq!(erased.lines().nth(7).unwrap(), "Ime (\"name\"): ");
     }
 
     #[test]
@@ -3877,7 +3858,7 @@ mod tests {
         let game = Game::new(4_294_967_299);
         assert_eq!(
             version_message(&game),
-            "rogue version 5.4.5 release 2026-07-17 dungeon 3 (chongo was here)"
+            "rogue verzija 5.4.5 izdańje 2026-07-17 temnica 3 (chongo was here)"
         );
     }
 
@@ -3899,7 +3880,7 @@ mod tests {
             .unwrap();
         arrows.count = 7;
         let text = inventory_text(&game);
-        assert!(text.contains("7 +0,+0 arrows"));
+        assert!(text.contains("+0,+0 7 strěl"));
         assert!(!text.contains("x7"));
         assert!(!text.contains(") ) "));
     }
@@ -3911,12 +3892,12 @@ mod tests {
         assert!(inventory_modal(&mut empty).is_none());
         assert_eq!(
             empty.game.messages.last().map(String::as_str),
-            Some("you are empty handed")
+            Some("ne imaješ ničego")
         );
         assert!(picky_inventory_prompt(&mut empty).is_none());
         assert_eq!(
             empty.game.messages.last().map(String::as_str),
-            Some("you aren't carrying anything")
+            Some("ničego ne nosiš")
         );
 
         let mut single = state(111);
@@ -3928,7 +3909,7 @@ mod tests {
         multiple.game.options.terse = true;
         assert_eq!(
             picky_inventory_prompt(&mut multiple).as_deref(),
-            Some("Item: ")
+            Some("Prědmet: ")
         );
         assert_eq!(multiple.pending, Some(Pending::PickyInventory));
     }
@@ -3949,7 +3930,7 @@ mod tests {
         assert!(ground_inventory_modal(&mut state).is_none());
         assert_eq!(
             state.game.messages.last().map(String::as_str),
-            Some("you are empty handed")
+            Some("ne imaješ ničego")
         );
     }
 
@@ -3964,7 +3945,7 @@ mod tests {
         );
         let first = display(&state);
         let first_text = display_row(&first, MODAL_MORE_ROW);
-        assert!(first_text.starts_with(" --More--"));
+        assert!(first_text.starts_with(" --Dalje--"));
 
         state.modal_offset = MODAL_PAGE_ROWS;
         let second = display(&state);
@@ -4006,7 +3987,7 @@ mod tests {
         assert!(
             display_row(&buffer, KEYBINDING_SECOND_ROW)
                 .trim_end()
-                .ends_with("Help ?")
+                .ends_with("Pomoć ?")
         );
     }
 
@@ -4022,7 +4003,7 @@ mod tests {
         assert_eq!(state.modal.as_deref(), Some(help_text().as_str()));
         assert!(!state.modal.as_deref().unwrap().contains("help for"));
         assert!(!state.modal.as_deref().unwrap().contains("* for all"));
-        assert!(display_row(&display(state), MODAL_MORE_ROW).starts_with(" --More--"));
+        assert!(display_row(&display(state), MODAL_MORE_ROW).starts_with(" --Dalje--"));
     }
 
     #[test]
@@ -4049,7 +4030,7 @@ mod tests {
             display_row(&first, MODAL_PAGE_ROWS - 1).trim_end(),
             expected_lines[MODAL_PAGE_ROWS - 1].as_str()
         );
-        assert!(display_row(&first, MODAL_MORE_ROW).starts_with(" --More--"));
+        assert!(display_row(&first, MODAL_MORE_ROW).starts_with(" --Dalje--"));
 
         press_keys(&mut app, &[KeyCode::Space]);
         app.update();
@@ -4066,7 +4047,7 @@ mod tests {
             display_row(&second, expected_lines.len() - MODAL_PAGE_ROWS - 1).trim_end(),
             expected_lines.last().unwrap().as_str()
         );
-        assert!(!display_row(&second, MODAL_MORE_ROW).contains("--More--"));
+        assert!(!display_row(&second, MODAL_MORE_ROW).contains("--Dalje--"));
 
         press_keys(&mut app, &[KeyCode::Space]);
         app.update();
@@ -4266,7 +4247,7 @@ mod tests {
         {
             let mut state = app.world_mut().resource_mut::<State>();
             state.pending = Some(Pending::Drop);
-            state.modal = Some("a) a mace".into());
+            state.modal = Some("a) bulava".into());
         }
         app.world_mut()
             .resource_mut::<Time>()
@@ -4411,38 +4392,40 @@ mod tests {
         game.options.name = "Rodney".into();
         game.player.gold = 100;
         game.end = mrzavec::game::EndState::Dead;
-        game.death_cause = Some("a dragon".into());
+        game.death_cause = Some("drakona".into());
         let text = tombstone_text(&game);
-        assert!(text.contains("REST"));
+        assert!(text.contains("POČIVAJ"));
+        assert!(text.contains("MIRU"));
         assert!(text.contains("Rodney"));
         assert!(text.contains("90 Au"));
-        assert!(text.contains("killed by a"));
-        assert!(text.contains("dragon"));
-        assert!(!text.contains("a dragon"));
+        assert!(text.contains("smŕť od"));
+        assert!(text.contains("drakona"));
         assert!(text.contains(&current_year().to_string()));
     }
 
     #[test]
-    fn tombstone_places_articles_in_the_reference_heading() {
+    fn tombstone_renders_genitive_causes_without_article_machinery() {
         let mut game = Game::new(104);
         game.end = mrzavec::game::EndState::Dead;
 
-        game.death_cause = Some("an aquator".into());
-        let vowel = tombstone_text(&game);
-        assert!(vowel.contains("killed by an"));
-        assert!(!vowel.contains("an aquator"));
-        assert!(vowel.contains("aquator"));
+        game.death_cause = Some("akvatora".into());
+        let monster = tombstone_text(&game);
+        assert!(monster.contains("smŕť od"));
+        assert!(monster.contains("akvatora"));
 
-        game.death_cause = Some("starvation".into());
-        let articleless = tombstone_text(&game);
-        assert!(!articleless.contains("killed by a "));
-        assert!(articleless.contains("starvation"));
+        game.death_cause = Some("glada".into());
+        let starvation = tombstone_text(&game);
+        assert!(starvation.contains("glada"));
 
+        // The internal "signal" key stays machine-readable for score.rs but
+        // renders as a genitive.
         game.death_cause = Some("signal".into());
         let signal = tombstone_text(&game);
-        assert!(signal.contains("killed by a"));
-        assert!(signal.contains("signal"));
-        assert_eq!(death_cause_with_article(&game), "a signal");
+        assert!(signal.contains("signala"));
+        assert_eq!(death_cause_gen(&game), "signala");
+
+        game.death_cause = None;
+        assert_eq!(death_cause_gen(&game), "Boga");
     }
 
     #[test]
@@ -4450,12 +4433,17 @@ mod tests {
         let mut game = mrzavec::Game::new(2026);
         game.end = mrzavec::game::EndState::Dead;
         game.options.name = "abcdefghijklmnopqrstuvwxyz".into();
-        game.death_cause = Some("a venus flytrap".into());
+        let cause = mrzavec::lang::phrase(
+            &mrzavec::lang::MONSTER_LEX[17],
+            interslavic::Case::Gen,
+            interslavic::Number::Singular,
+        );
+        game.death_cause = Some(cause.clone());
 
         let text = tombstone_text(&game);
 
         assert!(text.contains("abcdefghijklmnopqrstuvwxyz"));
-        assert!(text.contains("venus flytrap"));
+        assert!(text.contains(&cause));
     }
 
     #[test]
@@ -4469,10 +4457,10 @@ mod tests {
         game.player.max_strength = 16;
         game.hungry_state = 2;
         let status = status_text(&game);
-        assert!(status.contains("Level: 7  Gold: 42   "));
+        assert!(status.contains("Stųp: 7  Zlåto: 42   "));
         assert!(status.contains("Hp:  9(12)"));
-        assert!(status.contains("Str: 14(16)"));
-        assert!(status.ends_with("Weak"));
+        assert!(status.contains("Sila: 14(16)"));
+        assert!(status.ends_with("Slabosť"));
     }
 
     #[test]
@@ -4480,8 +4468,8 @@ mod tests {
         let mut game = Game::new(100);
         game.player.gold = 321;
         let text = winner_sales_text(&game);
-        assert!(text.starts_with("   Worth  Item"));
-        assert!(text.contains("321  Gold Pieces"));
+        assert!(text.starts_with("    Cěna  Prědmet"));
+        assert!(text.contains("321  Zlåtniky"));
         assert!(text.contains("a)"));
     }
 
@@ -4496,7 +4484,7 @@ mod tests {
             .unwrap();
         arrows.count = 7;
         let text = winner_sales_text(&game);
-        assert!(text.contains("7 +0,+0 arrows"));
+        assert!(text.contains("+0,+0 7 strěl"));
         assert!(!text.contains("x7"));
     }
 
@@ -4506,8 +4494,8 @@ mod tests {
         game.knowledge.potions[0] = true;
         game.knowledge.scrolls[0] = true;
         let potions = discoveries_text(&mut game, Some('!'));
-        assert!(potions.contains("potion of"));
-        assert!(!potions.contains("scroll of"));
+        assert!(potions.contains("napitȯk"));
+        assert!(!potions.contains("svitȯk"));
     }
 
     #[test]
@@ -4515,10 +4503,10 @@ mod tests {
         let mut game = Game::new(108);
         assert_eq!(
             discoveries_prompt(&game),
-            "for what type of object do you want a list? (* for all)"
+            "za kaky vid hočeš spisȯk? (* za vse)"
         );
         game.options.terse = true;
-        assert_eq!(discoveries_prompt(&game), "what type? (* for all)");
+        assert_eq!(discoveries_prompt(&game), "kaky vid? (* za vse)");
     }
 
     #[test]
@@ -4532,7 +4520,7 @@ mod tests {
 
         let text = discoveries_text(&mut game, Some('!'));
 
-        assert!(text.contains("called fizzy"));
+        assert!(text.contains("«fizzy»"));
         assert_eq!(game.rng, expected_rng);
     }
 
@@ -4546,7 +4534,14 @@ mod tests {
         assert_eq!(single.game.messages.last().map(String::as_str), Some(""));
         assert_eq!(
             single.game.recall_message,
-            "Haven't discovered anything about any potions"
+            format!(
+                "Ničego ne znaješ o {}",
+                mrzavec::lang::decl(
+                    &mrzavec::lang::POTION,
+                    interslavic::Case::Loc,
+                    interslavic::Number::Plural
+                )
+            )
         );
 
         let mut clear = state(201);
@@ -4556,7 +4551,7 @@ mod tests {
         start_discoveries(&mut clear, '!');
         assert_eq!(clear.pending, Some(Pending::DiscoveryMore));
         assert!(!clear.modal_overlay);
-        assert!(clear.modal.as_deref().unwrap().ends_with(" --More--"));
+        assert!(clear.modal.as_deref().unwrap().ends_with(" --Dalje--"));
 
         let mut overwrite = state(202);
         overwrite.game.options.inventory_style = mrzavec::game::InventoryStyle::Overwrite;
@@ -4569,7 +4564,7 @@ mod tests {
         start_discoveries(&mut slow, '*');
         assert_eq!(slow.pending, Some(Pending::SlowDiscoveryPrompt));
         assert_eq!(slow.slow_discovery_lines.len(), 4);
-        assert!(slow.modal.as_deref().unwrap().ends_with("  --More--"));
+        assert!(slow.modal.as_deref().unwrap().ends_with("  --Dalje--"));
     }
 
     #[test]
@@ -4578,7 +4573,7 @@ mod tests {
         let potion = mrzavec::item::Item::basic(1, ItemKind::Potion, 0);
         assert_eq!(
             call_default(&game, &potion),
-            game.appearances.potion_colors[0]
+            mrzavec::lang::COLOR_ADJ[game.appearances.potion_colors[0]]
         );
 
         game.knowledge.guesses[0] = Some("bubbly".into());
@@ -4590,15 +4585,12 @@ mod tests {
         let mut state = state(210);
         state.game.pending_call = Some((ItemKind::Potion, 0));
         assert!(show_pending_call(&mut state));
-        assert_eq!(
-            state.modal.as_deref(),
-            Some("What do you want to call it? ")
-        );
+        assert_eq!(state.modal.as_deref(), Some("Kako hočeš to nazvati? "));
 
         state.game.options.terse = true;
         state.game.pending_call = Some((ItemKind::Potion, 0));
         assert!(show_pending_call(&mut state));
-        assert_eq!(state.modal.as_deref(), Some("Call it: "));
+        assert_eq!(state.modal.as_deref(), Some("Nazvati: "));
     }
 
     #[test]
@@ -4613,14 +4605,14 @@ mod tests {
 
         assert_eq!(state.pending, Some(Pending::CallText(item.id)));
         assert_eq!(state.input_buffer, expected);
-        let expected_modal = format!("What do you want to call it? {expected}");
+        let expected_modal = format!("Kako hočeš to nazvati? {expected}");
         assert_eq!(state.modal.as_deref(), Some(expected_modal.as_str()));
     }
 
     #[test]
     fn glyph_identification_names_monsters_and_terrain() {
-        assert!(identify_glyph_text('D').contains("dragon"));
-        assert!(identify_glyph_text('#').contains("passage"));
+        assert!(identify_glyph_text('D').contains("drakon"));
+        assert!(identify_glyph_text('#').contains("prohod"));
     }
 
     #[test]
@@ -4635,20 +4627,20 @@ mod tests {
 
         assert_eq!(lines, expected);
         assert_eq!(lines.len(), 49);
-        assert!(full.contains("<SHIFT><dir>: run that way"));
+        assert!(full.contains("<SHIFT><dir>: běgati v tų stranų"));
         assert!(!full.contains('\t'));
-        assert!(full.contains("fight till death or near death"));
-        assert!(full.contains("fight till either of you dies"));
-        assert!(full.contains("shell escape"));
-        assert!(full.contains("print version, release, dungeon number"));
+        assert!(full.contains("boriti sę do smŕti ili skoro do smŕti"));
+        assert!(full.contains("boriti sę dokolě někto ne umre"));
+        assert!(full.contains("otvoriti shell"));
+        assert!(full.contains("pokazati verzijų, izdańje, čislo temnice"));
         assert!(!full.contains("Ctrl-Z"));
         assert!(!full.contains("legal no-op"));
-        assert!(!full.contains("--More--"));
+        assert!(!full.contains("--Dalje--"));
     }
 
     #[test]
     fn glyph_identification_uses_unctrl_for_control_characters() {
-        assert!(identify_glyph_text('\u{8}').starts_with("'^H': unknown character"));
+        assert!(identify_glyph_text('\u{8}').starts_with("'^H': neznany znak"));
     }
 
     #[test]
@@ -4680,7 +4672,7 @@ mod tests {
         let view = wizard_map_text(&game);
         let lines: Vec<_> = view.lines().collect();
 
-        assert!(lines[0].starts_with(" --More--"));
+        assert!(lines[0].starts_with(" --Dalje--"));
         assert_eq!(lines[12].chars().nth(37), Some('+'));
         assert_eq!(lines[12].chars().nth(38), Some('#'));
         assert_eq!(lines[12].chars().nth(39), Some('^'));
@@ -4691,15 +4683,15 @@ mod tests {
     fn wizard_creation_prompts_use_each_reference_subtype_range() {
         assert_eq!(
             wizard_which_prompt(ItemKind::Potion),
-            "which ! (potion) do you want? (0-d)"
+            "! (napitȯk) — kake čislo hočeš? (0-d)"
         );
         assert_eq!(
             wizard_which_prompt(ItemKind::Scroll),
-            "which ? (scroll) do you want? (0-h)"
+            "? (svitȯk) — kake čislo hočeš? (0-h)"
         );
         assert_eq!(
             wizard_which_prompt(ItemKind::Weapon),
-            "which ) (weapon) do you want? (0-8)"
+            ") (orųžje) — kake čislo hočeš? (0-8)"
         );
         assert_eq!(wizard_kind_count(ItemKind::Ring), 14);
     }
@@ -4707,12 +4699,9 @@ mod tests {
     #[test]
     fn wizard_star_lists_reference_object_probabilities() {
         let mut game = Game::new(108);
-        assert_eq!(
-            wizard_list_prompt(&game),
-            "for what type of object do you want a list? "
-        );
+        assert_eq!(wizard_list_prompt(&game), "za kaky vid hočeš spisȯk? ");
         game.options.terse = true;
-        assert_eq!(wizard_list_prompt(&game), "what type? ");
+        assert_eq!(wizard_list_prompt(&game), "kaky vid? ");
 
         let potions = wizard_probability_text('!').unwrap();
         assert!(potions.starts_with("0: confusion (7%)\n1: hallucination (8%)"));
@@ -4727,7 +4716,7 @@ mod tests {
         assert!(wizard_identify_prompt(&mut identify).is_none());
         assert_eq!(
             identify.game.messages.last().map(String::as_str),
-            Some("you don't have anything in your pack to identify")
+            Some("ne imaješ v torbě ničego za opoznańje")
         );
         assert!(identify.pending.is_none());
 
@@ -4736,7 +4725,7 @@ mod tests {
         assert!(wizard_charge_prompt(&mut charge).is_none());
         assert_eq!(
             charge.game.messages.last().map(String::as_str),
-            Some("you aren't carrying anything")
+            Some("ničego ne nosiš")
         );
         assert!(charge.pending.is_none());
 
@@ -4752,20 +4741,23 @@ mod tests {
     fn invalid_ring_hand_retries_with_reference_feedback() {
         let mut verbose = state(116);
         retry_ring_hand(&mut verbose);
-        assert_eq!(verbose.modal.as_deref(), Some("Left hand or right hand? "));
-        collect_messages(&mut verbose);
         assert_eq!(
-            verbose.visible_message.as_deref(),
-            Some("Please type L or R.")
+            verbose.modal.as_deref(),
+            Some("Lěva rųka ili prava rųka? ")
         );
-        assert_eq!(verbose.modal.as_deref(), Some("Left hand or right hand? "));
+        collect_messages(&mut verbose);
+        assert_eq!(verbose.visible_message.as_deref(), Some("Prošų, L ili R."));
+        assert_eq!(
+            verbose.modal.as_deref(),
+            Some("Lěva rųka ili prava rųka? ")
+        );
 
         let mut terse = state(117);
         terse.game.options.terse = true;
         retry_ring_hand(&mut terse);
-        assert_eq!(terse.modal.as_deref(), Some("Left or right ring? "));
+        assert_eq!(terse.modal.as_deref(), Some("Lěvy ili pravy pŕstenj? "));
         collect_messages(&mut terse);
-        assert_eq!(terse.visible_message.as_deref(), Some("L or R."));
+        assert_eq!(terse.visible_message.as_deref(), Some("L ili R."));
     }
 
     #[test]
@@ -4789,7 +4781,7 @@ mod tests {
         let mut sword = mrzavec::item::Item::basic(1000, ItemKind::Weapon, 1);
         sword.hit_plus = 2;
         sword.damage_plus = 1;
-        assert_eq!(game.item_name(&sword), "long sword");
+        assert_eq!(game.item_name(&sword), "dȯlgy meč");
         sword.known = true;
         assert!(game.item_name(&sword).contains("+2/+1"));
 
@@ -4810,17 +4802,25 @@ mod tests {
         weapon.damage_plus = 2;
         game.player.inventory.push(weapon);
         game.player.weapon = Some(weapon_id);
-        let weapon_text = equipment_text(&game, "Weapon", Some(weapon_id));
-        assert!(weapon_text.contains("two handed sword"));
+        let weapon_text = equipment_text(&game, "Orųžje", Some(weapon_id));
+        assert!(weapon_text.contains("dvorųčny meč"));
         assert!(!weapon_text.contains("+3"));
 
         let ring_id = 90_002;
         let ring = mrzavec::item::Item::basic(ring_id, ItemKind::Ring, 0);
-        let stone = game.appearances.ring_stones[0].clone();
+        let stone = mrzavec::lang::STONE_LEX[game.appearances.ring_stones[0]];
         game.player.inventory.push(ring);
         game.player.rings[0] = Some(ring_id);
         let ring_text = rings_text(&game);
-        assert!(ring_text.contains(&format!("{stone} ring")));
+        let ring_head = mrzavec::lang::decl(
+            &mrzavec::lang::RING,
+            interslavic::Case::Nom,
+            interslavic::Number::Singular,
+        );
+        assert!(ring_text.contains(&format!(
+            "{ring_head} {}",
+            mrzavec::lang::material_of(&stone)
+        )));
         assert!(!ring_text.contains(&ring_id.to_string()));
     }
 
@@ -4829,12 +4829,11 @@ mod tests {
         let mut game = Game::new(103);
         let weapon = game.player.weapon.unwrap();
         assert!(
-            current_message(&game, Some(weapon), "wielding", None)
-                .starts_with("you are wielding (")
+            current_message(&game, Some(weapon), "dŕžiš", None).starts_with("dŕžiš sejčas: ")
         );
         assert_eq!(
-            current_message(&game, None, "wearing", Some("on left hand")),
-            "you are wearing nothing on left hand"
+            current_message(&game, None, "nosiš", Some("na lěvoj rųkě")),
+            "ne nosiš ničego na lěvoj rųkě"
         );
 
         game.options.terse = true;
@@ -4847,12 +4846,12 @@ mod tests {
             .pack_letter
             .unwrap();
         assert!(
-            current_message(&game, Some(weapon), "wielding", None)
+            current_message(&game, Some(weapon), "dŕžiš", None)
                 .starts_with(&format!("{letter}) "))
         );
         assert_eq!(
-            current_message(&game, None, "wearing", Some("(R)")),
-            "wearing nothing (R)"
+            current_message(&game, None, "nosiš", Some("(R)")),
+            "ničego (R)"
         );
     }
 
@@ -4885,7 +4884,7 @@ mod tests {
         assert_eq!(state.game.turn, turn + 1);
         assert_eq!(
             state.game.messages.last().map(String::as_str),
-            Some("you ran out")
+            Some("uže ne imaješ togo")
         );
     }
 
@@ -4908,7 +4907,7 @@ mod tests {
         assert!(state.game.pending_identification.is_none());
         assert_eq!(
             state.game.messages.last().map(String::as_str),
-            Some("you don't have anything in your pack to identify")
+            Some("ne imaješ v torbě ničego za opoznańje")
         );
     }
 
@@ -4975,7 +4974,7 @@ mod tests {
                 .game
                 .messages
                 .iter()
-                .filter(|message| message.as_str() == "illegal command 'C'")
+                .filter(|message| message.as_str() == "nepravilna komanda 'C'")
                 .count(),
             1
         );
@@ -4990,7 +4989,7 @@ mod tests {
         assert_eq!(consuming.game.turn, turn + 1);
         assert_eq!(
             consuming.game.messages.last().map(String::as_str),
-            Some("you aren't carrying anything")
+            Some("ničego ne nosiš")
         );
 
         let mut free = state(31);
@@ -5012,17 +5011,17 @@ mod tests {
                 .lines()
                 .next()
                 .unwrap()
-                .contains("'^H' is not a valid item")
+                .contains("'^H' ne jest pravilny prědmet")
         );
         assert!(modal.contains("a) "));
         assert!(!modal.contains("* for list"));
         collect_messages(&mut state);
         assert_eq!(
             state.visible_message.as_deref(),
-            Some("'^H' is not a valid item.")
+            Some("'^H' ne jest pravilny prědmet.")
         );
         assert!(state.modal.as_deref().unwrap().contains("a) "));
-        assert_eq!(state.game.recall_message, "'^H' is not a valid item");
+        assert_eq!(state.game.recall_message, "'^H' ne jest pravilny prědmet");
         assert!(!is_item_selection(Pending::Options(0)));
     }
 
@@ -5043,46 +5042,46 @@ mod tests {
 
     #[test]
     fn endmsg_capitalization_is_presentation_only_with_reference_exceptions() {
-        assert_eq!(message_display_text("you found gold"), "You found gold");
-        assert_eq!(message_display_text("a) a potion"), "a) a potion");
-        assert_eq!(message_display_text("'^H': unknown"), "'^H': unknown");
+        assert_eq!(message_display_text("nahodiš zlåto"), "Nahodiš zlåto");
+        assert_eq!(message_display_text("a) napitȯk"), "a) napitȯk");
+        assert_eq!(message_display_text("'^H': neznany"), "'^H': neznany");
 
         let mut state = state(1160);
-        let displayed = remembered_prompt(&mut state, "which direction? ");
-        assert_eq!(displayed, "Which direction? ");
-        assert_eq!(state.game.recall_message, "which direction? ");
+        let displayed = remembered_prompt(&mut state, "v kojų stranų? ");
+        assert_eq!(displayed, "V kojų stranų? ");
+        assert_eq!(state.game.recall_message, "v kojų stranų? ");
 
-        state.game.message("h\tleft");
+        state.game.message("h\tvlěvo");
         state.preserve_message_case = true;
         let buffer = display(&state);
         assert_eq!(
-            buffer.into_iter().take(12).collect::<String>(),
-            "h       left"
+            buffer.into_iter().take(13).collect::<String>(),
+            "h       vlěvo"
         );
     }
 
     #[test]
     fn event_sentences_normalize_capitalization_punctuation_and_spacing() {
         let mut stream = None;
-        append_event_message(&mut stream, "  you hit the orc  ", false);
-        append_event_message(&mut stream, "the orc misses!", false);
-        append_event_message(&mut stream, "already punctuated.", false);
+        append_event_message(&mut stream, "  udarjaješ orka  ", false);
+        append_event_message(&mut stream, "ork tę ne udarjaje!", false);
+        append_event_message(&mut stream, "to uže ima tȯčkų.", false);
 
         assert_eq!(
             stream.as_deref(),
-            Some("You hit the orc. The orc misses! Already punctuated.")
+            Some("Udarjaješ orka. Ork tę ne udarjaje! To uže ima tȯčkų.")
         );
     }
 
     #[test]
     fn event_sentences_leave_parenthesized_and_preserved_case_endings_alone() {
         assert_eq!(
-            event_sentence("you now have 25 gold pieces (worth 25)", false).as_deref(),
-            Some("You now have 25 gold pieces (worth 25)")
+            event_sentence("imaješ sejčas 25 zlåtnikov (cěna 25)", false).as_deref(),
+            Some("Imaješ sejčas 25 zlåtnikov (cěna 25)")
         );
         assert_eq!(
-            event_sentence("rogue version 5.4.5 release", true).as_deref(),
-            Some("rogue version 5.4.5 release")
+            event_sentence("rogue verzija 5.4.5 izdańje", true).as_deref(),
+            Some("rogue verzija 5.4.5 izdańje")
         );
     }
 
@@ -5113,7 +5112,7 @@ mod tests {
         let mut state = state(325);
         state.game.player.inventory = vec![pack_item(60_000, ItemKind::Potion, 0, 'a')];
         state.modal = select_item_menu(&mut state, Pending::Quaff);
-        state.visible_message = Some("You feel dizzy.".into());
+        state.visible_message = Some("Vse sę vrti.".into());
         assert!(!has_inline_event_prompt(&state));
         let buffer = display(&state);
         assert!(display_row(&buffer, 0).starts_with("a) "));
@@ -5122,19 +5121,19 @@ mod tests {
     #[test]
     fn consecutive_messages_render_together_without_more_or_space_waiting() {
         let mut sequence = state(1161);
-        sequence.game.message("first message");
-        sequence.game.message("second message!");
+        sequence.game.message("prva věsť");
+        sequence.game.message("druga věsť!");
         collect_messages(&mut sequence);
 
         assert_eq!(
             sequence.visible_message.as_deref(),
-            Some("First message. Second message!")
+            Some("Prva věsť. Druga věsť!")
         );
         let top = (0..EVENT_ROWS)
             .map(|row| display_row(&display(&sequence), row))
             .collect::<String>();
-        assert!(top.starts_with("First message. Second message!"));
-        assert!(!top.contains("--More--"));
+        assert!(top.starts_with("Prva věsť. Druga věsť!"));
+        assert!(!top.contains("--Dalje--"));
     }
 
     #[test]
@@ -5177,24 +5176,19 @@ mod tests {
     fn pending_prompt_stays_visible_after_combined_events() {
         let mut prompted = state(1163);
         prompted.pending = Some(Pending::IdentifyGlyph);
-        prompted.modal = Some("What do you want identified? ".into());
-        prompted.game.message("an effect happened");
-        prompted.game.message("you feel dizzy");
+        prompted.modal = Some("Čto hočeš opoznati? ".into());
+        prompted.game.message("něčto sę stalo");
+        prompted.game.message("vse sę vrti");
         collect_messages(&mut prompted);
 
-        assert_eq!(
-            prompted.modal.as_deref(),
-            Some("What do you want identified? ")
-        );
+        assert_eq!(prompted.modal.as_deref(), Some("Čto hočeš opoznati? "));
         assert_eq!(prompted.pending, Some(Pending::IdentifyGlyph));
         let buffer = display(&prompted);
         let top = (0..EVENT_ROWS)
             .map(|row| display_row(&buffer, row))
             .collect::<String>();
-        assert!(
-            top.starts_with("An effect happened. You feel dizzy. What do you want identified?")
-        );
-        assert!(!top.contains("--More--"));
+        assert!(top.starts_with("Něčto sę stalo. Vse sę vrti. Čto hočeš opoznati?"));
+        assert!(!top.contains("--Dalje--"));
 
         let mut app = keyboard_app(prompted);
         press_keys(&mut app, &[KeyCode::ShiftLeft, KeyCode::KeyD]);
@@ -5204,7 +5198,7 @@ mod tests {
         let prompted = app.world().resource::<State>();
         assert!(prompted.pending.is_none());
         assert!(prompted.modal.is_none());
-        assert!(prompted.game.messages.last().unwrap().contains("dragon"));
+        assert!(prompted.game.messages.last().unwrap().contains("drakon"));
     }
 
     #[test]
@@ -5242,7 +5236,7 @@ mod tests {
             }
             assert_eq!(state.pending, Some(pending));
             assert!(!menu.contains("* for list"));
-            assert!(!menu.contains("--More--"));
+            assert!(!menu.contains("--Dalje--"));
         }
 
         let mut drop_state = state(1152);
@@ -5293,7 +5287,7 @@ mod tests {
         assert_eq!(inappropriate.game.turn, turn);
         assert_eq!(
             inappropriate.game.messages.last().map(String::as_str),
-            Some("you don't have anything appropriate")
+            Some("ne imaješ ničego prigodnogo")
         );
         assert!(inappropriate.pending.is_none());
     }
@@ -5358,7 +5352,7 @@ mod tests {
                 .modal
                 .as_deref()
                 .unwrap()
-                .contains("'z' is not a valid item")
+                .contains("'z' ne jest pravilny prědmet")
         );
         assert!(state.modal.as_deref().unwrap().contains("a) "));
         assert_eq!(state.game.turn, starting_turn);
@@ -5402,7 +5396,7 @@ mod tests {
             throw_direction.pending,
             Some(Pending::ThrowDirection(weapon_id))
         );
-        assert_eq!(throw_direction.modal.as_deref(), Some("Which direction? "));
+        assert_eq!(throw_direction.modal.as_deref(), Some("V kojų stranų? "));
         press_keys(&mut throw_app, &[KeyCode::KeyH]);
         throw_app.update();
         let throw_result = throw_app.world().resource::<State>();
@@ -5452,7 +5446,7 @@ mod tests {
         ring_app.update();
         let ring_result = ring_app.world().resource::<State>();
         assert_eq!(ring_result.pending, Some(Pending::PutRingHand(ring_id)));
-        assert!(ring_result.modal.as_deref().unwrap().contains("hand"));
+        assert!(ring_result.modal.as_deref().unwrap().contains("rųka"));
 
         let call_id = 58_001;
         let mut call_state = state(1162);
@@ -5463,7 +5457,7 @@ mod tests {
         call_app.update();
         let call_result = call_app.world().resource::<State>();
         assert_eq!(call_result.pending, Some(Pending::CallText(call_id)));
-        assert!(call_result.modal.as_deref().unwrap().contains("call"));
+        assert!(call_result.modal.as_deref().unwrap().contains("nazvati"));
 
         let identify_id = 58_002;
         let mut identify_state = state(1163);
@@ -5496,7 +5490,10 @@ mod tests {
     fn save_confirmation_uses_the_configured_reference_filename() {
         let mut game = Game::new(34);
         game.options.save_file = "/tmp/rodney.save".into();
-        assert_eq!(save_confirmation(&game), "save file (/tmp/rodney.save)? ");
+        assert_eq!(
+            save_confirmation(&game),
+            "shraniti fajl (/tmp/rodney.save)? "
+        );
     }
 
     #[test]
@@ -5504,7 +5501,7 @@ mod tests {
         for ch in ['n', 'x', '\u{1b}', ' '] {
             let mut state = state(340);
             state.pending = Some(Pending::QuitConfirm);
-            state.modal = Some("really quit?".into());
+            state.modal = Some("istinno izhod?".into());
             resolve_quit_confirmation(&mut state, ch);
             assert_eq!(state.game.end, mrzavec::game::EndState::Playing);
             assert_eq!(state.pending, None);
@@ -5599,7 +5596,7 @@ mod tests {
         assert_eq!(state.modal_offset, 0);
         assert_eq!(state.pending, Some(Pending::Quaff));
         let modal = state.modal.as_deref().unwrap();
-        assert!(modal.contains("' ' is not a valid item"));
+        assert!(modal.contains("' ' ne jest pravilny prědmet"));
         assert!(modal.contains("a) "));
 
         press_keys(&mut app, &[KeyCode::KeyA]);
@@ -5615,16 +5612,16 @@ mod tests {
         let mut state = state(2070);
         assert_eq!(
             direction_prompt(&mut state, Pending::ZapDirection(1)).as_deref(),
-            Some("Which direction? ")
+            Some("V kojų stranų? ")
         );
-        assert_eq!(state.game.recall_message, "which direction? ");
+        assert_eq!(state.game.recall_message, "v kojų stranų? ");
 
         state.game.options.terse = true;
         assert_eq!(
             direction_prompt(&mut state, Pending::ZapDirection(1)).as_deref(),
-            Some("Direction: ")
+            Some("Strana: ")
         );
-        assert_eq!(state.game.recall_message, "direction: ");
+        assert_eq!(state.game.recall_message, "strana: ");
     }
 
     #[test]

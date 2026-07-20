@@ -4,10 +4,7 @@ use crate::{
     command::{Command, CommandResult, Direction, WizardCommand},
     effects::{Effect, Scheduler},
     generation::{Level, begin_layout, dig_passages, dig_room, finish_level},
-    item::{
-        ARMOR_NAMES, Item, ItemKind, POTION_NAMES, RING_NAMES, SCROLL_NAMES, STICK_NAMES,
-        WEAPON_NAMES, generate,
-    },
+    item::{Item, ItemKind, generate},
     map::{Pos, Terrain, Trap},
     monster::{self, MONSTERS, Monster},
     player::Player,
@@ -1328,7 +1325,11 @@ impl Game {
                     } else {
                         w.damage_plus += 1
                     }
-                    let name = WEAPON_NAMES[w.which as usize];
+                    let name = crate::lang::phrase(
+                        &crate::lang::WEAPON_LEX[w.which as usize],
+                        Case::Nom,
+                        interslavic::Number::Singular,
+                    );
                     let color = self.pick_color("modry");
                     self.message(format!("{name} na moment světi sę {}", crate::lang::color_adv(color)))
                 } else {
@@ -1786,8 +1787,8 @@ impl Game {
         );
         let label = if canonical {
             match kind {
-                ItemKind::Potion => POTION_NAMES[which as usize].into(),
-                ItemKind::Scroll => SCROLL_NAMES[which as usize].into(),
+                ItemKind::Potion => crate::lang::potion_effect_gen(which as usize),
+                ItemKind::Scroll => crate::lang::scroll_effect_gen(which as usize),
                 _ => label,
             }
         } else {
@@ -2179,9 +2180,13 @@ impl Game {
             self.floor_items.push(item);
         } else if report_vanish {
             let name = if item.kind == ItemKind::Weapon {
-                WEAPON_NAMES[item.which as usize]
+                crate::lang::phrase(
+                    &crate::lang::WEAPON_LEX[item.which as usize],
+                    Case::Nom,
+                    interslavic::Number::Singular,
+                )
             } else {
-                "object"
+                "prědmet".to_string()
             };
             self.message(format!("{name} pada i izčezaje"));
         }
@@ -3160,7 +3165,7 @@ impl Game {
             Trap::Mysterious => {
                 use crate::lang::{self, adj_for, lex};
                 use interslavic::{Animacy, Gender, Number};
-                let mut random_color =
+                let random_color =
                     |g: &mut GameRng| lang::COLOR_ADJ[g.rnd(lang::COLOR_ADJ.len() as u32) as usize];
                 let message = match self.rng.rnd(11) {
                     0 => "naglo jesi v paralelnom světě".into(),
@@ -9423,7 +9428,7 @@ mod tests {
 
         g.finish_pending_call("?".into());
         assert_eq!(g.pending_call, None);
-        assert_eq!(g.knowledge.guesses[6].as_deref(), Some("monster detection"));
+        assert_eq!(g.knowledge.guesses[6].as_deref(), Some("čuťja čudovišč"));
     }
 
     #[test]
