@@ -16,20 +16,16 @@ use crate::{
 use interslavic::Case;
 use serde::{Deserialize, Serialize};
 
-const TRAP_NAMES: [&str; 8] = [
-    "a trapdoor",
-    "an arrow trap",
-    "a sleeping gas trap",
-    "a bear trap",
-    "a teleport trap",
-    "a poison dart trap",
-    "a rust trap",
-    "a mysterious trap",
-];
+fn trap_name(trap: Trap) -> String {
+    crate::lang::phrase(
+        &crate::lang::TRAP_LEX[trap_index(trap)],
+        Case::Nom,
+        interslavic::Number::Singular,
+    )
+}
 
-
-const fn trap_name(trap: Trap) -> &'static str {
-    TRAP_NAMES[match trap {
+const fn trap_index(trap: Trap) -> usize {
+    match trap {
         Trap::TrapDoor => 0,
         Trap::Arrow => 1,
         Trap::SleepGas => 2,
@@ -38,7 +34,7 @@ const fn trap_name(trap: Trap) -> &'static str {
         Trap::PoisonDart => 5,
         Trap::Rust => 6,
         Trap::Mysterious => 7,
-    }]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -419,9 +415,9 @@ impl Game {
             player: Player::new(Pos::new(0, 0)),
             monsters: vec![],
             floor_items: vec![],
-            messages: vec!["Welcome to the Dungeons of Doom".into()],
+            messages: vec!["Dobro došli v Temnice Pohibeli".into()],
             message_serial: 1,
-            recall_message: "Welcome to the Dungeons of Doom".into(),
+            recall_message: "Dobro došli v Temnice Pohibeli".into(),
             turn: 0,
             end: EndState::Playing,
             death_cause: None,
@@ -804,7 +800,7 @@ impl Game {
             self.player.conditions.asleep_turns -= 1;
             if self.player.conditions.asleep_turns == 0 {
                 self.player_is_running = true;
-                self.message("you can move again");
+                self.message("možeš opęt dvigati sę");
             }
             self.advance_player_turn();
             return CommandResult::TURN;
@@ -859,7 +855,7 @@ impl Game {
                     self.wizard_command(wizard_command)
                 } else {
                     self.message_without_recall(format!(
-                        "illegal command '{}'",
+                        "nepravilna komanda '{}'",
                         command_label(wizard_command_char(wizard_command))
                     ))
                 }
@@ -871,7 +867,7 @@ impl Game {
             }
             Command::Save | Command::Cancel => CommandResult::FREE,
             Command::Unknown(ch) => {
-                self.message_without_recall(format!("illegal command '{}'", command_label(ch)));
+                self.message_without_recall(format!("nepravilna komanda '{}'", command_label(ch)));
                 CommandResult::FREE
             }
         };
@@ -886,17 +882,13 @@ impl Game {
         self.end = EndState::Dead;
     }
 
+    /// Death cause in the genitive (rendered after "od" on the end screens).
     fn monster_killer(kind: u8) -> String {
-        let name = MONSTERS[kind as usize].name;
-        let article = if matches!(
-            name.as_bytes().first(),
-            Some(b'a' | b'e' | b'i' | b'o' | b'u')
-        ) {
-            "an"
-        } else {
-            "a"
-        };
-        format!("{article} {name}")
+        crate::lang::phrase(
+            &crate::lang::MONSTER_LEX[kind as usize],
+            Case::Gen,
+            interslavic::Number::Singular,
+        )
     }
 
     pub fn eat(&mut self, id: u64) -> CommandResult {
@@ -905,9 +897,9 @@ impl Game {
         };
         if item.kind != ItemKind::Food {
             self.message(if self.options.terse {
-                "that's Inedible!"
+                "to ne jest jedlivo!"
             } else {
-                "ugh, you would get ill if you ate that"
+                "fuj, bylo by ti bolno, ako byś jedl to"
             });
             return CommandResult::TURN;
         }
@@ -920,20 +912,20 @@ impl Game {
         self.player.food_left = (self.player.food_left + 1100 + self.rng.rnd(400) as i32).min(2000);
         self.hungry_state = 0;
         if fruit {
-            self.message(format!("my, that was a yummy {}", self.options.fruit));
+            self.message(format!("mmm, {}... kako vkusno!", self.options.fruit));
         } else if self.rng.rnd(100) > 70 {
             self.player.stats.experience += 1;
             self.message(if self.player.conditions.hallucinating {
-                "bummer, this food tastes awful"
+                "fuj, ta jeda iměje užasny vkus"
             } else {
-                "yuk, this food tastes awful"
+                "fuj, ta jeda iměje užasny vkus"
             });
             self.check_experience();
         } else {
             self.message(if self.player.conditions.hallucinating {
-                "oh, wow, that tasted good"
+                "o, ura, to bylo vkusno"
             } else {
-                "yum, that tasted good"
+                "mmm, to bylo vkusno"
             });
         }
         CommandResult::TURN
@@ -945,9 +937,9 @@ impl Game {
         };
         if item.kind != ItemKind::Potion {
             self.message(if self.options.terse {
-                "that's undrinkable"
+                "to ne jest pitno"
             } else {
-                "yuk! Why would you want to drink that?"
+                "fuj! Začto by ty hotěl piti to?"
             });
             return CommandResult::TURN;
         }
@@ -965,9 +957,9 @@ impl Game {
                 self.scheduler
                     .add_or_lengthen(Effect::Confusion, self.rng.spread(20));
                 self.message(if hallucinating {
-                    "what a tripy feeling!"
+                    "kako divno čuťje!"
                 } else {
-                    "wait, what's going on here. Huh? What? Who?"
+                    "počekaj, čto tu staje sę. A? Čto? Kto?"
                 })
             }
             1 => {
@@ -979,20 +971,20 @@ impl Game {
                 self.scheduler
                     .add_or_lengthen(Effect::Hallucination, self.rng.spread(850));
                 self.refresh_hallucination_visuals();
-                self.message("Oh, wow!  Everything seems so cosmic!")
+                self.message("O, ura!  Vse izgledaje tako kosmično!")
             }
             2 => {
                 identified = true;
                 if self.wears_ring(2) {
-                    self.message("you feel momentarily sick");
+                    self.message("na moment čuješ sę bolno");
                 } else {
                     self.player.stats.strength =
                         (self.player.stats.strength - self.rng.rnd(3) as i32 - 1).max(3);
-                    self.message("you feel very sick now");
+                    self.message("sejčas čuješ sę mnogo bolno");
                     if self.player.conditions.hallucinating {
                         self.player.conditions.hallucinating = false;
                         self.scheduler.cancel(Effect::Hallucination);
-                        self.message("Everything looks SO boring now.");
+                        self.message("Vse sejčas izgledaje TAKO nudno.");
                     }
                 }
             }
@@ -1001,7 +993,7 @@ impl Game {
                 self.player.stats.strength = (self.player.stats.strength + 1).min(31);
                 let base_strength = self.player.stats.strength - self.ring_strength_bonus();
                 self.player.max_strength = self.player.max_strength.max(base_strength.clamp(3, 31));
-                self.message("you feel stronger, now.  What bulging muscles!")
+                self.message("čuješ sę silnějši.  Kaka sila!")
             }
             4 => {
                 let was_blind = self.player.conditions.blind;
@@ -1011,14 +1003,14 @@ impl Game {
                 self.scheduler
                     .add_or_lengthen(Effect::SeeInvisible, self.rng.spread(850));
                 self.message(format!(
-                    "this potion tastes like {} juice",
-                    self.options.fruit
+                    "toj napitȯk iměje vkus soka iz {}",
+                    crate::lang::decl_guess(&self.options.fruit, Case::Gen, interslavic::Number::Singular)
                 ));
                 if was_blind {
                     self.message(if self.player.conditions.hallucinating {
-                        "far out!  Everything is all cosmic again"
+                        "ura!  Vse opęt jest kosmično"
                     } else {
-                        "the veil of darkness lifts"
+                        "tma izčezaje"
                     });
                 }
             }
@@ -1033,12 +1025,12 @@ impl Game {
                     self.player.conditions.blind = false;
                     self.scheduler.cancel(Effect::Blindness);
                     self.message(if self.player.conditions.hallucinating {
-                        "far out!  Everything is all cosmic again"
+                        "ura!  Vse opęt jest kosmično"
                     } else {
-                        "the veil of darkness lifts"
+                        "tma izčezaje"
                     });
                 }
-                self.message("you begin to feel better")
+                self.message("načinaješ čuti sę lěpje")
             }
             6 => {
                 identified = self
@@ -1049,26 +1041,26 @@ impl Game {
                     .add_fuse(Effect::MonsterDetection, self.rng.spread(20));
                 self.set_monster_detection(true);
                 self.message(if identified {
-                    "you sense the presence of monsters"
+                    "čuješ blizkosť čudovišč"
                 } else if self.player.conditions.hallucinating {
-                    "you have a normal feeling for a moment, then it passes"
+                    "na moment čuješ sę normalno, potom to prěhodi"
                 } else {
-                    "you have a strange feeling for a moment, then it passes"
+                    "na moment čuješ sę divno, potom to prěhodi"
                 })
             }
             7 => {
                 identified = !self.magic_positions().is_empty();
                 self.message(if identified {
-                    "you sense the presence of magic on this level"
+                    "čuješ blizkosť čarov na tom stųpnju"
                 } else if self.player.conditions.hallucinating {
-                    "you have a normal feeling for a moment, then it passes"
+                    "na moment čuješ sę normalno, potom to prěhodi"
                 } else {
-                    "you have a strange feeling for a moment, then it passes"
+                    "na moment čuješ sę divno, potom to prěhodi"
                 })
             }
             8 => {
                 identified = true;
-                self.message("you suddenly feel much more skillful");
+                self.message("naglo čuješ sę mnogo lovkějši");
                 self.player.stats.experience = crate::player::EXPERIENCE_LEVELS
                     .get((self.player.stats.level - 1) as usize)
                     .copied()
@@ -1091,17 +1083,17 @@ impl Game {
                     self.player.conditions.blind = false;
                     self.scheduler.cancel(Effect::Blindness);
                     self.message(if self.player.conditions.hallucinating {
-                        "far out!  Everything is all cosmic again"
+                        "ura!  Vse opęt jest kosmično"
                     } else {
-                        "the veil of darkness lifts"
+                        "tma izčezaje"
                     });
                 }
                 if self.player.conditions.hallucinating {
                     self.player.conditions.hallucinating = false;
                     self.scheduler.cancel(Effect::Hallucination);
-                    self.message("Everything looks SO boring now.");
+                    self.message("Vse sejčas izgledaje TAKO nudno.");
                 }
-                self.message("you begin to feel much better")
+                self.message("načinaješ čuti sę mnogo lěpje")
             }
             10 => {
                 identified = true;
@@ -1112,18 +1104,18 @@ impl Game {
                     self.player.conditions.hasted = false;
                     self.haste_phase = false;
                     self.scheduler.cancel(Effect::Haste);
-                    self.message("you faint from exhaustion")
+                    self.message("omdlěvaješ od slabosti")
                 } else {
                     self.player.conditions.hasted = true;
                     self.scheduler
                         .add_or_lengthen(Effect::Haste, self.rng.rnd(4) as i32 + 4);
-                    self.message("you feel yourself moving much faster")
+                    self.message("čuješ, že dvigaješ sę mnogo bystrěje")
                 }
             }
             11 => {
                 self.player.stats.strength =
                     (self.player.max_strength + self.ring_strength_bonus()).clamp(3, 31);
-                self.message("hey, this tastes great.  It make you feel warm all over")
+                self.message("hej, to je mnogo vkusno.  Čuješ teplo po vsěm tělě")
             }
             12 => {
                 identified = true;
@@ -1131,9 +1123,9 @@ impl Game {
                 self.scheduler
                     .add_or_lengthen(Effect::Blindness, self.rng.spread(850));
                 self.message(if self.player.conditions.hallucinating {
-                    "oh, bummer!  Everything is dark!  Help!"
+                    "o ne!  Vse jest temno!  Pomoć!"
                 } else {
-                    "a cloak of darkness falls around you"
+                    "tma okrųžaje tę"
                 })
             }
             13 => {
@@ -1142,9 +1134,9 @@ impl Game {
                 self.scheduler
                     .add_or_lengthen(Effect::Levitation, self.rng.spread(30));
                 self.message(if self.player.conditions.hallucinating {
-                    "oh, wow!  You're floating in the air!"
+                    "o, ura!  Letiš v vozduhu!"
                 } else {
-                    "you start to float in the air"
+                    "načinaješ letěti v vozduhu"
                 })
             }
             _ => unreachable!(),
@@ -1205,9 +1197,9 @@ impl Game {
         };
         if item.kind != ItemKind::Scroll {
             self.message(if self.options.terse {
-                "nothing to read"
+                "ne imaješ čego čitati"
             } else {
-                "there is nothing on it to read"
+                "na tom ničego ne piše"
             });
             return CommandResult::TURN;
         }
@@ -1220,8 +1212,8 @@ impl Game {
         match which {
             0 => {
                 self.player.conditions.can_confuse_monster = true;
-                let color = self.pick_color("red");
-                self.message(format!("your hands begin to glow {color}"))
+                let color = self.pick_color("črveny");
+                self.message(format!("tvoje rųky načinajųt světiti sę {}", crate::lang::color_adv(color)))
             }
             1 => {
                 identified = true;
@@ -1254,7 +1246,7 @@ impl Game {
                         }
                     }
                 }
-                self.message("oh, now this scroll has a map on it")
+                self.message("o, sejčas na tom svitku jest karta")
             }
             2 => {
                 let mut held = 0;
@@ -1269,11 +1261,11 @@ impl Game {
                     }
                 }
                 self.message(if held > 1 {
-                    "the monsters around you freeze"
+                    "čudovišča okolo tebe ne mogųt dvigati sę"
                 } else if held == 1 {
-                    "the monster freezes"
+                    "čudovišče ne može dvigati sę"
                 } else {
-                    "you feel a strange sense of loss"
+                    "čuješ divno čuťje utraty"
                 });
                 identified = held > 0;
             }
@@ -1281,7 +1273,7 @@ impl Game {
                 identified = true;
                 self.player.conditions.asleep_turns += self.rng.rnd(5) + 4;
                 self.player_is_running = false;
-                self.message("you fall asleep")
+                self.message("zasypaješ")
             }
             4 => {
                 if let Some(a) = self
@@ -1291,8 +1283,8 @@ impl Game {
                 {
                     a.armor_class = a.armor_class.map(|v| v - 1);
                     a.cursed = false;
-                    let color = self.pick_color("silver");
-                    self.message(format!("your armor glows {color} for a moment"))
+                    let color = self.pick_color("srěbrny");
+                    self.message(format!("tvoja brȯnja na moment světi sę {}", crate::lang::color_adv(color)))
                 }
             }
             5..=9 => {
@@ -1305,17 +1297,17 @@ impl Game {
                     _ => IdentifyKind::RingOrStick,
                 });
                 self.message(format!(
-                    "this scroll is an {} scroll",
-                    SCROLL_NAMES[which as usize]
+                    "toj svitȯk jest svitȯk {}",
+                    crate::lang::scroll_effect_gen(which as usize)
                 ))
             }
-            10 => self.message("you hear maniacal laughter in the distance"),
+            10 => self.message("slyšiš daleko bezumny směh"),
             11 => {
                 identified = self.floor_items.iter().any(|i| i.kind == ItemKind::Food);
                 self.message(if identified {
-                    "your nose tingles and you smell food"
+                    "tvoj nos svŕbi i čuješ zapah jedy"
                 } else {
-                    "your nose tingles"
+                    "tvoj nos svŕbi"
                 })
             }
             12 => {
@@ -1337,10 +1329,10 @@ impl Game {
                         w.damage_plus += 1
                     }
                     let name = WEAPON_NAMES[w.which as usize];
-                    let color = self.pick_color("blue");
-                    self.message(format!("your {name} glows {color} for a moment"))
+                    let color = self.pick_color("modry");
+                    self.message(format!("{name} na moment světi sę {}", crate::lang::color_adv(color)))
                 } else {
-                    self.message("you feel a strange sense of loss")
+                    self.message("čuješ divno čuťje utraty")
                 }
             }
             14 => {
@@ -1373,7 +1365,7 @@ impl Game {
                     let monster = self.make_monster(kind, pos, self.depth, false, false);
                     self.monsters.insert(0, monster);
                 } else {
-                    self.message("you hear a faint cry of anguish in the distance");
+                    self.message("slyšiš daleko slaby krik boli");
                 }
             }
             15 => {
@@ -1391,14 +1383,14 @@ impl Game {
                     }
                 }
                 self.message(if self.player.conditions.hallucinating {
-                    "you feel in touch with the Universal Onenes"
+                    "čuješ jedinstvo s Vsemirom"
                 } else {
-                    "you feel as if somebody is watching over you"
+                    "čuješ, že někto tę strěže"
                 })
             }
             16 => {
                 self.aggravate_monsters();
-                self.message("you hear a high pitched humming noise")
+                self.message("slyšiš visoky zvųk")
             }
             17 => {
                 if let Some(a) = self
@@ -1407,12 +1399,13 @@ impl Game {
                     .and_then(|id| self.player.inventory.iter_mut().find(|i| i.id == id))
                 {
                     a.protected = true;
-                    let color = self.pick_color("gold");
+                    let color = self.pick_color("zlåty");
                     self.message(format!(
-                        "your armor is covered by a shimmering {color} shield"
+                        "tvojų brȯnjų pokryvaje mihajųći {} ščit",
+                        crate::lang::color_masc_nom(color)
                     ))
                 } else {
-                    self.message("you feel a strange sense of loss")
+                    self.message("čuješ divno čuťje utraty")
                 }
             }
             _ => unreachable!(),
@@ -1433,14 +1426,14 @@ impl Game {
             return CommandResult::FREE;
         };
         if item.kind == ItemKind::Armor {
-            self.message("you can't wield armor");
+            self.message("ne možeš dŕžati brȯnjų kako orųžje");
             return CommandResult::FREE;
         }
         if self.player.weapon == Some(id) {
             self.message(if self.options.terse {
                 "in use"
             } else {
-                "That's already in use"
+                "To uže jest v koristanju"
             });
             return CommandResult::FREE;
         }
@@ -1448,7 +1441,7 @@ impl Game {
             self.message(if self.options.terse {
                 "in use"
             } else {
-                "That's already in use"
+                "To uže jest v koristanju"
             });
             return CommandResult::FREE;
         }
@@ -1456,18 +1449,18 @@ impl Game {
         let letter = item.pack_letter.unwrap_or('?');
         self.player.weapon = Some(id);
         self.message(if self.options.terse {
-            format!("wielding {name} ({letter})")
+            format!("orųžje: {name} ({letter})")
         } else {
-            format!("you are now wielding {name} ({letter})")
+            format!("tvoje orųžje sejčas: {name} ({letter})")
         });
         CommandResult::TURN
     }
     pub fn wear(&mut self, id: u64) -> CommandResult {
         if self.player.armor.is_some() {
             self.message(if self.options.terse {
-                "you are already wearing some"
+                "uže nosiš brȯnjų"
             } else {
-                "you are already wearing some.  You'll have to take it off first"
+                "uže nosiš brȯnjų.  Prvo musiš snęti jų"
             });
             return CommandResult::FREE;
         }
@@ -1477,7 +1470,7 @@ impl Game {
             .iter()
             .any(|i| i.id == id && i.kind == ItemKind::Armor)
         {
-            self.message("you can't wear that");
+            self.message("ne možeš nositi to");
             return CommandResult::TURN;
         }
         self.after_turn();
@@ -1496,18 +1489,18 @@ impl Game {
             .unwrap();
         let name = self.inventory_name(armor, true);
         self.message(if self.options.terse {
-            format!("wearing {name}")
+            format!("nosiš sejčas: {name}")
         } else {
-            format!("you are now wearing {name}")
+            format!("nosiš sejčas: {name}")
         });
         CommandResult::TURN
     }
     pub fn take_off(&mut self) -> CommandResult {
         let Some(id) = self.player.armor else {
             self.message(if self.options.terse {
-                "not wearing armor"
+                "ne nosiš brȯnje"
             } else {
-                "you aren't wearing any armor"
+                "ne nosiš brȯnje"
             });
             return CommandResult::FREE;
         };
@@ -1524,9 +1517,9 @@ impl Game {
         }
         self.player.armor = None;
         self.message(if self.options.terse {
-            format!("was wearing {letter}) {name}")
+            format!("uže ne nosiš: {letter}) {name}")
         } else {
-            format!("you used to be wearing {letter}) {name}")
+            format!("uže ne nosiš: {letter}) {name}")
         });
         CommandResult::TURN
     }
@@ -1538,9 +1531,9 @@ impl Game {
             .any(|i| i.id == id && i.kind == ItemKind::Ring)
         {
             self.message(if self.options.terse {
-                "not a ring"
+                "to ne jest pŕstenj"
             } else {
-                "it would be difficult to wrap that around a finger"
+                "trudno bylo by naděti to na pŕst"
             });
             return CommandResult::TURN;
         }
@@ -1551,15 +1544,15 @@ impl Game {
             self.message(if self.options.terse {
                 "in use"
             } else {
-                "That's already in use"
+                "To uže jest v koristanju"
             });
             return CommandResult::TURN;
         }
         if hand > 1 || self.player.rings[hand].is_some() {
             self.message(if self.options.terse {
-                "wearing two"
+                "uže nosiš dva pŕstenja"
             } else {
-                "you already have a ring on each hand"
+                "uže imaješ pŕstenj na kȯždoj rųkě"
             });
             return CommandResult::TURN;
         }
@@ -1592,13 +1585,13 @@ impl Game {
         self.message(if self.options.terse {
             format!("{name} ({letter})")
         } else {
-            format!("you are now wearing {name} ({letter})")
+            format!("nosiš sejčas: {name} ({letter})")
         });
         CommandResult::TURN
     }
     pub fn remove_ring(&mut self, hand: usize) -> CommandResult {
         let Some(id) = self.player.rings.get(hand).copied().flatten() else {
-            self.message("not wearing such a ring");
+            self.message("ne nosiš takogo pŕstenja");
             return CommandResult::FREE;
         };
         let ring = self
@@ -1612,7 +1605,7 @@ impl Game {
         if !self.dropcheck_item(id) {
             return CommandResult::TURN;
         }
-        self.message(format!("was wearing {name}({letter})"));
+        self.message(format!("prěstaješ nositi {name}({letter})"));
         CommandResult::TURN
     }
 
@@ -1627,7 +1620,7 @@ impl Game {
             return true;
         }
         if item.cursed {
-            self.message("you can't.  It appears to be cursed");
+            self.message("ne možeš.  Izgledaje, že to jest prokleto");
             return false;
         }
         if self.player.weapon == Some(id) {
@@ -1656,7 +1649,7 @@ impl Game {
             .iter()
             .any(|i| i.pos == Some(self.player.pos))
         {
-            self.message("there is something there already");
+            self.message("tamo uže něčto jest");
             return CommandResult::FREE;
         }
         let Some(index) = self.player.inventory.iter().position(|i| i.id == id) else {
@@ -1688,7 +1681,7 @@ impl Game {
         }
         let dropped_name = self.inventory_name(&item, true);
         self.floor_items.push(item);
-        self.message(format!("dropped {dropped_name}"));
+        self.message(format!("ostavjeno: {dropped_name}"));
         CommandResult::TURN
     }
 
@@ -1714,13 +1707,13 @@ impl Game {
         });
         if !allowed {
             let required = match required.expect("unrestricted identification accepts all items") {
-                IdentifyKind::Potion => "potion",
-                IdentifyKind::Scroll => "scroll",
-                IdentifyKind::Weapon => "weapon",
-                IdentifyKind::Armor => "suit of armor",
-                IdentifyKind::RingOrStick => "ring, wand or staff",
+                IdentifyKind::Potion => "napitȯk",
+                IdentifyKind::Scroll => "svitȯk",
+                IdentifyKind::Weapon => "orųžje",
+                IdentifyKind::Armor => "brȯnjų",
+                IdentifyKind::RingOrStick => "pŕstenj, žezlo ili posoh",
             };
-            self.message(format!("you must identify a {required}"));
+            self.message(format!("musiš opoznati {required}"));
             return CommandResult::FREE;
         }
         let item = &mut self.player.inventory[index];
@@ -1743,7 +1736,7 @@ impl Game {
         };
         let item = &self.player.inventory[index];
         if item.kind == ItemKind::Food {
-            self.message("you can't call that anything");
+            self.message("ne možeš to nikako nazvati");
             return CommandResult::FREE;
         }
         let known = match item.kind {
@@ -1754,7 +1747,7 @@ impl Game {
             _ => false,
         };
         if known {
-            self.message("that has already been identified");
+            self.message("to uže jest opoznano");
             return CommandResult::FREE;
         }
         let value = Some(label);
@@ -2118,7 +2111,7 @@ impl Game {
             self.message(if self.options.terse {
                 "in use"
             } else {
-                "That's already in use"
+                "To uže jest v koristanju"
             });
             return CommandResult::TURN;
         }
@@ -2190,7 +2183,7 @@ impl Game {
             } else {
                 "object"
             };
-            self.message(format!("the {name} vanishes as it hits the ground"));
+            self.message(format!("{name} pada i izčezaje"));
         }
     }
 
@@ -2199,9 +2192,9 @@ impl Game {
         self.runto_monster(index);
         if self.reveal_xeroc(index) {
             self.message(if self.player.conditions.hallucinating {
-                "heavy!  That's a nasty critter!"
+                "strašno!  To jest zlo stvorjeńje!"
             } else {
-                "wait!  That's a xeroc!"
+                "počekaj!  To jest kserok!"
             });
         }
         let bow = (item.kind == ItemKind::Weapon && item.which == 3)
@@ -2265,8 +2258,8 @@ impl Game {
         if self.player.conditions.can_confuse_monster {
             self.player.conditions.can_confuse_monster = false;
             self.monsters[index].flags |= monster::CONFUSED;
-            let color = self.pick_color("red");
-            self.message(format!("your hands stop glowing {color}"));
+            let color = self.pick_color("črveny");
+            self.message(format!("tvoje rųky prěstajųt světiti sę {}", crate::lang::color_adv(color)));
         }
         if self.monsters[index].hp <= 0 {
             self.kill_monster(index)
@@ -2295,17 +2288,17 @@ impl Game {
             .iter()
             .position(|i| i.id == id && i.kind == ItemKind::Stick)
         else {
-            self.message("you can't zap with that!");
+            self.message("ne možeš čarovati s tym!");
             return CommandResult::FREE;
         };
         if self.player.inventory[index].charges <= 0 {
-            self.message("nothing happens");
+            self.message("ničto ne staje sę");
             return CommandResult::TURN;
         }
         let which = self.player.inventory[index].which;
         let mut identified = matches!(which, 0 | 2 | 3 | 4 | 6);
         if which == 9 && self.player.stats.hp < 2 {
-            self.message("you are too weak to use it");
+            self.message("ne imaješ dosta sily za to");
             return CommandResult::TURN;
         }
         let target = self.first_monster(direction, 80);
@@ -2323,7 +2316,7 @@ impl Game {
                     .and_then(|id| self.dungeon.rooms.get(id as usize))
                     .is_none_or(|room| room.gone)
                 {
-                    self.message("the corridor glows and then fades")
+                    self.message("koridor světi sę i potom gasne")
                 } else {
                     if let Some(room) =
                         room_id.and_then(|id| self.dungeon.rooms.get_mut(id as usize))
@@ -2332,10 +2325,10 @@ impl Game {
                     }
                     self.update_visibility();
                     if self.options.terse {
-                        self.message("the room is lit")
+                        self.message("komnata jest osvětljena")
                     } else {
-                        let color = self.pick_color("blue");
-                        self.message(format!("the room is lit by a shimmering {color} light"))
+                        let color = self.pick_color("modry");
+                        self.message(format!("komnata jest osvětljena mihajųćim {} světlom", crate::lang::color_ins_n(color)))
                     }
                 }
             }
@@ -2361,9 +2354,9 @@ impl Game {
                 if let Some(i) = target {
                     if self.monster_saves(i, 3) {
                         self.message(if self.options.terse {
-                            "missile vanishes"
+                            "strěla izčezaje"
                         } else {
-                            "the missile vanishes with a puff of smoke"
+                            "strěla izčezaje v oblačku dyma"
                         });
                         self.player.inventory[index].charges -= 1;
                         self.knowledge.sticks[which as usize] = true;
@@ -2396,8 +2389,8 @@ impl Game {
                     if outcome.hit && self.player.conditions.can_confuse_monster {
                         self.player.conditions.can_confuse_monster = false;
                         self.monsters[i].flags |= monster::CONFUSED;
-                        let color = self.pick_color("red");
-                        self.message(format!("your hands stop glowing {color}"));
+                        let color = self.pick_color("črveny");
+                        self.message(format!("tvoje rųky prěstajųt světiti sę {}", crate::lang::color_adv(color)));
                         if !self.player.conditions.blind {
                             let confused_name = self.monster_message_name(i, Case::Nom);
                             self.message(format!("{confused_name} izgledaje smųćeno"));
@@ -2408,9 +2401,9 @@ impl Game {
                     }
                 } else {
                     self.message(if self.options.terse {
-                        "missile vanishes"
+                        "strěla izčezaje"
                     } else {
-                        "the missile vanishes with a puff of smoke"
+                        "strěla izčezaje v oblačku dyma"
                     })
                 }
             }
@@ -2552,7 +2545,7 @@ impl Game {
                 changed = false;
                 dx = -dx;
                 dy = -dy;
-                self.message(format!("the {name} bounces"));
+                self.message(format!("{name} odskakuje"));
                 continue;
             }
             travelled += 1;
@@ -2564,9 +2557,9 @@ impl Game {
                 if !self.monster_saves(index, 3) {
                     if self.monsters[index].kind == 3 && which == 3 {
                         self.message(if self.options.terse {
-                            "the flame bounces"
+                            "plamenj odskakuje"
                         } else {
-                            "the flame bounces off the dragon"
+                            "plamenj odskakuje od drakona"
                         });
                     } else {
                         self.runto_monster(index);
@@ -2585,7 +2578,7 @@ impl Game {
                         );
                         debug_assert!(outcome.hit);
                         self.monsters[index].hp -= outcome.damage;
-                        self.message(format!("the {name} hits {target}"));
+                        self.message(format!("{name} udarja {target}"));
                         if self.monsters[index].hp <= 0 {
                             self.kill_monster(index);
                         }
@@ -2610,18 +2603,18 @@ impl Game {
                         if let Some(kind) = source_kind {
                             self.die(Self::monster_killer(kind));
                         } else {
-                            self.die("a bolt");
+                            self.die("čarovnoj strěly");
                         }
                         break;
                     }
                     self.message(if self.options.terse {
-                        format!("the {name} hits")
+                        format!("{name} udarja tę")
                     } else {
-                        format!("you are hit by the {name}")
+                        format!("{name} udarja tę")
                     });
                     break;
                 }
-                self.message(format!("the {name} whizzes by you"));
+                self.message(format!("{name} letit mimo tebe"));
             }
         }
     }
@@ -2652,7 +2645,7 @@ impl Game {
             })
             .collect();
         if targets.is_empty() {
-            self.message("you have a tingling feeling");
+            self.message("koža tę svŕbi");
             return;
         }
         self.player.stats.hp /= 2;
@@ -2690,9 +2683,9 @@ impl Game {
         let p = self.player.pos.offset(dx, dy);
         let Some(index) = self.monsters.iter().position(|m| m.pos == p) else {
             self.message(if self.options.terse {
-                "no monster there"
+                "tamo ne jest čudovišča"
             } else {
-                "I see no monster there"
+                "ne vidiš tamo čudovišča"
             });
             return CommandResult::FREE;
         };
@@ -2705,9 +2698,9 @@ impl Game {
         }
         if !self.can_see_monster(&self.monsters[index]) && !self.player.conditions.detect_monsters {
             self.message(if self.options.terse {
-                "no monster there"
+                "tamo ne jest čudovišča"
             } else {
-                "I see no monster there"
+                "ne vidiš tamo čudovišča"
             });
             return CommandResult::FREE;
         }
@@ -2740,9 +2733,9 @@ impl Game {
         let p = self.player.pos.offset(dx, dy);
         let Some(cell) = self.dungeon.map.get_mut(p) else {
             self.message(if self.options.terse {
-                "no trap there"
+                "tamo ne jest pasti"
             } else {
-                "You have found no trap there"
+                "Ne nahodiš tamo pasti"
             });
             return CommandResult::FREE;
         };
@@ -2750,20 +2743,20 @@ impl Game {
             && let Some(trap) = cell.trap
         {
             let shown = if self.player.conditions.hallucinating {
-                TRAP_NAMES[self.rng.rnd(TRAP_NAMES.len() as u32) as usize]
+                crate::lang::phrase(&crate::lang::TRAP_LEX[self.rng.rnd(8) as usize], Case::Nom, interslavic::Number::Singular)
             } else {
                 trap_name(trap)
             };
             self.message(if self.options.terse {
                 shown.to_string()
             } else {
-                format!("You have found {shown}")
+                format!("Nahodiš: {shown}")
             })
         } else {
             self.message(if self.options.terse {
-                "no trap there"
+                "tamo ne jest pasti"
             } else {
-                "You have found no trap there"
+                "Ne nahodiš tamo pasti"
             })
         }
         CommandResult::FREE
@@ -2773,7 +2766,7 @@ impl Game {
     fn move_player_inner(&mut self, d: Direction, pickup: bool) -> (CommandResult, bool, bool) {
         if self.player.conditions.held_turns > 0 {
             self.player.conditions.held_turns -= 1;
-            self.message("you are still stuck in the bear trap");
+            self.message("ješče ne možeš izlězti iz medvěďjej pasti");
             return (CommandResult::TURN, false, false);
         }
         let confused_move = self.player.conditions.confused && self.rng.rnd(5) != 0;
@@ -2809,7 +2802,7 @@ impl Game {
                 .find(|monster| monster.pos == to)
                 .is_none_or(|monster| monster.id != holder)
         {
-            self.message("you are being held");
+            self.message("něčto tę dŕži");
             return (CommandResult::TURN, false, false);
         }
         if dx != 0 && dy != 0 {
@@ -2866,9 +2859,9 @@ impl Game {
             {
                 let name = self.inventory_name(item, true);
                 self.message(if self.options.terse {
-                    format!("moved onto {name}")
+                    format!("tu leži {name}")
                 } else {
-                    format!("you moved onto {name}")
+                    format!("prěhodiš črěz {name}")
                 });
             }
             return (CommandResult::TURN, false, stops_running);
@@ -3079,7 +3072,7 @@ impl Game {
                 self.depth += 1;
                 self.max_depth = self.max_depth.max(self.depth);
                 self.new_level();
-                self.message("you fell into a trap!")
+                self.message("padaješ v pasť!")
             }
             Trap::Arrow => {
                 if combat::swing(
@@ -3090,11 +3083,11 @@ impl Game {
                 ) {
                     self.player.stats.hp -= self.rng.roll(1, 6);
                     if self.player.stats.hp <= 0 {
-                        self.die("an arrow");
-                        self.message("an arrow killed you");
+                        self.die("strěly");
+                        self.message("strěla tę ubila");
                         return;
                     }
-                    self.message("oh no! An arrow shot you")
+                    self.message("o ne! Strěla tę ranila")
                 } else {
                     // `init_weapon(ARROW)` randomizes the normal missile stack
                     // before `be_trapped` overwrites its count with one.
@@ -3124,17 +3117,17 @@ impl Game {
                         arrow.pos = Some(destination);
                         self.floor_items.push(arrow);
                     }
-                    self.message("an arrow shoots past you")
+                    self.message("strěla letit mimo tebe")
                 }
             }
             Trap::SleepGas => {
                 self.player.conditions.asleep_turns += self.rng.spread(5) as u32;
                 self.player_is_running = false;
-                self.message("a strange white mist envelops you and you fall asleep")
+                self.message("divna běla mgla okrųžaje tę i zasypaješ")
             }
             Trap::Bear => {
                 self.player.conditions.held_turns += self.rng.spread(3) as u32;
-                self.message("you are caught in a bear trap")
+                self.message("medvěďja pasť tę lovi")
             }
             Trap::Teleport => {
                 self.teleport_player();
@@ -3148,20 +3141,20 @@ impl Game {
                 ) {
                     self.player.stats.hp -= self.rng.roll(1, 4);
                     if self.player.stats.hp <= 0 {
-                        self.die("a dart");
-                        self.message("a poisoned dart killed you");
+                        self.die("drotika");
+                        self.message("jadny drotik tę ubil");
                         return;
                     }
                     if !self.wears_ring(2) && !self.player_saves(0) {
                         self.player.stats.strength = (self.player.stats.strength - 1).max(3)
                     }
-                    self.message("a small dart just hit you in the shoulder")
+                    self.message("maly drotik udarja tę v rameno")
                 } else {
-                    self.message("a small dart whizzes by your ear and vanishes")
+                    self.message("maly drotik letit mimo tvojego uha i izčezaje")
                 }
             }
             Trap::Rust => {
-                self.message("a gush of water hits you on the head");
+                self.message("voda lije sę ti na glåvų");
                 self.rust_armor()
             }
             Trap::Mysterious => {
@@ -3214,7 +3207,7 @@ impl Game {
             }
         }
         if self.player.stats.hp <= 0 {
-            self.die("a trap");
+            self.die("pasti");
         }
     }
     fn passable(&self, p: Pos) -> bool {
@@ -3250,20 +3243,20 @@ impl Game {
             .position(|i| i.pos == Some(self.player.pos))
         else {
             self.message(if self.options.terse {
-                "nothing here"
+                "tu ničego ne jest"
             } else {
-                "there is nothing here to pick up"
+                "tu ne jest ničego, čto možeš vzęti"
             });
             return CommandResult::TURN;
         };
         if self.player.conditions.levitating {
-            self.message("You can't.  You're floating off the ground!");
+            self.message("Ne možeš.  Letiš nad zemjejų!");
             return CommandResult::TURN;
         }
         let mut item = self.floor_items.remove(index);
         if item.kind == ItemKind::Scroll && item.which == 10 && item.dropped_once {
             self.redirect_monsters_from(self.player.pos);
-            self.message("the scroll turns to dust as you pick it up");
+            self.message("svitȯk raspadaje sę v prah, kȯgda bereš jego");
             return CommandResult::TURN;
         }
         if item.kind == ItemKind::Gold {
@@ -3280,7 +3273,7 @@ impl Game {
             self.message(if self.options.terse {
                 format!("{} gold pieces", item.gold_value)
             } else {
-                format!("you found {} gold pieces", item.gold_value)
+                format!("nahodiš {} {}", item.gold_value, crate::lang::decl(&crate::lang::GOLD_COIN, if (2..=4).contains(&item.gold_value) { Case::Nom } else { Case::Gen }, if item.gold_value == 1 { interslavic::Number::Singular } else { interslavic::Number::Plural }))
             });
             return CommandResult::TURN;
         }
@@ -3300,12 +3293,12 @@ impl Game {
             self.message(if self.options.terse {
                 "no room"
             } else {
-                "there's no room in your pack"
+                "v tvojej torbě ne jest města"
             });
             self.message(if self.options.terse {
-                format!("moved onto {name}")
+                format!("tu leži {name}")
             } else {
-                format!("you moved onto {name}")
+                format!("prěhodiš črěz {name}")
             });
             self.floor_items.push(item);
             return CommandResult::TURN;
@@ -3327,7 +3320,7 @@ impl Game {
             self.message(if self.options.terse {
                 format!("{name} ({letter})")
             } else {
-                format!("you now have {name} ({letter})")
+                format!("v tvojej torbě: {name} ({letter})")
             });
             return CommandResult::TURN;
         }
@@ -3345,7 +3338,7 @@ impl Game {
         self.message(if self.options.terse {
             format!("{name} ({letter})")
         } else {
-            format!("you now have {name} ({letter})")
+            format!("v tvojej torbě: {name} ({letter})")
         });
         CommandResult::TURN
     }
@@ -3413,13 +3406,13 @@ impl Game {
                     if self.rng.rnd((5 + penalty) as u32) == 0 {
                         let c = self.dungeon.map.get_mut(p).unwrap();
                         c.terrain = Terrain::Door;
-                        self.message("a secret door");
+                        self.message("tajne dveri");
                     }
                 } else if cell.terrain == Terrain::SecretPassage {
                     if self.rng.rnd((3 + penalty) as u32) == 0 {
                         let c = self.dungeon.map.get_mut(p).unwrap();
                         c.terrain = Terrain::Passage;
-                        self.message("a secret passage");
+                        self.message("tajny prohod");
                     }
                 } else if cell.trap.is_some()
                     && !cell.trap_revealed
@@ -3428,14 +3421,14 @@ impl Game {
                 {
                     c.trap_revealed = true;
                     let shown = if self.player.conditions.hallucinating {
-                        TRAP_NAMES[self.rng.rnd(TRAP_NAMES.len() as u32) as usize]
+                        crate::lang::phrase(&crate::lang::TRAP_LEX[self.rng.rnd(8) as usize], Case::Nom, interslavic::Number::Singular)
                     } else {
                         trap_name(cell.trap.unwrap())
                     };
                     self.message(if self.options.terse {
                         shown.to_string()
                     } else {
-                        format!("you found {shown}")
+                        format!("nahodiš: {shown}")
                     });
                 }
             }
@@ -3443,11 +3436,11 @@ impl Game {
     }
     fn descend(&mut self) -> CommandResult {
         if self.player.conditions.levitating {
-            self.message("You can't.  You're floating off the ground!");
+            self.message("Ne možeš.  Letiš nad zemjejų!");
             return CommandResult::FREE;
         }
         if self.player.pos != self.dungeon.stairs {
-            self.message("I see no way down");
+            self.message("ne vidiš pųti dolu");
             return CommandResult::FREE;
         }
         self.depth += 1;
@@ -3457,15 +3450,15 @@ impl Game {
     }
     fn ascend(&mut self) -> CommandResult {
         if self.player.conditions.levitating {
-            self.message("You can't.  You're floating off the ground!");
+            self.message("Ne možeš.  Letiš nad zemjejų!");
             return CommandResult::FREE;
         }
         if self.player.pos != self.dungeon.stairs {
-            self.message("I see no way up");
+            self.message("ne vidiš pųti gorě");
             return CommandResult::FREE;
         }
         if !self.has_amulet {
-            self.message("your way is magically blocked");
+            self.message("čarovna sila tę dŕži");
             return CommandResult::FREE;
         }
         if self.depth == 1 {
@@ -3475,7 +3468,7 @@ impl Game {
         }
         self.depth -= 1;
         self.new_level();
-        self.message("you feel a wrenching sensation in your gut");
+        self.message("na moment cělo tělo tę boli");
         CommandResult::FREE
     }
     fn new_level(&mut self) {
@@ -3630,9 +3623,9 @@ impl Game {
         self.runto_monster(index);
         if self.reveal_xeroc(index) {
             self.message(if self.player.conditions.hallucinating {
-                "heavy!  That's a nasty critter!"
+                "strašno!  To jest zlo stvorjeńje!"
             } else {
-                "wait!  That's a xeroc!"
+                "počekaj!  To jest kserok!"
             });
             return;
         }
@@ -3698,8 +3691,8 @@ impl Game {
         if self.player.conditions.can_confuse_monster {
             self.player.conditions.can_confuse_monster = false;
             self.monsters[index].flags |= monster::CONFUSED;
-            let color = self.pick_color("red");
-            self.message(format!("your hands stop glowing {color}"));
+            let color = self.pick_color("črveny");
+            self.message(format!("tvoje rųky prěstajųt světiti sę {}", crate::lang::color_adv(color)));
         }
         if self.monsters[index].hp <= 0 {
             self.kill_monster(index);
@@ -3876,7 +3869,7 @@ impl Game {
             let gain = self.rng.roll((new_level - old_level) as u32, 10);
             self.player.stats.max_hp += gain;
             self.player.stats.hp += gain;
-            self.message(format!("welcome to level {new_level}"));
+            self.message(format!("dostigaješ stųpnja {new_level}"));
         }
     }
 
@@ -4396,37 +4389,37 @@ impl Game {
                 self.player.conditions.asleep_turns += self.rng.rnd(2) + 2;
                 if !was_awake {
                     self.message(if self.options.terse {
-                        "you are frozen".into()
+                        "ne možeš dvigati sę".into()
                     } else {
-                        format!("you are frozen by the {attacker_name}")
+                        format!("{attacker_name} tę zamråžaje")
                     });
                 }
                 if self.player.conditions.asleep_turns > 50 {
-                    self.die("hypothermia");
+                    self.die("hlåda");
                 }
             }
             17 if !self.player_saves(0) => {
                 if self.wears_ring(2) {
                     if self.fight_target.is_none() {
                         self.message(if self.options.terse {
-                            "bite has no effect"
+                            "ukųs ne škodi ti"
                         } else {
-                            "a bite momentarily weakens you"
+                            "ukųs na moment tę oslabja"
                         });
                     }
                 } else {
                     self.player.stats.strength = (self.player.stats.strength - 1).max(3);
                     self.message(if self.options.terse {
-                        "a bite has weakened you"
+                        "jad tę oslabja"
                     } else {
-                        "you feel a bite in your leg and now feel weaker"
+                        "čuješ ukųs v nogě i sejčas jesi slabši"
                     });
                 }
             }
             22 if self.rng.rnd(100) < 15 => self.drain_level(),
             21 if self.rng.rnd(100) < 30 => {
                 let loss = self.rng.roll(1, 3);
-                self.drain_max_hp(loss, "a vampire");
+                self.drain_max_hp(loss, "vampira");
             }
             11 => {
                 let old_gold = self.player.gold;
@@ -4439,7 +4432,7 @@ impl Game {
                 self.player.gold = self.player.gold.saturating_sub(amount as i32);
                 self.monsters.remove(index);
                 if self.player.gold != old_gold {
-                    self.message("your purse feels lighter");
+                    self.message("imaješ menje zlåta");
                 }
             }
             13 => self.nymph_steal(index),
@@ -4493,7 +4486,7 @@ impl Game {
         }
         if armor.protected || self.wears_ring(13) {
             if report_protection {
-                self.message("the rust vanishes instantly");
+                self.message("rđa odrazu izčezaje");
             }
             return;
         }
@@ -4505,14 +4498,14 @@ impl Game {
             .expect("equipped armor remains in the pack");
         armor.armor_class = armor.armor_class.map(|value| value + 1);
         self.message(if self.options.terse {
-            "your armor weakens"
+            "tvoja brȯnja slaběje"
         } else {
-            "your armor appears to be weaker now. Oh my!"
+            "tvoja brȯnja sejčas izgledaje slabša. O ne!"
         });
     }
     fn drain_level(&mut self) {
         if self.player.stats.experience == 0 {
-            self.die("a wraith");
+            self.die("prizraka");
             return;
         }
         self.player.stats.level -= 1;
@@ -4523,7 +4516,7 @@ impl Game {
             crate::player::EXPERIENCE_LEVELS[self.player.stats.level as usize - 1] + 1
         };
         let loss = self.rng.roll(1, 10);
-        self.drain_max_hp(loss, "a wraith");
+        self.drain_max_hp(loss, "prizraka");
     }
     fn drain_max_hp(&mut self, loss: i32, cause: &str) {
         self.player.stats.max_hp -= loss;
@@ -4532,7 +4525,7 @@ impl Game {
             self.die(cause);
             return;
         }
-        self.message("you suddenly feel weaker");
+        self.message("naglo čuješ sę slabši");
     }
     fn nymph_steal(&mut self, index: usize) {
         let mut choice = None;
@@ -4559,7 +4552,7 @@ impl Game {
         }
         self.monsters.remove(index);
         let name = self.inventory_name(&stolen, true);
-        self.message(format!("she stole {name}!"));
+        self.message(format!("ona ukradla {name}!"));
     }
 
     fn digest(&mut self) {
@@ -4567,21 +4560,21 @@ impl Game {
             let old_food = self.player.food_left;
             self.player.food_left -= 1;
             if old_food < -850 {
-                self.die("starvation");
-                self.message("you starved to death");
+                self.die("glada");
+                self.message("glad tę ubil");
             } else if self.player.conditions.asleep_turns == 0 && self.rng.rnd(5) == 0 {
                 self.player.conditions.asleep_turns += self.rng.rnd(8) + 4;
                 self.hungry_state = 3;
                 self.message(if self.player.conditions.hallucinating {
                     if self.options.terse {
-                        "You freak out"
+                        "Panika!"
                     } else {
-                        "the munchies overpower your motor capabilities.  You freak out"
+                        "glad prěmagaje tę.  Panika!"
                     }
                 } else if self.options.terse {
-                    "You faint"
+                    "Omdlěvaješ"
                 } else {
-                    "you feel too weak from lack of food.  You faint"
+                    "jesi prěslaby od nedostatka jedy.  Omdlěvaješ"
                 });
             }
             return;
@@ -4613,22 +4606,22 @@ impl Game {
         if self.player.food_left < 150 && old_food >= 150 {
             self.hungry_state = 2;
             self.message(if self.player.conditions.hallucinating {
-                "the munchies are interfering with your motor capabilities"
+                "od glada ne možeš dobro dvigati sę"
             } else {
-                "you are starting to feel weak"
+                "načinaješ čuti sę slaby"
             })
         } else if self.player.food_left < 300 && old_food >= 300 {
             self.hungry_state = 1;
             self.message(if self.player.conditions.hallucinating {
                 if self.options.terse {
-                    "getting the munchies"
+                    "imaješ veliky apetit"
                 } else {
-                    "you are getting the munchies"
+                    "imaješ veliky apetit"
                 }
             } else if self.options.terse {
-                "getting hungry"
+                "hočeš jesti"
             } else {
-                "you are starting to get hungry"
+                "načinaješ hotěti jesti"
             })
         }
     }
@@ -4671,36 +4664,36 @@ impl Game {
                 Effect::Confusion => {
                     self.player.conditions.confused = false;
                     self.message(if self.player.conditions.hallucinating {
-                        "you feel less trippy now"
+                        "sejčas čuješ sę menje kosmično"
                     } else {
-                        "you feel less confused now"
+                        "sejčas čuješ sę menje smųćeno"
                     });
                 }
                 Effect::Hallucination => {
                     self.player.conditions.hallucinating = false;
-                    self.message("Everything looks SO boring now.");
+                    self.message("Vse sejčas izgledaje TAKO nudno.");
                 }
                 Effect::SeeInvisible => self.player.conditions.see_invisible = false,
                 Effect::Blindness => {
                     self.player.conditions.blind = false;
                     self.message(if self.player.conditions.hallucinating {
-                        "far out!  Everything is all cosmic again"
+                        "ura!  Vse opęt jest kosmično"
                     } else {
-                        "the veil of darkness lifts"
+                        "tma izčezaje"
                     });
                 }
                 Effect::Levitation => {
                     self.player.conditions.levitating = false;
                     self.message(if self.player.conditions.hallucinating {
-                        "bummer!  You've hit the ground"
+                        "buh!  Padaješ na zemjų"
                     } else {
-                        "you float gently to the ground"
+                        "legko spuščaješ sę na zemjų"
                     });
                 }
                 Effect::Haste => {
                     self.player.conditions.hasted = false;
                     self.haste_phase = false;
-                    self.message("you feel yourself slowing down");
+                    self.message("čuješ, že vse dělaješ pomalo");
                 }
                 Effect::MonsterDetection => self.player.conditions.detect_monsters = false,
             }
@@ -4918,12 +4911,12 @@ impl Game {
             self.no_score = true;
             self.set_monster_detection(true);
             self.message(format!(
-                "you are suddenly as smart as Ken Arnold in dungeon #{}",
+                "naglo znaješ vse o temnicě #{}",
                 self.dungeon_number
             ))
         } else {
             self.set_monster_detection(false);
-            self.message("not wizard any more")
+            self.message("uže ne jesi mag")
         }
     }
     pub fn set_startup_wizard(&mut self) {
@@ -4959,7 +4952,7 @@ impl Game {
             }
             WizardCommand::Map => {}
             WizardCommand::Teleport => self.random_teleport(),
-            WizardCommand::Food => self.message(format!("food left: {}", self.player.food_left)),
+            WizardCommand::Food => self.message(format!("jedy ostalo: {}", self.player.food_left)),
             WizardCommand::AddPassages => {
                 let positions: Vec<Pos> = self.dungeon.map.iter().map(|(pos, _)| pos).collect();
                 for pos in positions {
@@ -5014,7 +5007,7 @@ impl Game {
             self.message(if self.options.terse {
                 "no room"
             } else {
-                "there's no room in your pack"
+                "v tvojej torbě ne jest města"
             });
         }
         sword.hit_plus = 1;
@@ -5039,7 +5032,7 @@ impl Game {
             self.message(if self.options.terse {
                 "no room"
             } else {
-                "there's no room in your pack"
+                "v tvojej torbě ne jest města"
             });
         }
         armor.armor_class = Some(-5);
@@ -5078,7 +5071,7 @@ impl Game {
             self.message(if self.options.terse {
                 "no room"
             } else {
-                "there's no room in your pack"
+                "v tvojej torbě ne jest města"
             });
             return;
         }
@@ -5091,7 +5084,7 @@ impl Game {
         self.message(if self.options.terse {
             format!("{name} ({letter})")
         } else {
-            format!("you now have {name} ({letter})")
+            format!("v tvojej torbě: {name} ({letter})")
         });
     }
     pub fn wizard_create_blessed(&mut self, kind: ItemKind, which: u8, blessing: char) {
@@ -5113,7 +5106,7 @@ impl Game {
             self.message(if self.options.terse {
                 "no room"
             } else {
-                "there's no room in your pack"
+                "v tvojej torbě ne jest města"
             });
             return;
         }
@@ -5182,7 +5175,7 @@ impl Game {
         self.message(if self.options.terse {
             format!("{name} ({letter})")
         } else {
-            format!("you now have {name} ({letter})")
+            format!("v tvojej torbě: {name} ({letter})")
         });
     }
 }
@@ -5331,7 +5324,7 @@ mod tests {
         assert_eq!(down.depth, 1);
         assert_eq!(
             down.messages.last().map(String::as_str),
-            Some("you feel a wrenching sensation in your gut")
+            Some("na moment cělo tělo tę boli")
         );
     }
 
@@ -5419,13 +5412,13 @@ mod tests {
         g.messages.clear();
         g.player.conditions.hallucinating = true;
         drink(&mut g, 0);
-        assert_eq!(g.messages.last().unwrap(), "what a tripy feeling!");
+        assert_eq!(g.messages.last().unwrap(), "kako divno čuťje!");
 
         g.messages.clear();
         drink(&mut g, 12);
         assert_eq!(
             g.messages.last().unwrap(),
-            "oh, bummer!  Everything is dark!  Help!"
+            "o ne!  Vse jest temno!  Pomoć!"
         );
 
         g.messages.clear();
@@ -5433,9 +5426,9 @@ mod tests {
         assert_eq!(
             g.messages,
             [
-                "far out!  Everything is all cosmic again",
-                "Everything looks SO boring now.",
-                "you begin to feel much better",
+                "ura!  Vse opęt jest kosmično",
+                "Vse sejčas izgledaje TAKO nudno.",
+                "načinaješ čuti sę mnogo lěpje",
             ]
         );
 
@@ -5444,7 +5437,7 @@ mod tests {
         drink(&mut g, 2);
         assert_eq!(
             g.messages,
-            ["you feel very sick now", "Everything looks SO boring now."]
+            ["sejčas čuješ sę mnogo bolno", "Vse sejčas izgledaje TAKO nudno."]
         );
 
         g.player.conditions.hallucinating = true;
@@ -5452,7 +5445,7 @@ mod tests {
         drink(&mut g, 13);
         assert_eq!(
             g.messages.last().unwrap(),
-            "oh, wow!  You're floating in the air!"
+            "o, ura!  Letiš v vozduhu!"
         );
     }
 
@@ -5469,7 +5462,7 @@ mod tests {
         assert_eq!(g.player.stats.level, 2);
         assert_eq!(
             g.messages[g.messages.len() - 2..],
-            ["you suddenly feel much more skillful", "welcome to level 2"]
+            ["naglo čuješ sę mnogo lovkějši", "welcome to level 2"]
         );
         assert_eq!(
             g.player.stats.experience,
@@ -5493,7 +5486,7 @@ mod tests {
         assert_eq!(g.player.stats.level, 1);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("you suddenly feel much more skillful")
+            Some("naglo čuješ sę mnogo lovkějši")
         );
     }
 
@@ -5516,20 +5509,20 @@ mod tests {
         g.monsters.push(monster);
         g.messages.clear();
         read(&mut g, 2);
-        assert_eq!(g.messages.last().unwrap(), "the monster freezes");
+        assert_eq!(g.messages.last().unwrap(), "čudovišče ne može dvigati sę");
 
         g.player.conditions.hallucinating = true;
         g.messages.clear();
         read(&mut g, 0);
         assert!(COLORS.iter().any(|color| {
-            g.messages.last().unwrap() == &format!("your hands begin to glow {color}")
+            g.messages.last().unwrap() == &format!("tvoje rųky načinajųt světiti sę {}", crate::lang::color_adv(color))
         }));
 
         g.messages.clear();
         read(&mut g, 15);
         assert_eq!(
             g.messages.last().unwrap(),
-            "you feel in touch with the Universal Onenes"
+            "čuješ jedinstvo s Vsemirom"
         );
 
         g.messages.clear();
@@ -5657,7 +5650,7 @@ mod tests {
         assert_eq!(g.execute(Command::Search), CommandResult::TURN);
         assert_eq!(g.player.conditions.asleep_turns, 0);
         assert!(g.player_is_running);
-        assert_eq!(g.messages.last().unwrap(), "you can move again");
+        assert_eq!(g.messages.last().unwrap(), "možeš opęt dvigati sę");
     }
 
     #[test]
@@ -5772,7 +5765,7 @@ mod tests {
         let original_ac = armor.armor_class;
 
         g.rust_armor();
-        assert_eq!(g.messages.last().unwrap(), "the rust vanishes instantly");
+        assert_eq!(g.messages.last().unwrap(), "rđa odrazu izčezaje");
         assert_eq!(
             g.player
                 .inventory
@@ -5792,7 +5785,7 @@ mod tests {
         g.rust_armor();
         assert_eq!(
             g.messages.last().unwrap(),
-            "your armor appears to be weaker now. Oh my!"
+            "tvoja brȯnja sejčas izgledaje slabša. O ne!"
         );
     }
 
@@ -5892,7 +5885,7 @@ mod tests {
 
         assert_eq!(
             corridor.messages.last().unwrap(),
-            "the corridor glows and then fades"
+            "koridor světi sę i potom gasne"
         );
         assert!(corridor.knowledge.sticks[0]);
 
@@ -5903,7 +5896,7 @@ mod tests {
         light.charges = 1;
         room.player.inventory.push(light);
         room.zap(stick, Direction::Right);
-        assert_eq!(room.messages.last().unwrap(), "the room is lit");
+        assert_eq!(room.messages.last().unwrap(), "komnata jest osvětljena");
     }
 
     #[test]
@@ -6521,7 +6514,7 @@ mod tests {
         assert_eq!(
             g.messages
                 .iter()
-                .filter(|message| message.as_str() == "there's no room in your pack")
+                .filter(|message| message.as_str() == "v tvojej torbě ne jest města")
                 .count(),
             2
         );
@@ -7421,7 +7414,7 @@ mod tests {
         assert_eq!(
             game.messages
                 .iter()
-                .filter(|message| message.as_str() == "you are still stuck in the bear trap")
+                .filter(|message| message.as_str() == "ješče ne možeš izlězti iz medvěďjej pasti")
                 .count(),
             2
         );
@@ -7605,7 +7598,7 @@ mod tests {
         assert_eq!(g.read_scroll(food), CommandResult::TURN);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("there is nothing on it to read")
+            Some("na tom ničego ne piše")
         );
 
         let scroll = g.id();
@@ -7808,7 +7801,7 @@ mod tests {
         assert!(!g.knowledge.potions[6]);
         assert_eq!(
             g.messages.last().unwrap(),
-            "you have a strange feeling for a moment, then it passes"
+            "na moment čuješ sę divno, potom to prěhodi"
         );
     }
 
@@ -7827,7 +7820,7 @@ mod tests {
 
         assert_eq!(
             g.messages.last().unwrap(),
-            "you have a normal feeling for a moment, then it passes"
+            "na moment čuješ sę normalno, potom to prěhodi"
         );
     }
 
@@ -7878,7 +7871,7 @@ mod tests {
         assert_eq!(g.monsters[0].destination, Some(g.dungeon.stairs));
         assert_eq!(
             g.messages.last().unwrap(),
-            "the missile vanishes with a puff of smoke"
+            "strěla izčezaje v oblačku dyma"
         );
     }
 
@@ -8187,7 +8180,7 @@ mod tests {
         assert!(g.floor_items.is_empty());
         assert_eq!(
             g.messages.last().unwrap(),
-            "there is something there already"
+            "tamo uže něčto jest"
         );
     }
 
@@ -8492,7 +8485,7 @@ mod tests {
         assert!(
             g.messages
                 .iter()
-                .any(|message| message == "the flame bounces")
+                .any(|message| message == "plamenj odskakuje")
         );
     }
 
@@ -8853,7 +8846,7 @@ mod tests {
 
         assert!(!result.consumed_turn);
         assert_eq!(g.monsters.len(), 1);
-        assert_eq!(g.messages.last().unwrap(), "I see no monster there");
+        assert_eq!(g.messages.last().unwrap(), "ne vidiš tamo čudovišča");
     }
 
     #[test]
@@ -8900,7 +8893,7 @@ mod tests {
         g.fight_direction(Direction::Right, false);
 
         assert_eq!(g.monsters[0].hp, hp);
-        assert_eq!(g.messages.last().unwrap(), "no monster there");
+        assert_eq!(g.messages.last().unwrap(), "tamo ne jest čudovišča");
     }
 
     #[test]
@@ -8928,7 +8921,7 @@ mod tests {
 
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("your armor appears to be weaker now. Oh my!")
+            Some("tvoja brȯnja sejčas izgledaje slabša. O ne!")
         );
         assert_eq!(
             g.player
@@ -9178,14 +9171,14 @@ mod tests {
         assert!(!result.consumed_turn);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("you are already wearing some.  You'll have to take it off first")
+            Some("uže nosiš brȯnjų.  Prvo musiš snęti jų")
         );
 
         g.options.terse = true;
         g.wear(armor);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("you are already wearing some")
+            Some("uže nosiš brȯnjų")
         );
     }
 
@@ -9206,7 +9199,7 @@ mod tests {
         assert_eq!(g.player.weapon, None);
         assert_eq!(g.player.armor, Some(armor));
         assert!(g.player.inventory.iter().any(|item| item.id == armor));
-        assert_eq!(g.messages.last().unwrap(), "That's already in use");
+        assert_eq!(g.messages.last().unwrap(), "To uže jest v koristanju");
     }
 
     #[test]
@@ -9301,7 +9294,7 @@ mod tests {
                 .push(Item::basic(food, ItemKind::Food, 0));
             g.eat(food);
             if g.player.stats.experience == 1 {
-                assert_eq!(g.messages.last().unwrap(), "yuk, this food tastes awful");
+                assert_eq!(g.messages.last().unwrap(), "fuj, ta jeda iměje užasny vkus");
                 found = true;
                 break;
             }
@@ -9357,7 +9350,7 @@ mod tests {
         assert_eq!(g.turn, turn + 1);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("that's Inedible!")
+            Some("to ne jest jedlivo!")
         );
     }
 
@@ -9385,7 +9378,7 @@ mod tests {
         assert!(g.player.inventory[0].label.is_none());
 
         g.call_item(food, "lunch".into());
-        assert_eq!(g.messages.last().unwrap(), "you can't call that anything");
+        assert_eq!(g.messages.last().unwrap(), "ne možeš to nikako nazvati");
         assert!(g.player.inventory[2].label.is_none());
     }
 
@@ -9417,7 +9410,7 @@ mod tests {
         assert_eq!(g.quaff(food), CommandResult::TURN);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("yuk! Why would you want to drink that?")
+            Some("fuj! Začto by ty hotěl piti to?")
         );
 
         let potion = g.id();
@@ -9558,7 +9551,7 @@ mod tests {
         g.tick_effects();
 
         assert!(!g.player.conditions.levitating);
-        assert_eq!(g.messages.last().unwrap(), "you float gently to the ground");
+        assert_eq!(g.messages.last().unwrap(), "legko spuščaješ sę na zemjų");
     }
 
     #[test]
@@ -9570,7 +9563,7 @@ mod tests {
         confused.tick_effects();
         assert_eq!(
             confused.messages.last().unwrap(),
-            "you feel less trippy now"
+            "sejčas čuješ sę menje kosmično"
         );
 
         let mut hungry = Game::new(220);
@@ -9580,7 +9573,7 @@ mod tests {
         assert_eq!(hungry.hungry_state, 1);
         assert_eq!(
             hungry.messages.last().unwrap(),
-            "you are getting the munchies"
+            "imaješ veliky apetit"
         );
 
         let mut landing = Game::new(221);
@@ -9590,7 +9583,7 @@ mod tests {
         landing.tick_effects();
         assert_eq!(
             landing.messages.last().unwrap(),
-            "bummer!  You've hit the ground"
+            "buh!  Padaješ na zemjų"
         );
     }
 
@@ -9692,7 +9685,7 @@ mod tests {
         assert_eq!(g.player.pos, trap_pos);
         assert_eq!(g.flytrap_holder, Some(holder_id));
         assert!(g.player.conditions.held_turns > 0);
-        assert_eq!(g.messages.last().unwrap(), "you are caught in a bear trap");
+        assert_eq!(g.messages.last().unwrap(), "medvěďja pasť tę lovi");
     }
 
     #[test]
@@ -9771,7 +9764,7 @@ mod tests {
         assert!(!g.dungeon.map.get(pos).unwrap().trap_revealed);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("You have found no trap there")
+            Some("Ne nahodiš tamo pasti")
         );
     }
 
@@ -9787,7 +9780,7 @@ mod tests {
 
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("You have found no trap there")
+            Some("Ne nahodiš tamo pasti")
         );
     }
 
@@ -9829,7 +9822,7 @@ mod tests {
         assert!(g.floor_items.iter().any(|item| {
             item.kind == ItemKind::Weapon && item.which == 3 && item.pos == Some(landing)
         }));
-        assert_eq!(g.messages.last().unwrap(), "an arrow shoots past you");
+        assert_eq!(g.messages.last().unwrap(), "strěla letit mimo tebe");
         assert_eq!(g.rng, expected_rng);
     }
 
@@ -10076,14 +10069,14 @@ mod tests {
         g.options.terse = true;
         g.player.armor = None;
         g.take_off();
-        assert_eq!(g.messages.last().unwrap(), "not wearing armor");
+        assert_eq!(g.messages.last().unwrap(), "ne nosiš brȯnje");
 
         let food = g.id();
         g.player
             .inventory
             .push(Item::basic(food, ItemKind::Food, 0));
         g.put_on_ring(food, 0);
-        assert_eq!(g.messages.last().unwrap(), "not a ring");
+        assert_eq!(g.messages.last().unwrap(), "to ne jest pŕstenj");
 
         g.player.inventory.clear();
         for _ in 0..MAX_PACK {
@@ -10101,7 +10094,7 @@ mod tests {
 
         g.floor_items.clear();
         g.pickup();
-        assert_eq!(g.messages.last().unwrap(), "nothing here");
+        assert_eq!(g.messages.last().unwrap(), "tu ničego ne jest");
     }
 
     #[test]
@@ -10115,7 +10108,7 @@ mod tests {
         assert_eq!(levitating.pickup(), CommandResult::TURN);
         assert_eq!(
             levitating.messages.last().unwrap(),
-            "You can't.  You're floating off the ground!"
+            "Ne možeš.  Letiš nad zemjejų!"
         );
 
         let mut gold_game = Game::new(2091);

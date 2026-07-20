@@ -309,6 +309,21 @@ pub fn food_gen() -> String {
     gen_sg(&FOOD_OF)
 }
 
+/// Adverbial/predicative color ("glows red"): neuter Nom sg form.
+pub fn color_adv(color: &str) -> String {
+    first_variant(adj(color, Case::Nom, Number::Singular, Gender::Neuter, Animacy::Inanimate))
+}
+
+/// Masculine Nom color agreeing with "ščit".
+pub fn color_masc_nom(color: &str) -> String {
+    first_variant(adj(color, Case::Nom, Number::Singular, Gender::Masculine, Animacy::Inanimate))
+}
+
+/// Instrumental neuter color agreeing with "světlom".
+pub fn color_ins_n(color: &str) -> String {
+    first_variant(adj(color, Case::Ins, Number::Singular, Gender::Neuter, Animacy::Inanimate))
+}
+
 // ---------------------------------------------------------------------------
 // Magic-effect names, always genitive after the class head noun
 // ("napitȯk lěčenja"). Every form is produced by the crate at call time.
