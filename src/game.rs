@@ -2521,9 +2521,9 @@ impl Game {
         source_kind: Option<u8>,
     ) {
         let name = match which {
-            2 => "bolt",
-            3 => "flame",
-            4 => "ice",
+            2 => "mȯlnja",
+            3 => "plamenj",
+            4 => "led",
             _ => unreachable!(),
         };
         let (mut dx, mut dy) = direction.delta();
@@ -2859,9 +2859,9 @@ impl Game {
             {
                 let name = self.inventory_name(item, true);
                 self.message(if self.options.terse {
-                    format!("tu leži {name}")
+                    format!("tu: {name}")
                 } else {
-                    format!("prěhodiš črěz {name}")
+                    format!("na podu: {name}")
                 });
             }
             return (CommandResult::TURN, false, stops_running);
@@ -3291,14 +3291,14 @@ impl Game {
         if self.pack_count().saturating_add(item_weight) > MAX_PACK {
             let name = self.inventory_name(&item, true);
             self.message(if self.options.terse {
-                "no room"
+                "ne jest města"
             } else {
                 "v tvojej torbě ne jest města"
             });
             self.message(if self.options.terse {
-                format!("tu leži {name}")
+                format!("tu: {name}")
             } else {
-                format!("prěhodiš črěz {name}")
+                format!("na podu: {name}")
             });
             self.floor_items.push(item);
             return CommandResult::TURN;
@@ -5005,7 +5005,7 @@ impl Game {
         };
         if !sword.in_pack {
             self.message(if self.options.terse {
-                "no room"
+                "ne jest města"
             } else {
                 "v tvojej torbě ne jest města"
             });
@@ -5030,7 +5030,7 @@ impl Game {
         };
         if !armor.in_pack {
             self.message(if self.options.terse {
-                "no room"
+                "ne jest města"
             } else {
                 "v tvojej torbě ne jest města"
             });
@@ -5069,7 +5069,7 @@ impl Game {
         }
         if self.pack_count() >= MAX_PACK {
             self.message(if self.options.terse {
-                "no room"
+                "ne jest města"
             } else {
                 "v tvojej torbě ne jest města"
             });
@@ -5104,7 +5104,7 @@ impl Game {
         }
         if self.pack_count() >= MAX_PACK {
             self.message(if self.options.terse {
-                "no room"
+                "ne jest města"
             } else {
                 "v tvojej torbě ne jest města"
             });
@@ -5462,7 +5462,7 @@ mod tests {
         assert_eq!(g.player.stats.level, 2);
         assert_eq!(
             g.messages[g.messages.len() - 2..],
-            ["naglo čuješ sę mnogo lovkějši", "welcome to level 2"]
+            ["naglo čuješ sę mnogo lovkějši", "dostigaješ stųpnja 2"]
         );
         assert_eq!(
             g.player.stats.experience,
@@ -5514,8 +5514,9 @@ mod tests {
         g.player.conditions.hallucinating = true;
         g.messages.clear();
         read(&mut g, 0);
-        assert!(COLORS.iter().any(|color| {
-            g.messages.last().unwrap() == &format!("tvoje rųky načinajųt světiti sę {}", crate::lang::color_adv(color))
+        assert!(crate::lang::COLOR_ADJ.iter().any(|color| {
+            g.messages.last().unwrap()
+                == &format!("tvoje rųky načinajųt světiti sę {}", crate::lang::color_adv(color))
         }));
 
         g.messages.clear();
@@ -5529,7 +5530,7 @@ mod tests {
         read(&mut g, 5);
         assert_eq!(
             g.messages.last().unwrap(),
-            "this scroll is an identify potion scroll"
+            "toj svitȯk jest svitȯk opoznańja napitkov"
         );
     }
 
@@ -5597,7 +5598,7 @@ mod tests {
             g.messages
                 .last()
                 .unwrap()
-                .starts_with("you are now wielding ")
+                .starts_with("tvoje orųžje sejčas: ")
         );
         assert!(g.messages.last().unwrap().ends_with(&format!("({letter})")));
     }
@@ -5662,19 +5663,40 @@ mod tests {
             g.trigger_trap();
             let message = g.messages.last().unwrap();
             let fixed = [
-                "you are suddenly in a parallel dimension",
-                "you feel a sting in the side of your neck",
-                "multi-colored lines swirl around you, then fade",
-                "a spike shoots past your ear!",
-                "you suddenly feel very thirsty",
-                "you feel time speed up suddenly",
-                "time now seems to be going slower",
+                "naglo jesi v paralelnom světě",
+                "čuješ ubod v šiji",
+                "pěstre linije tancujųt okolo tebe i izčezajųt",
+                "strěla letit mimo tvojego uha!",
+                "naglo hočeš piti",
+                "čas naglo běži bystrěje",
+                "čas sejčas běži pomalo",
             ];
-            let colored = COLORS.iter().any(|color| {
-                message == &format!("the light in here suddenly seems {color}")
-                    || message == &format!("a {color} light flashes in your eyes")
-                    || message == &format!("{color} sparks dance across your armor")
-                    || message == &format!("you pack turns {color}!")
+            let colored = crate::lang::COLOR_ADJ.iter().any(|color| {
+                let n = crate::lang::color_adv(color);
+                let f = crate::lang::adj_for(
+                    color,
+                    &crate::lang::lex(
+                        "iskra",
+                        interslavic::Gender::Feminine,
+                        interslavic::Animacy::Inanimate,
+                    ),
+                    Case::Nom,
+                    interslavic::Number::Plural,
+                );
+                let f_sg = crate::lang::adj_for(
+                    color,
+                    &crate::lang::lex(
+                        "torba",
+                        interslavic::Gender::Feminine,
+                        interslavic::Animacy::Inanimate,
+                    ),
+                    Case::Nom,
+                    interslavic::Number::Singular,
+                );
+                message == &format!("světlo tu naglo izgledaje {n}")
+                    || message == &format!("{n} světlo blyskaje v tvojih očah")
+                    || message == &format!("{f} iskry tancujųt po tvojej brȯnji")
+                    || message == &format!("tvoja torba staje sę {f_sg}!")
             });
             assert!(fixed.contains(&message.as_str()) || colored, "{message}");
             saw_colored_message |= colored;
@@ -5931,11 +5953,11 @@ mod tests {
         assert_ne!(g.monsters[0].flags & monster::CONFUSED, 0);
         assert_eq!(
             g.messages.first().map(String::as_str),
-            Some("you hit the aquator")
+            Some("udarjaješ akvatora")
         );
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("the aquator appears confused")
+            Some("akvator izgledaje smųćeno")
         );
         assert!(
             g.messages
@@ -6526,7 +6548,7 @@ mod tests {
         g.set_wizard(true);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("you are suddenly as smart as Ken Arnold in dungeon #19")
+            Some("naglo znaješ vse o temnicě #19")
         );
         assert!(g.no_score);
         assert!(g.player.conditions.detect_monsters);
@@ -6639,7 +6661,7 @@ mod tests {
         g.wizard_create_gold(-25);
         let debt = g.player.inventory.last().unwrap();
         assert_eq!(debt.gold_value, -25);
-        assert_eq!(g.inventory_name(debt, false), "-25 Gold pieces");
+        assert_eq!(g.inventory_name(debt, false), "-25 zlåtnikov");
 
         assert!(!g.has_amulet);
         g.wizard_create(ItemKind::Amulet, 0);
@@ -6657,10 +6679,10 @@ mod tests {
         let item = g.player.inventory.last().unwrap();
         assert_eq!(item.kind, ItemKind::Bizarre('\u{1b}'));
         assert_eq!(item.kind.glyph(), '\u{1b}');
-        assert_eq!(g.inventory_name(item, false), "Something bizarre ^[");
+        assert_eq!(g.inventory_name(item, false), "Něčto divno ^[");
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("you now have something bizarre ^[ (f)")
+            Some("v tvojej torbě: něčto divno ^[ (f)")
         );
     }
 
@@ -6693,7 +6715,7 @@ mod tests {
         g.pickup();
         assert!(g.floor_items.is_empty());
         assert!(!g.player.inventory.iter().any(|i| i.id == id));
-        assert!(g.messages.last().unwrap().contains("dust"))
+        assert!(g.messages.last().unwrap().contains("prah"))
     }
 
     #[test]
@@ -6708,7 +6730,7 @@ mod tests {
             .unwrap()
             .id;
         g.identify_item(armor);
-        assert_eq!(g.messages.last().unwrap(), "you must identify a potion");
+        assert_eq!(g.messages.last().unwrap(), "musiš opoznati napitȯk");
         assert_eq!(g.pending_identification, Some(IdentifyKind::Potion));
 
         let potion = g.id();
@@ -6720,7 +6742,7 @@ mod tests {
             g.messages
                 .last()
                 .unwrap()
-                .starts_with("A potion of confusion")
+                .starts_with(&format!("napitȯk {}", crate::lang::potion_effect_gen(0)))
         );
         assert!(g.knowledge.potions[0]);
         assert!(g.pending_identification.is_none());
@@ -6760,8 +6782,8 @@ mod tests {
         assert_eq!(g.player.stats.hp, hp - 4);
         assert_eq!(g.flytrap_hits, 4);
         assert_eq!(g.player.conditions.held_turns, 0);
-        assert!(g.messages.last().unwrap().starts_with("The venus flytrap "));
-        assert!(g.messages.last().unwrap().ends_with(" you"));
+        assert!(g.messages.last().unwrap().starts_with("Muholovka "));
+        assert!(g.messages.last().unwrap().ends_with(" tebe"));
     }
 
     #[test]
@@ -6777,7 +6799,7 @@ mod tests {
 
         g.monster_attack(0);
 
-        assert_eq!(g.messages.last().map(String::as_str), Some("It misses"));
+        assert_eq!(g.messages.last().map(String::as_str), Some("Ono promašaje"));
         assert!(!g.messages.iter().any(|message| message.contains("phantom")));
     }
 
@@ -6785,12 +6807,12 @@ mod tests {
     fn combat_hit_and_miss_helpers_use_the_reference_terse_forms() {
         let mut g = Game::new(209);
         g.options.terse = true;
-        assert_eq!(g.attack_hit_message(None, Some("the bat")), "You hit");
-        assert_eq!(g.attack_miss_message(None, Some("the bat")), "You miss");
-        assert_eq!(g.attack_hit_message(Some("the bat"), None), "The bat hit");
+        assert_eq!(g.attack_hit_message(None, Some("the bat")), "udarjaješ");
+        assert_eq!(g.attack_miss_message(None, Some("the bat")), "promašaješ");
+        assert_eq!(g.attack_hit_message(Some("the bat"), None), "The bat udarja");
         assert_eq!(
             g.attack_miss_message(Some("the bat"), None),
-            "The bat misses"
+            "The bat promašaje"
         );
     }
 
@@ -6878,7 +6900,7 @@ mod tests {
         g.drain_level();
 
         assert_eq!(g.end, EndState::Dead);
-        assert_eq!(g.death_cause.as_deref(), Some("a wraith"));
+        assert_eq!(g.death_cause.as_deref(), Some("prizraka"));
     }
     #[test]
     fn leather_armor_does_not_rust() {
@@ -8004,7 +8026,7 @@ mod tests {
         let mut item = Item::basic(staff, ItemKind::Stick, 0);
         item.charges = 1;
         g.player.inventory.push(item);
-        g.appearances.stick_types[0] = "staff".into();
+        g.appearances.stick_is_staff[0] = true;
         g.player.weapon = Some(staff);
         g.player_attack(0);
         assert!(g.monsters[0].hp <= 9_996);
@@ -8199,7 +8221,7 @@ mod tests {
         let mut stolen = g.player.inventory[0].clone();
         stolen.count = 1;
         stolen.pack_letter = None;
-        let expected_message = format!("she stole {}!", g.inventory_name(&stolen, true));
+        let expected_message = format!("ona ukradla {}!", g.inventory_name(&stolen, true));
         g.nymph_steal(0);
         assert_eq!(g.player.inventory[0].count, 2);
         assert!(g.monsters.is_empty());
@@ -8247,7 +8269,7 @@ mod tests {
         assert!(g.monsters.is_empty());
         assert_eq!(
             g.messages.last().unwrap(),
-            &format!("she stole {stolen_name}!")
+            &format!("ona ukradla {stolen_name}!")
         );
     }
 
@@ -8430,7 +8452,7 @@ mod tests {
             verbose
                 .messages
                 .iter()
-                .any(|message| message == "the bolt whizzes past the aquator")
+                .any(|message| message == "mȯlnja letit mimo akvatora")
         );
 
         let mut terse = game_with_saving_monster(204);
@@ -8440,7 +8462,7 @@ mod tests {
             terse
                 .messages
                 .iter()
-                .any(|message| message == "bolt misses")
+                .any(|message| message == "mȯlnja promašaje")
         );
     }
 
@@ -8462,7 +8484,7 @@ mod tests {
         assert!(
             g.messages
                 .iter()
-                .any(|message| message == "the bolt whizzes past the medusa")
+                .any(|message| message == "mȯlnja letit mimo meduzy")
         );
     }
 
@@ -8568,7 +8590,7 @@ mod tests {
         assert_eq!(g.player.inventory[0].count, 2);
         assert_eq!(
             g.messages.last().unwrap(),
-            &format!("dropped {}", g.inventory_name(&g.floor_items[0], true))
+            &format!("ostavjeno: {}", g.inventory_name(&g.floor_items[0], true))
         );
     }
 
@@ -8699,7 +8721,7 @@ mod tests {
         g.player_attack(0);
         assert_eq!(g.monsters[0].disguise, 'X');
         assert_eq!(g.monsters[0].hp, hp);
-        assert!(g.messages.last().unwrap().contains("xeroc"));
+        assert!(g.messages.last().unwrap().contains("kserok"));
     }
 
     #[test]
@@ -8729,7 +8751,11 @@ mod tests {
             g.messages
                 .last()
                 .unwrap()
-                .starts_with(&format!("The {} ", MONSTERS[shown_kind].name))
+                .starts_with(&uppercase_first(&crate::lang::phrase(
+                    &crate::lang::MONSTER_LEX[shown_kind],
+                    Case::Nom,
+                    interslavic::Number::Singular
+                )))
         );
     }
 
@@ -8750,7 +8776,7 @@ mod tests {
         assert!(!g.player_is_running);
         assert_eq!(
             g.messages.last().unwrap(),
-            "you are frozen by the the ice monster"
+            "ledeno čudovišče tę zamråžaje"
         );
     }
 
@@ -8965,9 +8991,9 @@ mod tests {
                 .messages
                 .iter()
                 .rev()
-                .find(|message| message.contains("defeated"))
+                .find(|message| message.contains("poběđaješ"))
                 .unwrap(),
-            "you have defeated something"
+            "poběđaješ něčto"
         );
 
         let mut hallucinating = Game::new(2125);
@@ -8992,9 +9018,9 @@ mod tests {
                 .messages
                 .iter()
                 .rev()
-                .find(|message| message.contains("defeated"))
+                .find(|message| message.contains("poběđaješ"))
                 .unwrap(),
-            "defeated the bat"
+            "poběđaješ netopyŕa"
         );
     }
 
@@ -9279,7 +9305,7 @@ mod tests {
         g.digest();
         assert_eq!(g.player.food_left, -852);
         assert_eq!(g.end, EndState::Dead);
-        assert_eq!(g.death_cause.as_deref(), Some("starvation"));
+        assert_eq!(g.death_cause.as_deref(), Some("glada"));
     }
 
     #[test]
@@ -9475,16 +9501,20 @@ mod tests {
         let mut g = Game::new(2290);
         let mut potion = Item::basic(g.id(), ItemKind::Potion, 0);
         potion.count = 2;
-        let color = g.appearances.potion_colors[0].clone();
+        let color = crate::lang::COLOR_ADJ[g.appearances.potion_colors[0]];
         assert_eq!(
             g.inventory_name(&potion, false),
-            format!("2 {color} potions")
+            format!(
+                "2 {} {}",
+                crate::lang::adj_for(color, &crate::lang::POTION, Case::Nom, interslavic::Number::Plural),
+                crate::lang::decl(&crate::lang::POTION, Case::Nom, interslavic::Number::Plural)
+            )
         );
 
         g.knowledge.potions[0] = true;
         assert_eq!(
             g.inventory_name(&potion, false),
-            format!("2 potions of confusion({color})")
+            format!("2 {} {}({color})", crate::lang::decl(&crate::lang::POTION, Case::Nom, interslavic::Number::Plural), crate::lang::potion_effect_gen(0))
         );
 
         let mut weapon = Item::basic(g.id(), ItemKind::Weapon, 3);
@@ -9492,12 +9522,12 @@ mod tests {
         weapon.hit_plus = 1;
         weapon.damage_plus = -2;
         weapon.known = true;
-        assert_eq!(g.inventory_name(&weapon, false), "8 +1,-2 arrows");
-        assert_eq!(g.inventory_name(&weapon, true), "8 +1,-2 arrows");
+        assert_eq!(g.inventory_name(&weapon, false), "+1,-2 8 strěl");
+        assert_eq!(g.inventory_name(&weapon, true), "+1,-2 8 strěl");
 
         let food = Item::basic(g.id(), ItemKind::Food, 0);
-        assert_eq!(g.inventory_name(&food, false), "Some food");
-        assert_eq!(g.inventory_name(&food, true), "some food");
+        assert_eq!(g.inventory_name(&food, false), "porcija jedy");
+        assert_eq!(g.inventory_name(&food, true), "porcija jedy");
     }
 
     #[test]
@@ -9729,7 +9759,7 @@ mod tests {
 
         assert_eq!(
             g.messages.last().unwrap(),
-            "You have found a poison dart trap"
+            "Nahodiš: jadna pasť"
         );
         assert!(g.dungeon.map.get(pos).unwrap().trap_revealed);
     }
@@ -9747,7 +9777,7 @@ mod tests {
         assert_eq!(g.identify_trap(Direction::Right), CommandResult::FREE);
 
         assert!(g.dungeon.map.get(pos).unwrap().trap_revealed);
-        assert!(g.messages.last().unwrap().starts_with("You have found "));
+        assert!(g.messages.last().unwrap().starts_with("Nahodiš: "));
     }
 
     #[test]
@@ -10089,7 +10119,7 @@ mod tests {
         g.pickup();
         assert_eq!(
             &g.messages[g.messages.len() - 2..],
-            ["no room", "moved onto an orange potion"]
+            ["ne jest města", "tu: srěbrny napitȯk"]
         );
 
         g.floor_items.clear();
@@ -10129,7 +10159,7 @@ mod tests {
         assert_eq!(gold_game.pickup(), CommandResult::TURN);
         assert_eq!(
             gold_game.messages.last().unwrap(),
-            "you found 123 gold pieces"
+            "nahodiš 123 zlåtnikov"
         );
         assert_eq!(gold_game.dungeon.rooms[room as usize].gold_value, 0);
 
@@ -10158,7 +10188,7 @@ mod tests {
         assert!(g.floor_items.iter().any(|item| item.id == food_id));
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("you moved onto some food")
+            Some("na podu: porcija jedy")
         );
     }
 
@@ -10187,7 +10217,7 @@ mod tests {
         g.drain_level();
 
         assert_eq!(g.end, EndState::Dead);
-        assert_eq!(g.death_cause.as_deref(), Some("a wraith"));
+        assert_eq!(g.death_cause.as_deref(), Some("prizraka"));
     }
 
     #[test]
@@ -10199,7 +10229,7 @@ mod tests {
         g.check_experience();
 
         assert_eq!(g.player.stats.level, 5);
-        assert_eq!(&g.messages[messages..], ["welcome to level 5"]);
+        assert_eq!(&g.messages[messages..], ["dostigaješ stųpnja 5"]);
     }
 
     #[test]
@@ -10374,7 +10404,7 @@ mod tests {
         let dagger = Item::basic(hit.id(), ItemKind::Weapon, 4);
 
         assert!(hit.thrown_attack(0, &dagger));
-        assert_eq!(hit.messages.last().unwrap(), "the dagger hits the zombie");
+        assert_eq!(hit.messages.last().unwrap(), "kinžal udarja zombi");
 
         let mut miss = hit.clone();
         miss.monsters[0].armor = -100;
@@ -10384,7 +10414,7 @@ mod tests {
         assert!(!miss.thrown_attack(0, &dagger));
         assert_eq!(
             miss.messages.last().unwrap(),
-            "the dagger misses the zombie"
+            "kinžal promašaje zombi"
         );
     }
 
@@ -10627,11 +10657,11 @@ mod tests {
         g.message("remember this");
 
         g.execute(Command::Unknown('x'));
-        assert_eq!(g.messages.last().unwrap(), "illegal command 'x'");
+        assert_eq!(g.messages.last().unwrap(), "nepravilna komanda 'x'");
         assert_eq!(g.recall_message, "remember this");
 
         g.execute(Command::Wizard(WizardCommand::Down));
-        assert_eq!(g.messages.last().unwrap(), "illegal command '^D'");
+        assert_eq!(g.messages.last().unwrap(), "nepravilna komanda '^D'");
         assert_eq!(g.recall_message, "remember this");
     }
 
