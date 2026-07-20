@@ -782,7 +782,15 @@ fn winner_sales_text(game: &Game) -> String {
     out
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
+    // Bevy's built-in default font covers only ASCII; the Interslavic
+    // orthography (ě ų ȯ č ...) needs full Latin-Extended coverage.
+    fonts
+        .insert(
+            &Handle::default(),
+            Font::from_bytes(include_bytes!("../assets/DejaVuSansMono.ttf").to_vec()),
+        )
+        .expect("install full-coverage default font");
     commands.spawn(Camera2d);
     commands
         .spawn(Node {

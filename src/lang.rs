@@ -82,6 +82,12 @@ pub fn counted(n: u32, p: &Phrase) -> String {
 
 /// Genitive singular of a verb's gerund ("lěčiti" → "lěčenja") — the
 /// standard "X of <doing>" effect-name pattern. Gerunds are neuter.
+/// Gerund nominative/accusative (used after "za" — for neuter nouns the
+/// accusative equals this form, which is an official paradigm cell).
+pub fn gerund_nom(infinitive: &str) -> String {
+    first_variant(verb_forms(infinitive).gerund)
+}
+
 pub fn gerund_gen(infinitive: &str) -> String {
     let g = first_variant(verb_forms(infinitive).gerund);
     first_variant(noun_with(&g, Case::Gen, Number::Singular, Neuter, Inanimate))
@@ -248,7 +254,7 @@ pub const WOOD_LEX: [Lex; 33] = [
     lex("vęz", Masculine, Inanimate),
     lex("boliglåv", Masculine, Inanimate),
     lex("bambus", Masculine, Inanimate),
-    lex_indecl("avokado", Neuter, Inanimate),
+    lex("orěh", Masculine, Inanimate),
     lex("kedr", Masculine, Inanimate),
     lex("kiparis", Masculine, Inanimate),
     lex("mahagon", Masculine, Inanimate),
@@ -335,7 +341,7 @@ const ORUZJE: Lex = lex("orųžje", Neuter, Inanimate);
 
 pub fn potion_effect_gen(which: usize) -> String {
     match which {
-        0 => gerund_gen("smųtiti"),                                   // confusion
+        0 => gen_sg(&lex("smęteńje", Neuter, Inanimate)),             // confusion
         1 => gen_sg(&lex("halucinacija", Feminine, Inanimate)),          // hallucination
         2 => gen_sg(&lex("jad", Masculine, Inanimate)),                  // poison
         3 => gen_sg(&SILA),                                              // gain strength
@@ -346,7 +352,7 @@ pub fn potion_effect_gen(which: usize) -> String {
         8 => gen_sg(&lex("povyšeńje", Neuter, Inanimate)),               // raise level (project)
         9 => format!("velikogo {}", gerund_gen("lěčiti")),            // extra healing
         10 => gen_sg(&lex("pospěh", Masculine, Inanimate)),              // haste self
-        11 => format!("{} {}", gerund_gen("obnoviti"), gen_sg(&SILA)),   // restore strength
+        11 => format!("{} {}", gen_sg(&lex("obnovjeńje", Neuter, Inanimate)), gen_sg(&SILA)), // restore strength
         12 => gen_sg(&lex("slěpota", Feminine, Inanimate)),              // blindness (project)
         _ => gen_sg(&lex("levitacija", Feminine, Inanimate)),            // levitation (generated)
     }
@@ -354,26 +360,26 @@ pub fn potion_effect_gen(which: usize) -> String {
 
 pub fn scroll_effect_gen(which: usize) -> String {
     match which {
-        0 => format!("{} {}", gerund_gen("smųtiti"), gen_pl(&MONSTER)),   // monster confusion
+        0 => format!("{} {}", gen_sg(&lex("smęteńje", Neuter, Inanimate)), gen_pl(&MONSTER)), // monster confusion
         1 => format!("čarovnoj {}", gen_sg(&lex("karta", Feminine, Inanimate))), // magic mapping
-        2 => format!("{} {}", gerund_gen("dŕžati"), gen_sg(&MONSTER)),       // hold monster
+        2 => format!("za {} {}", gerund_nom("dŕžati"), gen_sg(&MONSTER)),  // hold monster
         3 => gen_sg(&lex("sȯn", Masculine, Inanimate)),                      // sleep
-        4 => format!("{} {}", gerund_gen("očarovati"), gen_sg(&BRONJA)),     // enchant armor
-        5 => format!("{} {}", gerund_gen("opoznati"), gen_pl(&POTION)),   // identify potion
-        6 => format!("{} {}", gerund_gen("opoznati"), gen_pl(&SCROLL)),   // identify scroll
-        7 => format!("{} {}", gerund_gen("opoznati"), gen_sg(&ORUZJE)),      // identify weapon
-        8 => format!("{} {}", gerund_gen("opoznati"), gen_sg(&BRONJA)),      // identify armor
+        4 => format!("za {} {}", gerund_nom("očarovati"), gen_sg(&BRONJA)), // enchant armor
+        5 => format!("za {} {}", gerund_nom("opoznati"), gen_pl(&POTION)),  // identify potion
+        6 => format!("za {} {}", gerund_nom("opoznati"), gen_pl(&SCROLL)),  // identify scroll
+        7 => format!("za {} {}", gerund_nom("opoznati"), gen_sg(&ORUZJE)),  // identify weapon
+        8 => format!("za {} {}", gerund_nom("opoznati"), gen_sg(&BRONJA)),  // identify armor
         9 => format!(
-            "{} {}, {} ili {}",
-            gerund_gen("opoznati"), gen_sg(&RING), gen_sg(&WAND), gen_sg(&STAFF)
+            "za {} {}, {} ili {}",
+            gerund_nom("opoznati"), gen_sg(&RING), gen_sg(&WAND), gen_sg(&STAFF)
         ),                                                                // identify ring, wand or staff
-        10 => format!("{} {}", gerund_gen("strašiti"), gen_pl(&MONSTER)), // scare monster
+        10 => format!("za {} {}", gerund_nom("strašiti"), gen_pl(&MONSTER)), // scare monster
         11 => format!("{} {}", gen_sg(&lex("čuťje", Neuter, Inanimate)), gen_sg(&FOOD_OF)), // food detection
         12 => gen_sg(&lex("teleportacija", Feminine, Inanimate)),            // teleportation
-        13 => format!("{} {}", gerund_gen("očarovati"), gen_sg(&ORUZJE)),    // enchant weapon
-        14 => format!("{} {}", gerund_gen("sȯzdati"), gen_sg(&MONSTER)),     // create monster
-        15 => format!("{} {}", gerund_gen("odstråniti"), gen_sg(&lex("proklęťje", Neuter, Inanimate))), // remove curse
-        16 => format!("{} {}", gerund_gen("gněvati"), gen_pl(&MONSTER)),  // aggravate monsters
+        13 => format!("za {} {}", gerund_nom("očarovati"), gen_sg(&ORUZJE)), // enchant weapon
+        14 => format!("za {} {}", gerund_nom("sȯzdati"), gen_sg(&MONSTER)),     // create monster
+        15 => "protiv proklęťju".to_string(),                               // remove curse
+        16 => format!("za {} {}", gerund_nom("gněvati"), gen_pl(&MONSTER)),  // aggravate monsters
         _ => format!("{} {}", gen_sg(&lex("ohråna", Feminine, Inanimate)), gen_sg(&BRONJA)), // protect armor
     }
 }
@@ -382,11 +388,11 @@ pub fn ring_effect_gen(which: usize) -> String {
     match which {
         0 => gen_sg(&lex("ohråna", Feminine, Inanimate)),                    // protection
         1 => gen_sg(&SILA),                                                  // add strength
-        2 => format!("{} {}", gerund_gen("poddŕžati"), gen_sg(&SILA)),       // sustain strength
+        2 => format!("za {} {}", gerund_nom("poddŕžati"), gen_sg(&SILA)),       // sustain strength
         3 => gen_sg(&lex("iskańje", Neuter, Inanimate)),                     // searching
         4 => format!("{} nevidimogo", gerund_gen("viděti")),              // see invisible
         5 => gen_sg(&lex("ukrašeńje", Neuter, Inanimate)),                   // adornment
-        6 => format!("{} {}", gerund_gen("gněvati"), gen_pl(&MONSTER)),   // aggravate monster
+        6 => format!("za {} {}", gerund_nom("gněvati"), gen_pl(&MONSTER)),   // aggravate monster
         7 => gen_sg(&lex("lovkosť", Feminine, Inanimate)),                   // dexterity (generated)
         8 => format!("{} {}", gen_sg(&SILA), gen_sg(&lex("udar", Masculine, Inanimate))), // increase damage
         9 => gen_sg(&lex("regeneracija", Feminine, Inanimate)),              // regeneration (generated)
@@ -406,9 +412,9 @@ pub fn stick_effect_gen(which: usize) -> String {
         4 => gen_sg(&lex("hlåd", Masculine, Inanimate)),                     // cold
         5 => gen_sg(&lex("prěobražeńje", Neuter, Inanimate)),                // polymorph
         6 => format!("čarovnoj {}", gen_sg(&lex("strěla", Feminine, Inanimate))), // magic missile
-        7 => format!("{} {}", gerund_gen("uskoriti"), gen_sg(&MONSTER)),     // haste monster
-        8 => format!("{} {}", gerund_gen("zamedliti"), gen_sg(&MONSTER)),    // slow monster
-        9 => format!("{} {}", gerund_gen("odbirati"), gen_sg(&lex("žiťje", Neuter, Inanimate))), // drain life
+        7 => format!("{} {}", gen_sg(&lex("uskorjeńje", Neuter, Inanimate)), gen_sg(&MONSTER)), // haste monster
+        8 => format!("{} {}", gen_sg(&lex("zamedljeńje", Neuter, Inanimate)), gen_sg(&MONSTER)), // slow monster
+        9 => format!("za {} {}", gerund_nom("odbirati"), gen_sg(&lex("žiťje", Neuter, Inanimate))), // drain life
         10 => "ničego".to_string(),                                       // nothing (pronoun gen)
         11 => format!("{} prȯč", gen_sg(&lex("teleportacija", Feminine, Inanimate))), // teleport away
         12 => {
@@ -516,8 +522,8 @@ mod tests {
             }
         }
         for (p, gl) in ARMOR_LEX.iter().zip([
-            "leather armor", "ring mail", "studded leather armor", "scale mail",
-            "chain mail", "splint mail", "banded mail", "plate mail",
+            "leather armor", "ringmail", "studded armor", "scalemail",
+            "chainmail", "splintmail", "bandedmail", "platemail",
         ]) {
             noun_into(&mut rows, &p.head, gl);
             if let Some(a) = p.adj {
@@ -594,5 +600,67 @@ mod tests {
             body,
         )
         .expect("write game-lexicon.tsv");
+    }
+}
+
+#[cfg(test)]
+mod corpus {
+    //! Renders a representative corpus of every dynamic template family to
+    //! `target/lang-corpus.txt` for the slovowiki check-text gate
+    //! (scripts/check_lang.sh). Pure generation — always passes; the gate
+    //! itself runs outside cargo.
+    use super::*;
+    use interslavic::Case::*;
+    use interslavic::Number::{Plural, Singular};
+
+    #[test]
+    fn write_gate_corpus() {
+        let mut out = String::new();
+        for p in MONSTER_LEX.iter() {
+            for case in [Nom, Acc, Gen, Ins] {
+                out.push_str(&phrase(p, case, Singular));
+                out.push(' ');
+            }
+            out.push('\n');
+        }
+        for p in WEAPON_LEX.iter().chain(ARMOR_LEX.iter()).chain(TRAP_LEX.iter()) {
+            for case in [Nom, Acc, Gen] {
+                out.push_str(&phrase(p, case, Singular));
+                out.push(' ');
+            }
+            for n in [1u32, 3, 7] {
+                out.push_str(&format!("{n} {} ", counted(n, p)));
+            }
+            out.push_str(".\n");
+        }
+        for i in 0..14 {
+            out.push_str(&format!(
+                "napitȯk {}.\npŕstenj {}.\nžezlo {}.\n",
+                potion_effect_gen(i),
+                ring_effect_gen(i),
+                stick_effect_gen(i)
+            ));
+        }
+        for i in 0..18 {
+            out.push_str(&format!("svitȯk {}.\n", scroll_effect_gen(i)));
+        }
+        for c in COLOR_ADJ {
+            out.push_str(&format!(
+                "{} napitȯk, {} světlo, {} iskry.\n",
+                adj_for(c, &POTION, Nom, Singular),
+                color_adv(c),
+                adj_for(c, &lex("iskra", Gender::Feminine, Animacy::Inanimate), Nom, Plural)
+            ));
+        }
+        for l in STONE_LEX.iter().chain(WOOD_LEX.iter()).chain(METAL_LEX.iter()) {
+            out.push_str(&format!("pŕstenj {}. ", material_of(l)));
+        }
+        out.push('\n');
+        std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/target")).ok();
+        std::fs::write(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/target/lang-corpus.txt"),
+            out,
+        )
+        .expect("write corpus");
     }
 }

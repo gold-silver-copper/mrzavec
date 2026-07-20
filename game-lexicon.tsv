@@ -8,7 +8,6 @@ almaz	noun	m	inanim	stone
 aluminij	noun	m	inanim	metal
 ametist	noun	m	inanim	stone
 amulet	noun	m	inanim	amulet
-avokado	noun	n	inanim	wood
 bagrovy	adj			attributive
 bambus	noun	m	inanim	wood
 banian	noun	m	inanim	wood
@@ -17,7 +16,7 @@ berylij	noun	m	inanim	metal
 boliglåv	noun	m	inanim	wood
 bronza	noun	f	inanim	metal
 brěza	noun	f	inanim	wood
-brȯnja	noun	f	inanim	leather armor, ring mail, studded leather armor, scale mail, splint mail, banded mail
+brȯnja	noun	f	inanim	leather armor, ringmail, studded armor, scalemail, splintmail, bandedmail
 buk	noun	m	inanim	wood
 bulava	noun	f	inanim	mace
 běly	adj			attributive
@@ -57,7 +56,7 @@ kiparis	noun	m	inanim	wood
 kitovras	noun	m	anim	centaur
 klen	noun	m	inanim	wood
 koljčny	adj			attributive
-koljčuga	noun	f	inanim	chain mail
+koljčuga	noun	f	inanim	chainmail
 kopje	noun	n	inanim	spear
 koral	noun	m	inanim	stone
 koričnevy	adj			attributive
@@ -108,8 +107,9 @@ oniks	noun	m	inanim	stone
 opal	noun	m	inanim	stone
 oranževy	adj			attributive
 ork	noun	m	anim	orc
+orěh	noun	m	inanim	wood
 osika	noun	f	inanim	wood
-pancyŕ	noun	m	inanim	plate mail
+pancyŕ	noun	m	inanim	platemail
 pasovy	adj			attributive
 pasť	noun	f	inanim	arrow trap, sleeping gas trap, bear trap, teleport trap, poison dart trap, rust trap, mysterious trap, trap
 pekan	noun	m	inanim	wood

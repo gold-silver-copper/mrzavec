@@ -5535,7 +5535,7 @@ mod tests {
         read(&mut g, 5);
         assert_eq!(
             g.messages.last().unwrap(),
-            "toj svitȯk jest svitȯk opoznańja napitkov"
+            "toj svitȯk jest svitȯk za opoznańje napitkov"
         );
     }
 
