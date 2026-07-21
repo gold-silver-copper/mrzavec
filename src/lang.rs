@@ -7,7 +7,13 @@
 //! check-text project lexicon) is regenerated from these tables by the
 //! `regenerate_project_lexicon` test.
 
-use interslavic::{adj, comparative, noun_with, verb_forms, Animacy, Case, Gender, Number};
+use interslavic::{
+    adj, comparative, l_participle, superlative as isv_superlative, noun_with, passive_participle, personal_pronoun, pronoun,
+    verb, verb_forms, Animacy, Case, Gender, Number, Person, PronounStyle, Tense,
+};
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::sync::OnceLock;
 
 /// A declinable noun: dictionary lemma plus the metadata `noun_with` needs.
 /// `indecl` marks loanwords that never change form (emu, zombi).
@@ -98,6 +104,115 @@ fn gen_sg(l: &Lex) -> String {
 }
 fn gen_pl(l: &Lex) -> String {
     decl(l, Case::Gen, Number::Plural)
+}
+
+
+// ---------------------------------------------------------------------------
+// Speech helpers: the only source of inflected word forms in game text.
+// Every form is produced by the `interslavic` crate at call time and
+// memoized process-wide (message rendering never recomputes hot cells).
+// ---------------------------------------------------------------------------
+
+fn cache() -> &'static Mutex<HashMap<(u8, String, u8), String>> {
+    static CACHE: OnceLock<Mutex<HashMap<(u8, String, u8), String>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn memo(kind: u8, lemma: &str, cell: u8, produce: impl FnOnce() -> String) -> String {
+    let key = (kind, lemma.to_string(), cell);
+    if let Some(hit) = cache().lock().unwrap().get(&key) {
+        return hit.clone();
+    }
+    let value = produce();
+    cache().lock().unwrap().insert(key, value.clone());
+    value
+}
+
+/// 2nd-person-singular present ("udarjaješ") — the narration voice.
+pub fn v2(inf: &str) -> String {
+    memo(1, inf, 0, || {
+        first_variant(verb(inf, Person::Second, Number::Singular, Gender::Masculine, Tense::Present))
+    })
+}
+
+/// 3rd-person-singular present ("udarjaje").
+pub fn v3(inf: &str) -> String {
+    memo(1, inf, 1, || {
+        first_variant(verb(inf, Person::Third, Number::Singular, Gender::Masculine, Tense::Present))
+    })
+}
+
+/// 3rd-person-plural present ("udarjajųt").
+pub fn v3pl(inf: &str) -> String {
+    memo(1, inf, 2, || {
+        first_variant(verb(inf, Person::Third, Number::Plural, Gender::Masculine, Tense::Present))
+    })
+}
+
+/// 1st-person-singular present (wizard-mode voice).
+pub fn v1(inf: &str) -> String {
+    memo(1, inf, 3, || {
+        first_variant(verb(inf, Person::First, Number::Singular, Gender::Masculine, Tense::Present))
+    })
+}
+
+/// Imperative 2sg ("počivaj"). Imperative cells carry the crate's internal
+/// `ĵ` marker; `cells::variants` is the documented flattening step.
+pub fn vimp(inf: &str) -> String {
+    memo(1, inf, 4, || {
+        let raw = verb_forms(inf)
+            .imperative
+            .first()
+            .cloned()
+            .unwrap_or_else(|| inf.to_string());
+        interslavic::cells::variants(&raw)
+            .into_iter()
+            .next()
+            .unwrap_or(raw)
+    })
+}
+
+/// Bare l-participle for fixed-gender past subjects ("strěla tę ubila").
+pub fn lpart(inf: &str, gender: Gender, number: Number) -> String {
+    let cell = 10 + gender as u8 * 2 + number as u8;
+    memo(2, inf, cell, || first_variant(l_participle(inf, gender, number)))
+}
+
+/// Past passive participle agreeing with a lexicon noun ("osvětljena").
+pub fn ppart(inf: &str, l: &Lex, case: Case, number: Number) -> String {
+    let cell = 40 + case as u8 * 12 + number as u8 * 6 + l.gender as u8 * 2 + l.animacy as u8;
+    memo(3, inf, cell, || {
+        first_variant(
+            passive_participle(inf, case, number, l.gender, l.animacy)
+                .unwrap_or_else(|| inf.to_string()),
+        )
+    })
+}
+
+/// Personal pronoun; panics on unattested cells so a template bug is loud.
+pub fn pers(person: Person, number: Number, gender: Gender, case: Case, style: PronounStyle) -> String {
+    personal_pronoun(person, number, gender, case, style)
+        .expect("template requests an unattested personal-pronoun cell")
+}
+
+/// Possessive / pronominal determiner agreeing with a lexicon noun
+/// ("tvojej torbě": poss("tvoj", &TORBA, Loc, Sg)).
+pub fn poss(lemma: &str, l: &Lex, case: Case, number: Number) -> String {
+    let cell = 40 + case as u8 * 12 + number as u8 * 6 + l.gender as u8 * 2 + l.animacy as u8;
+    memo(4, lemma, cell, || {
+        pronoun(lemma, case, number, l.gender, l.animacy)
+            .map(first_variant)
+            .expect("template requests an undeclinable pronominal determiner")
+    })
+}
+
+/// Comparative adverb ("bystrěje").
+pub fn comp_adv(a: &str) -> String {
+    memo(5, a, 0, || {
+        comparative(a)
+            .map(|(_, adv)| adv)
+            .expect("template requests a comparative of a non-gradable adjective")
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -425,6 +540,302 @@ pub fn stick_effect_gen(which: usize) -> String {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// speak(): the template-marker interpreter. Message literals carry only
+// citation-form lemmas inside ⟨…⟩ markers; every surface form is produced
+// here, at runtime, by the interslavic crate. Marker grammar:
+//   ⟨v1|v2|v3|v3p|vim:INF⟩            finite verb / imperative
+//   ⟨lp:INF:m|f|n[:pl]⟩               bare l-participle
+//   ⟨pp:INF:m|f|n[:CASE][:pl]⟩        past passive participle (inanimate agr)
+//   ⟨n:LEMMA:CASE[:pl]⟩               registry noun, declined
+//   ⟨a:LEMMA:NOUN:CASE[:pl]⟩          adjective/determiner agreeing with noun
+//   ⟨ty:CASE[:f]⟩ ⟨on:CASE[:n]⟩ …     personal pronouns (clitic default,
+//                                     :f = full form, :n = after-preposition)
+//   ⟨ničto:CASE⟩ ⟨čto:CASE⟩ ⟨kto:CASE⟩ pronoun() closed classes
+//   ⟨cav:ADJ⟩                          comparative adverb
+// Unknown markers panic loudly in debug (a template bug must not ship).
+// ---------------------------------------------------------------------------
+
+fn reg(lemma: &str) -> Lex {
+    static REGISTRY: OnceLock<HashMap<&'static str, Lex>> = OnceLock::new();
+    let map = REGISTRY.get_or_init(|| {
+        let mut m: HashMap<&'static str, Lex> = HashMap::new();
+        let mut put = |l: Lex| {
+            m.insert(l.lemma, l);
+        };
+        for p in MONSTER_LEX.iter().chain(WEAPON_LEX.iter()).chain(ARMOR_LEX.iter()).chain(TRAP_LEX.iter()) {
+            put(p.head);
+        }
+        for l in STONE_LEX.iter().chain(WOOD_LEX.iter()).chain(METAL_LEX.iter()) {
+            put(*l);
+        }
+        for l in [
+            POTION, SCROLL, RING, WAND, STAFF, AMULET, FOOD_PORTION, FOOD_OF, GOLD_COIN,
+            MONSTER, TRAP, SILA, BRONJA, ORUZJE,
+        ] {
+            put(l);
+        }
+        for l in [
+            lex("torba", Feminine, Inanimate),
+            lex("město", Neuter, Inanimate),
+            lex("zemja", Feminine, Inanimate),
+            lex("tělo", Neuter, Inanimate),
+            lex("ramę", Neuter, Inanimate),
+            lex("glåva", Feminine, Inanimate),
+            lex("oko", Neuter, Inanimate),
+            lex("uho", Neuter, Inanimate),
+            lex("rųka", Feminine, Inanimate),
+            lex("noga", Feminine, Inanimate),
+            lex("šija", Feminine, Inanimate),
+            lex("koža", Feminine, Inanimate),
+            lex("světlo", Neuter, Inanimate),
+            lex("iskra", Feminine, Inanimate),
+            lex("linija", Feminine, Inanimate),
+            lex("tma", Feminine, Inanimate),
+            lex("mgla", Feminine, Inanimate),
+            lex("prah", Masculine, Inanimate),
+            lex("sok", Masculine, Inanimate),
+            lex("vkus", Masculine, Inanimate),
+            lex("zapah", Masculine, Inanimate),
+            lex("teplo", Neuter, Inanimate),
+            lex("směh", Masculine, Inanimate),
+            lex("krik", Masculine, Inanimate),
+            lex("bolj", Masculine, Inanimate),
+            lex("pųť", Masculine, Inanimate),
+            lex("prohod", Masculine, Inanimate),
+            lex("komnata", Feminine, Inanimate),
+            lex("voda", Feminine, Inanimate),
+            lex("plamenj", Masculine, Inanimate),
+            lex("dym", Masculine, Inanimate),
+            lex("oblačȯk", Masculine, Inanimate),
+            lex("zvųk", Masculine, Inanimate),
+            lex("karta", Feminine, Inanimate),
+            lex("parola", Feminine, Inanimate),
+            lex("čarovnik", Masculine, Animate),
+            lex("čar", Masculine, Inanimate),
+            lex("glad", Masculine, Inanimate),
+            lex("slabosť", Feminine, Inanimate),
+            lex("nedostatȯk", Masculine, Inanimate),
+            lex("jedeńje", Neuter, Inanimate),
+            lex("ukųs", Masculine, Inanimate),
+            lex("utrata", Feminine, Inanimate),
+            lex("naboj", Masculine, Inanimate),
+            lex("znak", Masculine, Inanimate),
+            lex("zamȯk", Masculine, Inanimate),
+            lex("fajl", Masculine, Inanimate),
+            lex("rezultat", Masculine, Inanimate),
+            lex("pozicija", Feminine, Inanimate),
+            lex("opcija", Feminine, Inanimate),
+            lex("komanda", Feminine, Inanimate),
+            lex("verzija", Feminine, Inanimate),
+            lex("režim", Masculine, Inanimate),
+            lex("igra", Feminine, Inanimate),
+            lex("konec", Masculine, Inanimate),
+            lex("smŕť", Feminine, Inanimate),
+            lex("bog", Masculine, Animate),
+            lex("vsemir", Masculine, Inanimate),
+            lex("temnica", Feminine, Inanimate),
+            lex("pohibel", Feminine, Inanimate),
+            lex("prědmet", Masculine, Inanimate),
+            lex("strana", Feminine, Inanimate),
+            lex("grob", Masculine, Inanimate),
+            lex("denj", Masculine, Inanimate),
+            lex("svět", Masculine, Inanimate),
+            lex("Jendor", Masculine, Inanimate),
+            lex("signal", Masculine, Inanimate),
+            lex("obsluga", Feminine, Inanimate),
+            lex("prěškoda", Feminine, Inanimate),
+            lex("sȯhranjeńje", Neuter, Inanimate),
+            lex("čestitańje", Neuter, Inanimate),
+            lex("dveri", Feminine, Inanimate),
+            lex("stěna", Feminine, Inanimate),
+            lex("poběda", Feminine, Inanimate),
+            lex("ime", Neuter, Inanimate),
+            lex("vȯzduh", Masculine, Inanimate),
+            lex("jedinstvo", Neuter, Inanimate),
+            lex("ščit", Masculine, Inanimate),
+            lex("pogled", Masculine, Inanimate),
+            lex("stųpenj", Masculine, Inanimate),
+            lex("hlåd", Masculine, Inanimate),
+            lex("nos", Masculine, Inanimate),
+            lex("udar", Masculine, Inanimate),
+            lex("ubod", Masculine, Inanimate),
+            lex("blizkosť", Feminine, Inanimate),
+            lex("čuťje", Neuter, Inanimate),
+            lex("sȯn", Masculine, Inanimate),
+            lex("apetit", Masculine, Inanimate),
+            lex("jad", Masculine, Inanimate),
+            lex("rđa", Feminine, Inanimate),
+        ] {
+            put(l);
+        }
+        m
+    });
+    *map.get(lemma).unwrap_or_else(|| panic!("speak: noun '{lemma}' not in registry"))
+}
+
+fn parse_case(code: &str) -> Case {
+    match code {
+        "nom" => Case::Nom,
+        "acc" => Case::Acc,
+        "gen" => Case::Gen,
+        "loc" => Case::Loc,
+        "dat" => Case::Dat,
+        "ins" => Case::Ins,
+        other => panic!("speak: unknown case code '{other}'"),
+    }
+}
+
+fn parse_gender(code: &str) -> Gender {
+    match code {
+        "m" => Masculine,
+        "f" => Feminine,
+        "n" => Neuter,
+        other => panic!("speak: unknown gender code '{other}'"),
+    }
+}
+
+fn render_marker(body: &str) -> String {
+    let parts: Vec<&str> = body.split(':').collect();
+    let num = |p: &[&str]| if p.contains(&"pl") { Number::Plural } else { Number::Singular };
+    match parts[0] {
+        "v1" => v1(parts[1]),
+        "v2" => v2(parts[1]),
+        "v3" => v3(parts[1]),
+        "v3p" => v3pl(parts[1]),
+        "vim" => vimp(parts[1]),
+        "cav" => comp_adv(parts[1]),
+        // adverb of manner / predicative neuter ("tako kosmično")
+        "adv" => first_variant(adj(parts[1], Case::Nom, Number::Singular, Neuter, Inanimate)),
+        // active present participle agreeing with a registry noun
+        "ap" => {
+            let noun = reg(parts[2]);
+            first_variant(
+                interslavic::active_participle(parts[1], parse_case(parts[3]), num(&parts[4..]), noun.gender, noun.animacy)
+                    .unwrap_or_else(|| panic!("speak: no active participle for '{}'", parts[1])),
+            )
+        }
+        // 3sg present with an explicit dictionary present-stem hint
+        // ("stajati (staje)") for lemmas where blind conjugation misfires
+        "v3h" => first_variant(interslavic::verb_with_present_hint(
+            parts[1], &format!("({})", parts[2]),
+            Person::Third, Number::Singular, Gender::Masculine, Tense::Present,
+        )),
+        // 3sg compound perfect ("jest ukradla") via the paradigm path —
+        // used where the bare l_participle diverges from the paradigm
+        // (crate bug on -sti stems, reported upstream)
+        "vpf3" => {
+            let raw = verb(parts[1], Person::Third, Number::Singular, parse_gender(parts[2]), Tense::Perfect);
+            // "(je) ukradla": the auxiliary is optional in the 3rd person and
+            // standard usage drops it — take the auxiliary-less variant.
+            interslavic::cells::variants(&raw)
+                .into_iter()
+                .min_by_key(|v| v.len())
+                .unwrap_or(raw)
+        }
+        // declined comparative agreeing with a registry noun
+        "cmp" => {
+            let base = comparative(parts[1]).map(|(a, _)| a).expect("speak: non-gradable comparative");
+            let noun = reg(parts[2]);
+            first_variant(adj(&base, parse_case(parts[3]), num(&parts[4..]), noun.gender, noun.animacy))
+        }
+        // declined superlative agreeing with a registry noun
+        "sup" => {
+            let base = isv_superlative(parts[1])
+                .map(|(a, _)| a)
+                .expect("speak: non-gradable superlative");
+            let noun = reg(parts[2]);
+            first_variant(adj(&base, parse_case(parts[3]), num(&parts[4..]), noun.gender, noun.animacy))
+        }
+        "lp" => lpart(parts[1], parse_gender(parts[2]), num(&parts[3..])),
+        "pp" => {
+            let l = Lex { lemma: "", gender: parse_gender(parts[2]), animacy: Inanimate, indecl: false };
+            let case = parts.get(3).filter(|c| **c != "pl").map(|c| parse_case(c)).unwrap_or(Case::Nom);
+            ppart(parts[1], &l, case, num(&parts[3..]))
+        }
+        "n" => decl(&reg(parts[1]), parse_case(parts[2]), num(&parts[3..])),
+        "a" => {
+            let noun = reg(parts[2]);
+            let case = parse_case(parts[3]);
+            let n = num(&parts[4..]);
+            interslavic::pronoun(parts[1], case, n, noun.gender, noun.animacy)
+                .map(first_variant)
+                .unwrap_or_else(|| adj_for(parts[1], &noun, case, n))
+        }
+        "ty" | "ja" | "on" | "ona" | "ono" | "my" | "vy" | "oni" => {
+            let (person, number, gender) = match parts[0] {
+                "ja" => (Person::First, Number::Singular, Masculine),
+                "ty" => (Person::Second, Number::Singular, Masculine),
+                "on" => (Person::Third, Number::Singular, Masculine),
+                "ona" => (Person::Third, Number::Singular, Feminine),
+                "ono" => (Person::Third, Number::Singular, Neuter),
+                "my" => (Person::First, Number::Plural, Masculine),
+                "vy" => (Person::Second, Number::Plural, Masculine),
+                _ => (Person::Third, Number::Plural, Masculine),
+            };
+            let case = parse_case(parts[1]);
+            let style = match parts.get(2) {
+                Some(&"f") => PronounStyle::Full,
+                Some(&"n") => PronounStyle::AfterPreposition,
+                Some(other) => panic!("speak: unknown pronoun style '{other}'"),
+                None => PronounStyle::Clitic,
+            };
+            personal_pronoun(person, number, gender, case, style)
+                .or_else(|| personal_pronoun(person, number, gender, case, PronounStyle::Full))
+                .expect("speak: unattested pronoun cell")
+        }
+        "toj" | "taky" | "nikaky" | "ktory" | "veś" => {
+            let case = parse_case(parts[1]);
+            let (gender, animacy) = match parts.get(2).copied() {
+                Some("f") => (Feminine, Inanimate),
+                Some("n") => (Neuter, Inanimate),
+                Some("ma") => (Masculine, Animate),
+                _ => (Masculine, Inanimate),
+            };
+            let n = num(&parts[2..]);
+            interslavic::pronoun(parts[0], case, n, gender, animacy)
+                .map(first_variant)
+                .expect("speak: pronominal cell missing")
+        }
+        "ničto" | "čto" | "kto" | "nikto" => interslavic::pronoun(
+            parts[0], parse_case(parts[1]), Number::Singular, Masculine, Animacy::Animate,
+        )
+        .map(first_variant)
+        .unwrap_or_else(|| panic!("speak: pronoun '{}' not declinable", parts[0])),
+        other => panic!("speak: unknown marker kind '{other}'"),
+    }
+}
+
+/// Render a message template: replaces every ⟨…⟩ marker with the
+/// crate-produced surface form. Text outside markers passes through.
+pub fn speak(template: &str) -> String {
+    if !template.contains('⟨') {
+        return template.to_string();
+    }
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(start) = rest.find('⟨') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + '⟨'.len_utf8()..];
+        let end = after.find('⟩').expect("speak: unterminated marker");
+        let body = &after[..end];
+        if let Some(stripped) = body.strip_suffix(":U") {
+            let rendered = render_marker(stripped);
+            let mut chars = rendered.chars();
+            if let Some(first) = chars.next() {
+                out.extend(first.to_uppercase());
+                out.push_str(chars.as_str());
+            }
+        } else {
+            out.push_str(&render_marker(body));
+        }
+        rest = &after[end + '⟩'.len_utf8()..];
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -452,6 +863,42 @@ mod tests {
         assert_eq!(counted(1, &potion), "napitȯk");
         assert_eq!(counted(3, &potion), "napitky");
         assert_eq!(counted(7, &potion), "napitkov");
+    }
+
+    #[test]
+    fn speech_helpers_produce_expected_forms() {
+        use interslavic::{Person, PronounStyle};
+        assert_eq!(v2("udarjati"), "udarjaješ");
+        assert_eq!(v3("udarjati"), "udarjaje");
+        assert_eq!(v3pl("tancovati"), "tancujųt");
+        assert_eq!(vimp("počivati"), "počivaj");
+        assert_eq!(lpart("ubiti", Gender::Feminine, Number::Singular), "ubila");
+        assert_eq!(
+            pers(Person::Second, Number::Singular, Gender::Masculine, Case::Acc, PronounStyle::Clitic),
+            "tę"
+        );
+        assert_eq!(
+            pers(Person::Third, Number::Singular, Gender::Masculine, Case::Gen, PronounStyle::AfterPreposition),
+            "njego"
+        );
+        let torba = lex("torba", Feminine, Inanimate);
+        assert_eq!(poss("tvoj", &torba, Case::Loc, Number::Singular), "tvojej");
+        assert_eq!(comp_adv("bystry"), "bystrěje");
+        assert_eq!(ppart("opoznati", &lex("žezlo", Neuter, Inanimate), Case::Nom, Number::Singular), "opoznano");
+    }
+
+    #[test]
+    fn speak_renders_markers() {
+        assert_eq!(speak("⟨v2:čuti⟩ sę ⟨cav:silny⟩"), "čuješ sę silněje");
+        assert_eq!(speak("⟨n:strěla:nom⟩ ⟨ty:acc⟩ ⟨lp:ubiti:f⟩"), "strěla tę ubila");
+        assert_eq!(
+            speak("v ⟨a:tvoj:torba:loc⟩ ⟨n:torba:loc⟩ ne jest ⟨n:město:gen⟩"),
+            "v tvojej torbě ne jest města"
+        );
+        assert_eq!(speak("mimo ⟨on:gen:n⟩"), "mimo njego");
+        assert_eq!(speak("⟨ničto:gen⟩"), "ničego");
+        assert_eq!(speak("to jest ⟨pp:opoznati:n⟩"), "to jest opoznano");
+        assert_eq!(speak("bez markera"), "bez markera");
     }
 
     #[test]

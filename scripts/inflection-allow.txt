@@ -1,0 +1,11 @@
+# Interjections, abbreviations, and one-offs exempt from the inflection lint.
+mmm    # onomatopoeic interjection (yummy)
+fuj    # interjection of disgust, pan-Slavic
+hej    # interjection, attention-getter
+buh    # onomatopoeic thud (fall message)
+Orųž   # footer abbreviation of orųžje (80-col limit)
+Ostav  # footer abbreviation of ostaviti (80-col limit)
+Stųp   # status abbreviation of stųpenj (80-col limit)
+Brȯn   # status abbreviation of brȯnja (80-col limit)
+dolu   # directional adverb (steen: adverbs of place), homographic with dol Loc
+gorě   # directional adverb, homographic with gora Loc
