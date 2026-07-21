@@ -9,5 +9,8 @@ cargo test --lib lang::corpus::write_gate_corpus --quiet
 CORPUS="$(pwd)/target/lang-corpus.txt"
 LEXICON="$(pwd)/game-lexicon.tsv"
 cd "$SLOVOWIKI"
-exec ./target/release/interslavic-wiktionary-lab check-text \
+./target/release/interslavic-wiktionary-lab check-text \
     "$CORPUS" --lexicon "$LEXICON" --summary --max-unknown 0 "$@"
+# Stage 2: the zero-pre-inflection lint (RUNTIME_INFLECTION_PROMPT.md).
+cd - >/dev/null
+exec python3 scripts/lint_inflection.py

@@ -4982,7 +4982,7 @@ mod tests {
                 .game
                 .messages
                 .iter()
-                .filter(|message| message.as_str() == "nepravilna komanda 'C'")
+                .filter(|message| message.as_str() == "nepraviľna komanda 'C'")
                 .count(),
             1
         );
