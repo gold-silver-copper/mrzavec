@@ -667,6 +667,18 @@ fn reg(lemma: &str) -> Lex {
             lex("apetit", Masculine, Inanimate),
             lex("jad", Masculine, Inanimate),
             lex("rđa", Feminine, Inanimate),
+            // main.rs / score.rs screen text (metadata: slovowiki official-isv.csv)
+            lex("věsť", Feminine, Inanimate),
+            lex("běg", Masculine, Inanimate),
+            lex("povråt", Masculine, Inanimate),
+            lex("čislo", Neuter, Inanimate),
+            lex("stańje", Neuter, Inanimate),
+            lex("skala", Feminine, Inanimate),
+            lex("shrånjeńje", Neuter, Inanimate),
+            // gerund nominalizations (systematic neuter -ńje, not separate
+            // dictionary headwords; declined like any -je neuter)
+            lex("vzęťje", Neuter, Inanimate),
+            lex("opoznańje", Neuter, Inanimate),
         ] {
             put(l);
         }

@@ -264,10 +264,16 @@ pub fn read(path: &Path) -> io::Result<Vec<ScoreEntry>> {
     decode_scores(&fs::read(path)?).map_err(io::Error::other)
 }
 pub fn format(scores: &[ScoreEntry]) -> String {
-    let mut out = String::from("Najlěpših 10 rogueistov:\nRezultat Ime\n");
+    let mut out = format!(
+        "{} 10 rogueistov:\nRezultat Ime\n",
+        crate::lang::speak("⟨sup:dobry:čarovnik:gen:pl:U⟩")
+    );
+    // "na" + locative; the noun is inflected at runtime (player names and
+    // death causes are inserted verbatim, never routed through speak()).
+    let on_level = crate::lang::speak("na ⟨n:stųpenj:loc⟩");
     for (i, s) in scores.iter().enumerate() {
         out.push_str(&format!(
-            "{:2} {:5} {}: {} na stųpenju {}",
+            "{:2} {:5} {}: {} {on_level} {}",
             i + 1,
             s.score,
             s.name,
@@ -283,12 +289,12 @@ pub fn format(scores: &[ScoreEntry]) -> String {
     }
     out
 }
-fn reason_text(reason: Reason) -> &'static str {
+fn reason_text(reason: Reason) -> String {
     match reason {
-        Reason::Killed => "smŕť",
-        Reason::Quit => "izhod",
-        Reason::Winner => "Pȯlna poběda",
-        Reason::KilledWithAmulet => "smŕť s Amuletom",
+        Reason::Killed => "smŕť".into(),
+        Reason::Quit => "izhod".into(),
+        Reason::Winner => crate::lang::speak("⟨a:pȯlny:poběda:nom:U⟩ ⟨n:poběda:nom⟩"),
+        Reason::KilledWithAmulet => crate::lang::speak("smŕť s ⟨n:amulet:ins:U⟩"),
     }
 }
 
@@ -449,7 +455,7 @@ mod tests {
             level: 26,
             when: 0,
         }];
-        assert!(format(&scores).contains("smŕť s Amuletom na stųpenju 26 od drakona."));
+        assert!(format(&scores).contains("smŕť s Amuletom na stųpeni 26 od drakona."));
     }
 
     #[test]

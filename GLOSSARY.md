@@ -158,3 +158,12 @@ interslavic-rs's l_participle stem handling for -sti verbs.
 Also: `verb("stajati", …)` misses the dictionary present-stem hint
 (gives "stajaje" instead of "staje") — worked around with
 ⟨v3h:stajati:staje⟩ carrying the dictionary's own hint.
+
+Main/score conversion (same pass): further crate corrections blessed —
+kake čislo→**kako čislo** (neuter agreement), shranjeńja→**shrånjeńja**
+(official shrånjeńje), na stųpenju→**na stųpeni**, Pŕstenje→**Pŕsteni**,
+dva pŕstenja→**dva pŕsteni**. Registry additions: věsť, běg, povråt,
+čislo, stańje, skala, shrånjeńje, vzęťje, opoznańje. Allowlist: dir/map/
+plate (UI placeholder and English diagnostic tokens colliding with
+dictionary words). Enforcement: `scripts/check_lang.sh` = template gate
++ inflection lint, both PASS.
