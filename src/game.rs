@@ -1263,7 +1263,7 @@ impl Game {
                 } else if held == 1 {
                     "čudovišče ne može dvigati sę"
                 } else {
-                    "⟨v2:čuti⟩ ⟨a:divny:čuťje:acc⟩ ⟨n:čuťje:acc⟩ ⟨n:utrata:gen⟩"
+                    "⟨v2:imati⟩ ⟨a:divny:čuťje:acc⟩ ⟨n:čuťje:acc⟩ ⟨n:utrata:gen⟩"
                 });
                 identified = held > 0;
             }
@@ -1334,7 +1334,7 @@ impl Game {
                     let color = self.pick_color("modry");
                     self.message(format!("{name} na moment ⟨v3:světiti⟩ sę {}", crate::lang::color_adv(color)))
                 } else {
-                    self.message("⟨v2:čuti⟩ ⟨a:divny:čuťje:acc⟩ ⟨n:čuťje:acc⟩ ⟨n:utrata:gen⟩")
+                    self.message("⟨v2:imati⟩ ⟨a:divny:čuťje:acc⟩ ⟨n:čuťje:acc⟩ ⟨n:utrata:gen⟩")
                 }
             }
             14 => {
@@ -1407,7 +1407,7 @@ impl Game {
                         crate::lang::color_masc_nom(color)
                     ))
                 } else {
-                    self.message("⟨v2:čuti⟩ ⟨a:divny:čuťje:acc⟩ ⟨n:čuťje:acc⟩ ⟨n:utrata:gen⟩")
+                    self.message("⟨v2:imati⟩ ⟨a:divny:čuťje:acc⟩ ⟨n:čuťje:acc⟩ ⟨n:utrata:gen⟩")
                 }
             }
             _ => unreachable!(),
@@ -1447,13 +1447,14 @@ impl Game {
             });
             return CommandResult::FREE;
         }
-        let name = self.inventory_name(item, true);
+        let terse_name = self.inventory_name(item, true);
+        let name = self.inventory_name_case(item, true, Case::Acc);
         let letter = item.pack_letter.unwrap_or('?');
         self.player.weapon = Some(id);
         self.message(if self.options.terse {
-            format!("orųžje: {name} ({letter})")
+            format!("orųžje: {terse_name} ({letter})")
         } else {
-            format!("⟨a:tvoj:orųžje:nom⟩ ⟨n:orųžje:nom⟩ sejčas: {name} ({letter})")
+            format!("sejčas ⟨v2:dŕžati⟩ {name} ({letter})")
         });
         CommandResult::TURN
     }
@@ -1489,11 +1490,12 @@ impl Game {
             .iter()
             .find(|item| item.id == id)
             .unwrap();
-        let name = self.inventory_name(armor, true);
+        let terse_name = self.inventory_name(armor, true);
+        let name = self.inventory_name_case(armor, true, Case::Acc);
         self.message(if self.options.terse {
-            format!("⟨v2:nositi⟩ sejčas: {name}")
+            format!("⟨v2:nositi⟩ sejčas: {terse_name}")
         } else {
-            format!("⟨v2:nositi⟩ sejčas: {name}")
+            format!("⟨v2:naděvati⟩ {name}")
         });
         CommandResult::TURN
     }
@@ -1518,10 +1520,15 @@ impl Game {
             return CommandResult::TURN;
         }
         self.player.armor = None;
+        let name_acc = self.inventory_name_case(
+            self.player.inventory.iter().find(|i| i.id == id).unwrap(),
+            true,
+            Case::Acc,
+        );
         self.message(if self.options.terse {
             format!("uže ne ⟨v2:nositi⟩: {letter}) {name}")
         } else {
-            format!("uže ne ⟨v2:nositi⟩: {letter}) {name}")
+            format!("⟨v2:snimati⟩ {name_acc} ({letter})")
         });
         CommandResult::TURN
     }
@@ -1584,10 +1591,11 @@ impl Game {
             .unwrap();
         let name = self.inventory_name(ring, true);
         let letter = ring.pack_letter.unwrap_or('?');
+        let name_acc = self.inventory_name_case(ring, true, Case::Acc);
         self.message(if self.options.terse {
             format!("{name} ({letter})")
         } else {
-            format!("⟨v2:nositi⟩ sejčas: {name} ({letter})")
+            format!("⟨v2:naděvati⟩ {name_acc} ({letter})")
         });
         CommandResult::TURN
     }
@@ -1607,7 +1615,7 @@ impl Game {
         if !self.dropcheck_item(id) {
             return CommandResult::TURN;
         }
-        self.message(format!("⟨v2:prěstavati⟩ nositi {name}({letter})"));
+        self.message(format!("⟨v2:snimati⟩ {name}({letter})"));
         CommandResult::TURN
     }
 
@@ -1681,9 +1689,14 @@ impl Game {
         if item.kind == ItemKind::Amulet {
             self.has_amulet = false;
         }
-        let dropped_name = self.inventory_name(&item, true);
+        let dropped_terse = self.inventory_name(&item, true);
+        let dropped_name = self.inventory_name_case(&item, true, Case::Acc);
         self.floor_items.push(item);
-        self.message(format!("⟨pp:ostaviti:n⟩: {dropped_name}"));
+        self.message(if self.options.terse {
+            format!("⟨pp:ostaviti:n⟩: {dropped_terse}")
+        } else {
+            format!("⟨v2:ostavjati⟩ {dropped_name}")
+        });
         CommandResult::TURN
     }
 
@@ -1918,15 +1931,21 @@ impl Game {
     }
 
     pub fn inventory_name(&self, item: &Item, drop: bool) -> String {
+        self.inventory_name_case(item, drop, Case::Nom)
+    }
+
+    /// Count-aware pack name declined for the sentence slot it fills.
+    /// Numeral government still overrides for 5+ (genitive plural).
+    pub fn inventory_name_case(&self, item: &Item, drop: bool, case: Case) -> String {
         use crate::lang::{self, adj_for, decl, material_of, phrase, Phrase};
         use interslavic::Number::{Plural, Singular};
         let count = item.count;
-        // Numeral government: 1 → Nom sg, 2–4 → Nom pl, 5+ → Gen pl.
+        // Numeral government: 1 → case sg, 2–4 → case pl, 5+ → Gen pl.
         let counted_num = |n: u32| -> interslavic::Number {
             if n == 1 { Singular } else { Plural }
         };
         let counted_case = |n: u32| -> Case {
-            if (2..=4).contains(&n) || n == 1 { Case::Nom } else { Case::Gen }
+            if (2..=4).contains(&n) || n == 1 { case } else { Case::Gen }
         };
         let head_of = |n: u32, l: &lang::Lex| -> String {
             let form = decl(l, counted_case(n), counted_num(n));
@@ -2035,7 +2054,7 @@ impl Game {
                 if count == 1 { form } else { format!("{count} {form}") }
             }
             ItemKind::Food if count == 1 => {
-                format!("{} {}", decl(&lang::FOOD_PORTION, Case::Nom, Singular), lang::food_gen())
+                format!("{} {}", decl(&lang::FOOD_PORTION, case, Singular), lang::food_gen())
             }
             ItemKind::Food => {
                 format!("{} {}", head_of(count, &lang::FOOD_PORTION), lang::food_gen())
@@ -2073,10 +2092,10 @@ impl Game {
                     format!(
                         "{} {} [{protection_word}{protection}]{called}",
                         signed(enchantment),
-                        phrase(armor, Case::Nom, Singular)
+                        phrase(armor, case, Singular)
                     )
                 } else {
-                    format!("{}{called}", phrase(armor, Case::Nom, Singular))
+                    format!("{}{called}", phrase(armor, case, Singular))
                 }
             }
             ItemKind::Amulet => format!("{} ⟨n:Jendor:gen⟩", decl(&lang::AMULET, Case::Nom, Singular)),
@@ -2863,11 +2882,17 @@ impl Game {
             } else if !self.player.conditions.levitating
                 && let Some(item) = self.floor_items.iter().find(|item| item.pos == Some(to))
             {
+                let count = item.count;
                 let name = self.inventory_name(item, true);
+                let lezi = if count == 1 {
+                    crate::lang::v3("ležati")
+                } else {
+                    crate::lang::v3pl("ležati")
+                };
                 self.message(if self.options.terse {
                     format!("tu: {name}")
                 } else {
-                    format!("na podu: {name}")
+                    format!("tu {lezi} {name}")
                 });
             }
             return (CommandResult::TURN, false, stops_running);
@@ -3301,10 +3326,15 @@ impl Game {
             } else {
                 "v ⟨a:tvoj:torba:loc⟩ ⟨n:torba:loc⟩ ne jest ⟨n:město:gen⟩"
             });
+            let lezi = if item.count == 1 {
+                crate::lang::v3("ležati")
+            } else {
+                crate::lang::v3pl("ležati")
+            };
             self.message(if self.options.terse {
                 format!("tu: {name}")
             } else {
-                format!("na podu: {name}")
+                format!("tu {lezi} {name}")
             });
             self.floor_items.push(item);
             return CommandResult::TURN;
@@ -3321,12 +3351,12 @@ impl Game {
         {
             self.player.inventory[existing_index].count += item.count;
             let existing = &self.player.inventory[existing_index];
-            let name = self.inventory_name(existing, !self.options.terse);
+            let name = self.inventory_name_case(existing, !self.options.terse, Case::Acc);
             let letter = existing.pack_letter.unwrap_or('?');
             self.message(if self.options.terse {
                 format!("{name} ({letter})")
             } else {
-                format!("v ⟨a:tvoj:torba:loc⟩ ⟨n:torba:loc⟩: {name} ({letter})")
+                format!("sejčas ⟨v2:imati⟩ {name} ({letter})")
             });
             return CommandResult::TURN;
         }
@@ -3338,13 +3368,13 @@ impl Game {
             .iter()
             .rposition(|existing| existing.kind == item.kind)
             .map_or(self.player.inventory.len(), |index| index + 1);
-        let name = self.inventory_name(&item, !self.options.terse);
+        let name = self.inventory_name_case(&item, !self.options.terse, Case::Acc);
         let letter = item.pack_letter.unwrap_or('?');
         self.player.inventory.insert(insert_at, item);
         self.message(if self.options.terse {
             format!("{name} ({letter})")
         } else {
-            format!("v ⟨a:tvoj:torba:loc⟩ ⟨n:torba:loc⟩: {name} ({letter})")
+            format!("sejčas ⟨v2:imati⟩ {name} ({letter})")
         });
         CommandResult::TURN
     }
@@ -3426,15 +3456,19 @@ impl Game {
                     && let Some(c) = self.dungeon.map.get_mut(p)
                 {
                     c.trap_revealed = true;
-                    let shown = if self.player.conditions.hallucinating {
-                        crate::lang::phrase(&crate::lang::TRAP_LEX[self.rng.rnd(8) as usize], Case::Nom, interslavic::Number::Singular)
+                    let trap_lex = if self.player.conditions.hallucinating {
+                        &crate::lang::TRAP_LEX[self.rng.rnd(8) as usize]
                     } else {
-                        trap_name(cell.trap.unwrap())
+                        &crate::lang::TRAP_LEX[trap_index(cell.trap.unwrap())]
                     };
+                    let shown_nom =
+                        crate::lang::phrase(trap_lex, Case::Nom, interslavic::Number::Singular);
+                    let shown_acc =
+                        crate::lang::phrase(trap_lex, Case::Acc, interslavic::Number::Singular);
                     self.message(if self.options.terse {
-                        shown.to_string()
+                        shown_nom
                     } else {
-                        format!("⟨v2:nahoditi⟩: {shown}")
+                        format!("⟨v2:nahoditi⟩ {shown_acc}")
                     });
                 }
             }
@@ -3464,7 +3498,7 @@ impl Game {
             return CommandResult::FREE;
         }
         if !self.has_amulet {
-            self.message("⟨a:čarovny:sila:nom⟩ ⟨n:sila:nom⟩ ⟨ty:acc⟩ ⟨v3:dŕžati⟩");
+            self.message("⟨a:čarovny:sila:nom⟩ ⟨n:sila:nom⟩ ne ⟨v3:pušćati⟩ ⟨ty:acc⟩ dalje");
             return CommandResult::FREE;
         }
         if self.depth == 1 {
@@ -4438,7 +4472,7 @@ impl Game {
                 self.player.gold = self.player.gold.saturating_sub(amount as i32);
                 self.monsters.remove(index);
                 if self.player.gold != old_gold {
-                    self.message("⟨v2:imati⟩ menje ⟨n:zlåto:gen⟩");
+                    self.message("⟨a:tvoj:torba:nom⟩ ⟨n:torba:nom⟩ ⟨v3h:stajati:staje⟩ sę ⟨cmp:legky:torba:nom⟩");
                 }
             }
             13 => self.nymph_steal(index),
@@ -4557,7 +4591,7 @@ impl Game {
             self.player.inventory.remove(choice);
         }
         self.monsters.remove(index);
-        let name = self.inventory_name(&stolen, true);
+        let name = self.inventory_name_case(&stolen, true, Case::Acc);
         self.message(format!("⟨ona:nom:f⟩ ⟨vpf3:ukrasti:f⟩ {name}!"));
     }
 
@@ -4625,9 +4659,9 @@ impl Game {
                     "⟨v2:imati⟩ ⟨a:veliky:apetit:acc⟩ ⟨n:apetit:acc⟩"
                 }
             } else if self.options.terse {
-                "⟨v2:hotěti⟩ jesti"
+                "⟨v2:čuti⟩ ⟨n:glad:acc⟩"
             } else {
-                "⟨v2:načinati⟩ hotěti jesti"
+                "⟨v2:načinati⟩ čuti ⟨n:glad:acc⟩"
             })
         }
     }
@@ -4917,7 +4951,7 @@ impl Game {
             self.no_score = true;
             self.set_monster_detection(true);
             self.message(format!(
-                "naglo ⟨v2:znati⟩ vse o ⟨n:temnica:loc⟩ #{}",
+                "naglo ⟨v2:znati⟩ vse, tako kako Ken Arnold, o ⟨n:temnica:loc⟩ #{}",
                 self.dungeon_number
             ))
         } else {
@@ -5175,13 +5209,13 @@ impl Game {
             .iter()
             .rposition(|existing| existing.kind == item.kind)
             .map_or(self.player.inventory.len(), |index| index + 1);
-        let name = self.inventory_name(&item, !self.options.terse);
+        let name = self.inventory_name_case(&item, !self.options.terse, Case::Acc);
         let letter = item.pack_letter.unwrap_or('?');
         self.player.inventory.insert(insert_at, item);
         self.message(if self.options.terse {
             format!("{name} ({letter})")
         } else {
-            format!("v ⟨a:tvoj:torba:loc⟩ ⟨n:torba:loc⟩: {name} ({letter})")
+            format!("sejčas ⟨v2:imati⟩ {name} ({letter})")
         });
     }
 }
@@ -5604,7 +5638,7 @@ mod tests {
             g.messages
                 .last()
                 .unwrap()
-                .starts_with("tvoje orųžje sejčas: ")
+                .starts_with("sejčas dŕžiš ")
         );
         assert!(g.messages.last().unwrap().ends_with(&format!("({letter})")));
     }
@@ -6554,7 +6588,7 @@ mod tests {
         g.set_wizard(true);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("naglo znaješ vse o temnici #19")
+            Some("naglo znaješ vse, tako kako Ken Arnold, o temnici #19")
         );
         assert!(g.no_score);
         assert!(g.player.conditions.detect_monsters);
@@ -6688,7 +6722,7 @@ mod tests {
         assert_eq!(g.inventory_name(item, false), "něčto divno ^[");
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("v tvojej torbě: něčto divno ^[ (f)")
+            Some("sejčas imaješ něčto divno ^[ (f)")
         );
     }
 
@@ -8596,7 +8630,10 @@ mod tests {
         assert_eq!(g.player.inventory[0].count, 2);
         assert_eq!(
             g.messages.last().unwrap(),
-            &format!("ostavjeno: {}", g.inventory_name(&g.floor_items[0], true))
+            &format!(
+                "ostavjaješ {}",
+                g.inventory_name_case(&g.floor_items[0], true, Case::Acc)
+            )
         );
     }
 
@@ -10194,7 +10231,7 @@ mod tests {
         assert!(g.floor_items.iter().any(|item| item.id == food_id));
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("na podu: porcija jedy")
+            Some("tu leži porcija jedy")
         );
     }
 

@@ -177,3 +177,24 @@ dva pŕstenja→**dva pŕsteni**. Registry additions: věsť, běg, povråt,
 plate (UI placeholder and English diagnostic tokens colliding with
 dictionary words). Enforcement: `scripts/check_lang.sh` = template gate
 + inflection lint, both PASS.
+
+## Style pass (2026-07-21)
+
+Colon-listing confirmations upgraded to real sentences now that
+runtime inflection covers every case (verbose mode only; terse keeps
+telegraphic colons): pickup → "sejčas imaješ X-acc (a)", wield →
+"sejčas dŕžiš X-acc", wear/put-on-ring → "naděvaješ X-acc", take-off →
+"snimaješ X-acc", drop → "ostavjaješ X-acc", walk-over → "tu leži/ležet
+X" (number-agreeing verb), trap found → "nahodiš strělnų pasť"
+(accusative trap phrase). `inventory_name` gained a case parameter
+(5+ still forces Gen pl per numeral government); the nymph theft now
+uses the accusative.
+
+Flavor/idiom restorations: Ken Arnold easter egg back ("naglo znaješ
+vse, tako kako Ken Arnold, …"), purse → "tvoja torba staje sę legša",
+magic block → "čarovna sila ne pušćaje tę dalje" (dictionary spelling
+pušćati), hunger → "čuješ glad" / "načinaješ čuti glad", quit prompt →
+"istinno li izhodiš?", direction prompt → "v ktorų strånų?" (standard
+interrogative + dictionary spelling stråna), sense-of-loss tautology →
+"imaješ divno čuťje utraty", wand of teleport-to → "teleportacije k
+tebě".

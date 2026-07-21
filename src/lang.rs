@@ -532,10 +532,11 @@ pub fn stick_effect_gen(which: usize) -> String {
         9 => format!("za {} {}", gerund_nom("odbirati"), gen_sg(&lex("žiťje", Neuter, Inanimate))), // drain life
         10 => "ničego".to_string(),                                       // nothing (pronoun gen)
         11 => format!("{} prȯč", gen_sg(&lex("teleportacija", Feminine, Inanimate))), // teleport away
-        12 => {
-            let blizhe = comparative("blizky").map(|(_, adv)| adv).unwrap_or_default();
-            format!("{} {}", gen_sg(&lex("teleportacija", Feminine, Inanimate)), blizhe)
-        }                                                                 // teleport to
+        12 => format!(
+            "{} k {}",
+            gen_sg(&lex("teleportacija", Feminine, Inanimate)),
+            pers(Person::Second, Number::Singular, Gender::Masculine, Case::Dat, PronounStyle::Full)
+        ),                                                                // teleport to (toward you)
         _ => gen_sg(&lex("anulacija", Feminine, Inanimate)),                 // cancellation
     }
 }
@@ -638,7 +639,7 @@ fn reg(lemma: &str) -> Option<Lex> {
             lex("temnica", Feminine, Inanimate),
             lex("pohibel", Feminine, Inanimate),
             lex("prědmet", Masculine, Inanimate),
-            lex("strana", Feminine, Inanimate),
+            lex("stråna", Feminine, Inanimate),
             lex("grob", Masculine, Inanimate),
             lex("denj", Masculine, Inanimate),
             lex("svět", Masculine, Inanimate),
