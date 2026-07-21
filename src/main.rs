@@ -498,8 +498,11 @@ fn main() {
             Ok(game) => game,
             Err(error) => {
                 eprintln!(
-                    "Ne možno obnoviti {}: {error}",
-                    std::path::Path::new(&path).display()
+                    "{}",
+                    speak(&format!(
+                        "Ne možno obnoviti {}: {error}",
+                        std::path::Path::new(&path).display()
+                    ))
                 );
                 std::process::exit(5);
             }
@@ -3463,7 +3466,7 @@ const HELP_ENTRIES: &[(char, &str, bool)] = &[
     ('D', "\tpokazati, čto uže ⟨v2:znati⟩", true),
     ('o', "\tpokazati/měnjati ⟨n:opcija:acc:pl⟩", true),
     ('\u{12}', "\tobnoviti ekran", true),
-    ('\u{10}', "\tpovtoriti ⟨a:poslědnji:věsť:acc⟩ ⟨n:věsť:acc⟩", true),
+    ('\u{10}', "\tpovtoriti ⟨a:poslědnji:sȯobčeńje:acc⟩ ⟨n:sȯobčeńje:acc⟩", true),
     ('\u{1b}', "\tanulovati ⟨n:komanda:acc⟩, ^[ jest knopka escape", true),
     ('S', "\tshraniti ⟨n:igra:acc⟩", true),
     ('Q', "\tizhod", true),
@@ -3545,7 +3548,7 @@ fn identify_glyph_text(ch: char) -> String {
 }
 const OPTION_COUNT: usize = 12;
 const OPTION_LABELS: [(&str, &str); OPTION_COUNT] = [
-    ("⟨a:kråtky:věsť:nom:pl:U⟩ ⟨n:věsť:nom:pl⟩", "terse"),
+    ("⟨a:kråtky:sȯobčeńje:nom:pl:U⟩ ⟨n:sȯobčeńje:nom:pl⟩", "terse"),
     ("Ignorovati pisańje podčas boja", "flush"),
     ("Pokazati ⟨n:pozicija:acc⟩ jedino na ⟨n:konec:loc⟩ ⟨n:běg:gen⟩", "jump"),
     ("Pokazati ⟨pp:osvětliti:n⟩ tlo", "seefloor"),
@@ -3732,7 +3735,7 @@ mod tests {
         let lines: Vec<_> = text.lines().collect();
 
         assert_eq!(lines.len(), OPTION_COUNT);
-        assert_eq!(lines[0], "Kråtke věsti (\"terse\"): Da");
+        assert_eq!(lines[0], "Kråtke sȯobčeńja (\"terse\"): Da");
         assert_eq!(
             lines[1],
             "Ignorovati pisańje podčas boja (\"flush\"): Ne"

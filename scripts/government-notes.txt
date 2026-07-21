@@ -1,0 +1,8 @@
+# Justifications for government-lint WARN sites (prep before placeholder/digit).
+# One line per preposition; first token is the match key. Each placeholder's
+# case is guaranteed by the code contract cited.
+mimo — {target} is monster_message_name(.., Case::Gen) at both whizz-by call sites
+od — death causes are stored pre-declined GENITIVE by project contract (die()/monster_killer; see GLOSSARY), incl. the tombstone "od {cause}" slot
+s — the {} is a bare digit amount; the case rides on the following ⟨n:zlåtnik:ins:pl⟩ marker
+iz — "soka iz {}" receives lang::decl_guess(fruit, Case::Gen, Singular); material_of() likewise renders "iz <Gen>"
+o — {loc_pl} is built with lang::decl(.., Case::Loc, Plural) at the discoveries call site

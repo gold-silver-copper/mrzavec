@@ -669,7 +669,8 @@ fn reg(lemma: &str) -> Option<Lex> {
             lex("jad", Masculine, Inanimate),
             lex("rđa", Feminine, Inanimate),
             // main.rs / score.rs screen text (metadata: slovowiki official-isv.csv)
-            lex("věsť", Feminine, Inanimate),
+            lex("sȯobčeńje", Neuter, Inanimate),
+            lex("moć", Feminine, Inanimate),
             lex("běg", Masculine, Inanimate),
             lex("povråt", Masculine, Inanimate),
             lex("čislo", Neuter, Inanimate),

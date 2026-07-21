@@ -991,7 +991,7 @@ impl Game {
                 self.player.stats.strength = (self.player.stats.strength + 1).min(31);
                 let base_strength = self.player.stats.strength - self.ring_strength_bonus();
                 self.player.max_strength = self.player.max_strength.max(base_strength.clamp(3, 31));
-                self.message("⟨v2:čuti⟩ sę ⟨cav:silny⟩.  ⟨a:kaky:sila:nom:U⟩ ⟨n:sila:nom⟩!")
+                self.message("⟨v2:čuti⟩ sę ⟨cav:silny⟩.  ⟨a:kaky:moć:nom:U⟩ ⟨n:moć:nom⟩!")
             }
             4 => {
                 let was_blind = self.player.conditions.blind;
@@ -1447,14 +1447,15 @@ impl Game {
             });
             return CommandResult::FREE;
         }
-        let terse_name = self.inventory_name(item, true);
-        let name = self.inventory_name_case(item, true, Case::Acc);
         let letter = item.pack_letter.unwrap_or('?');
         self.player.weapon = Some(id);
         self.message(if self.options.terse {
-            format!("orųžje: {terse_name} ({letter})")
+            format!("orųžje: {} ({letter})", self.inventory_name(item, true))
         } else {
-            format!("sejčas ⟨v2:dŕžati⟩ {name} ({letter})")
+            format!(
+                "sejčas ⟨v2:dŕžati⟩ {} ({letter})",
+                self.inventory_name_case(item, true, Case::Acc)
+            )
         });
         CommandResult::TURN
     }
@@ -1490,12 +1491,10 @@ impl Game {
             .iter()
             .find(|item| item.id == id)
             .unwrap();
-        let terse_name = self.inventory_name(armor, true);
-        let name = self.inventory_name_case(armor, true, Case::Acc);
         self.message(if self.options.terse {
-            format!("⟨v2:nositi⟩ sejčas: {terse_name}")
+            format!("⟨v2:nositi⟩ sejčas: {}", self.inventory_name(armor, true))
         } else {
-            format!("⟨v2:naděvati⟩ {name}")
+            format!("⟨v2:naděvati⟩ {}", self.inventory_name_case(armor, true, Case::Acc))
         });
         CommandResult::TURN
     }
@@ -1515,16 +1514,12 @@ impl Game {
             .find(|item| item.id == id)
             .unwrap();
         let name = self.inventory_name(item, true);
+        let name_acc = self.inventory_name_case(item, true, Case::Acc);
         let letter = item.pack_letter.unwrap_or('?');
         if !self.dropcheck_item(id) {
             return CommandResult::TURN;
         }
         self.player.armor = None;
-        let name_acc = self.inventory_name_case(
-            self.player.inventory.iter().find(|i| i.id == id).unwrap(),
-            true,
-            Case::Acc,
-        );
         self.message(if self.options.terse {
             format!("uže ne ⟨v2:nositi⟩: {letter}) {name}")
         } else {
@@ -3461,14 +3456,13 @@ impl Game {
                     } else {
                         &crate::lang::TRAP_LEX[trap_index(cell.trap.unwrap())]
                     };
-                    let shown_nom =
-                        crate::lang::phrase(trap_lex, Case::Nom, interslavic::Number::Singular);
-                    let shown_acc =
-                        crate::lang::phrase(trap_lex, Case::Acc, interslavic::Number::Singular);
                     self.message(if self.options.terse {
-                        shown_nom
+                        crate::lang::phrase(trap_lex, Case::Nom, interslavic::Number::Singular)
                     } else {
-                        format!("⟨v2:nahoditi⟩ {shown_acc}")
+                        format!(
+                            "⟨v2:nahoditi⟩ {}",
+                            crate::lang::phrase(trap_lex, Case::Acc, interslavic::Number::Singular)
+                        )
                     });
                 }
             }

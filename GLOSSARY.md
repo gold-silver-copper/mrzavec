@@ -216,3 +216,42 @@ found and fixed — death screens said "s N zlåtnikov" (s + genitive =
 screen), and the attack variant "zadavaješ odličny udar {acc}" was a
 double accusative (recipient of a blow takes the dative); replaced with
 the case-compatible adverbial "odlično udarjaješ {acc}".
+
+## Style pass 2 (2026-07-21)
+
+**Government lint added** (stage 3 of check_lang.sh): preposition→marker
+case government is now machine-checked against
+`interslavic::preposition_cases()` (queried live via
+examples/prep_cases.rs — no hand-copied tables). Result on the current
+tree: zero hard failures; 11 placeholder-crossing warns, each annotated
+with its code contract in scripts/government-notes.txt.
+
+**Verb-valence audit** (one-time sweep of every template with a verb
+marker plus a second case slot — no tool can check valence):
+
+| template verb | frame | slot | verdict |
+|---|---|---|---|
+| udarjati / raniti / poběđati / nahoditi / imati / viděti / slyšati / čuti | + Acc | Acc | OK |
+| dŕžati, okrųžati, zamråžati, oslabjati, prěmagati, loviti, strěgti, smųtiti, ubiti, ukrasti, pušćati, naděvati, snimati, ostavjati | + Acc (tę / name-acc) | Acc | OK |
+| škoditi | + Dat | ⟨ty:dat⟩ "ti" | OK |
+| liti sę | Dat benefactive + na Acc | ti / na glåvų | OK |
+| dostigati | + Gen | stųpenja | OK |
+| svŕběti | Acc experiencer ("svrbi tę") | Acc | OK |
+| hybiti | frame unattested in dictionary; Acc by analogy with udarjati | Acc | accepted by decision |
+| zadavati (+Acc +Dat) | REMOVED — replaced by "odlično udarjati" (double-Acc bug) | — | fixed |
+
+**Polish decisions**: terse label → "Kråtka sȯobčeńja" (official lemma
+sȯobčeńje; věsť dropped repo-wide, help "repeat last message" unified);
+"Kaka moć!" restores the muscle-flex flavor (moć official; avoids the
+silněje/sila near-duplicate). Effect-name split is PERMANENT: re-checked
+— none of the za-pattern scroll gerunds (dŕžańje, očarovańje, opoznańje,
+strašeńje, sȯzdańje, gněvańje, poddŕžańje, odbirańje) are official
+lemmas, so their genitives are unverifiable; za+Acc (an official
+paradigm cell) stays the correct dodge.
+
+**Corners audit**: usage() fully translated (easter egg aside);
+wizard-mode strings clean; save.rs's lint-exemption premise was FALSE —
+its two semantic errors reach players (browser-restore message, CLI
+stderr), so both are now marker templates ("nepodpirana verzija
+sȯhranjeńja", "ne možno obnoviti dokončenų ili mrtvų igrų") and the CLI
+restore eprintln speaks.

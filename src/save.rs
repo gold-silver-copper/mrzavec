@@ -27,13 +27,13 @@ pub fn decode_game(bytes: &[u8]) -> io::Result<Game> {
     if game.save_version != 13 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "unsupported save version",
+            "nepodpirana verzija ⟨n:sȯhranjeńje:gen⟩",
         ));
     }
     if game.end != crate::game::EndState::Playing || game.player.stats.hp <= 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "cannot restore a finished or dead game",
+            "ne možno obnoviti dokončenų ili mrtvų igrų",
         ));
     }
     Ok(game)
