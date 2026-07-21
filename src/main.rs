@@ -482,7 +482,7 @@ fn main() {
                     "Smŕť od {}, s {} {}\n\n{table}",
                     death_cause_gen(&game),
                     score::amount(&game),
-                    speak("⟨n:zlåtnik:gen:pl⟩")
+                    speak("⟨n:zlåtnik:ins:pl⟩")
                 );
             }
             return;
@@ -697,7 +697,7 @@ fn finalize_end(mut state: ResMut<State>) {
             "Smŕť od {}, s {} {}\n\n{}",
             death_cause_gen(&state.game),
             score::amount(&state.game),
-            speak("⟨n:zlåtnik:gen:pl⟩"),
+            speak("⟨n:zlåtnik:ins:pl⟩"),
             table
         ),
         mrzavec::game::EndState::Quit => format!(

@@ -3802,7 +3802,7 @@ impl Game {
         match attacker {
             None => {
                 const PLAYER: [&str; 4] = [
-                    "⟨v2:zadavati⟩ ⟨a:odličny:udar:acc⟩ ⟨n:udar:acc⟩",
+                    "odlično ⟨v2:udarjati⟩",
                     "⟨v2:udarjati⟩",
                     "⟨v2:raniti⟩",
                     "⟨v2:mahati⟩ i ⟨v2:udarjati⟩",
@@ -3811,7 +3811,7 @@ impl Game {
             }
             Some(subject) => {
                 const MONSTER: [&str; 4] = [
-                    "⟨v3:zadavati⟩ ⟨a:odličny:udar:acc⟩ ⟨n:udar:acc⟩",
+                    "odlično ⟨v3:udarjati⟩",
                     "udarja",
                     "⟨v3:raniti⟩",
                     "⟨v3:mahati⟩ i ⟨v3:udarjati⟩",

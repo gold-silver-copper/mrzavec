@@ -209,3 +209,10 @@ reached for ⟨cmp⟩ (agreeing adjective — also grammatical, but the
 West/South-style pattern) against this convention; both affected sites
 fixed ("tvoja torba staje sę legše", "tvoja brȯnja sejčas izgledaje
 slaběje").
+
+Follow-up review (same day): two pre-existing case-government bugs
+found and fixed — death screens said "s N zlåtnikov" (s + genitive =
+'off of'; now instrumental "s N zlåtnikami", matching the quit
+screen), and the attack variant "zadavaješ odličny udar {acc}" was a
+double accusative (recipient of a blow takes the dative); replaced with
+the case-compatible adverbial "odlično udarjaješ {acc}".
