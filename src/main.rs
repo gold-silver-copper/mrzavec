@@ -482,7 +482,7 @@ fn main() {
                     "Smŕť od {}, s {} {}\n\n{table}",
                     death_cause_gen(&game),
                     score::amount(&game),
-                    speak("⟨n:zlåtnik:gen:pl⟩")
+                    speak("⟨n:zlåtnik:ins:pl⟩")
                 );
             }
             return;
@@ -498,8 +498,11 @@ fn main() {
             Ok(game) => game,
             Err(error) => {
                 eprintln!(
-                    "Ne možno obnoviti {}: {error}",
-                    std::path::Path::new(&path).display()
+                    "{}",
+                    speak(&format!(
+                        "Ne možno obnoviti {}: {error}",
+                        std::path::Path::new(&path).display()
+                    ))
                 );
                 std::process::exit(5);
             }
@@ -697,7 +700,7 @@ fn finalize_end(mut state: ResMut<State>) {
             "Smŕť od {}, s {} {}\n\n{}",
             death_cause_gen(&state.game),
             score::amount(&state.game),
-            speak("⟨n:zlåtnik:gen:pl⟩"),
+            speak("⟨n:zlåtnik:ins:pl⟩"),
             table
         ),
         mrzavec::game::EndState::Quit => format!(
@@ -1939,7 +1942,7 @@ fn keyboard(
         }
         Command::Quit => {
             state.pending = Some(Pending::QuitConfirm);
-            Some(remembered_prompt(&mut state, "istinno izhod?"))
+            Some(remembered_prompt(&mut state, "istinno li ⟨v2:izhoditi⟩?"))
         }
         Command::Save => {
             state.pending = Some(Pending::SaveConfirm);
@@ -2671,7 +2674,7 @@ fn direction_prompt(state: &mut State, pending: Pending) -> Option<String> {
     let prompt = if state.game.options.terse {
         "strana: "
     } else {
-        "v ⟨a:koj:strana:acc⟩ ⟨n:strana:acc⟩? "
+        "v ⟨ktory:acc:f⟩ ⟨n:stråna:acc⟩? "
     };
     state.pending = Some(pending);
     state.game.remember_message(prompt);
@@ -3431,7 +3434,7 @@ const HELP_ENTRIES: &[(char, &str, bool)] = &[
     ('\u{15}', "\tběgati gorě i vpravo do ⟨n:prěškoda:gen⟩", false),
     ('\u{2}', "\tběgati dolu i vlěvo do ⟨n:prěškoda:gen⟩", false),
     ('\u{e}', "\tběgati dolu i vpravo do ⟨n:prěškoda:gen⟩", false),
-    ('\0', "\t<SHIFT><dir>: běgati v ⟨toj:acc:f⟩ ⟨n:strana:acc⟩", true),
+    ('\0', "\t<SHIFT><dir>: běgati v ⟨toj:acc:f⟩ ⟨n:stråna:acc⟩", true),
     ('\0', "\t<CTRL><dir>: běgati do ⟨n:prěškoda:gen⟩", true),
     ('f', "<dir>\tboriti sę do ⟨n:smŕť:gen⟩ ili skoro do ⟨n:smŕť:gen⟩", true),
     ('t', "<dir>\tmetnųti něčto", true),
@@ -3463,7 +3466,7 @@ const HELP_ENTRIES: &[(char, &str, bool)] = &[
     ('D', "\tpokazati, čto uže ⟨v2:znati⟩", true),
     ('o', "\tpokazati/měnjati ⟨n:opcija:acc:pl⟩", true),
     ('\u{12}', "\tobnoviti ekran", true),
-    ('\u{10}', "\tpovtoriti ⟨a:poslědnji:věsť:acc⟩ ⟨n:věsť:acc⟩", true),
+    ('\u{10}', "\tpovtoriti ⟨a:poslědnji:sȯobčeńje:acc⟩ ⟨n:sȯobčeńje:acc⟩", true),
     ('\u{1b}', "\tanulovati ⟨n:komanda:acc⟩, ^[ jest knopka escape", true),
     ('S', "\tshraniti ⟨n:igra:acc⟩", true),
     ('Q', "\tizhod", true),
@@ -3545,7 +3548,7 @@ fn identify_glyph_text(ch: char) -> String {
 }
 const OPTION_COUNT: usize = 12;
 const OPTION_LABELS: [(&str, &str); OPTION_COUNT] = [
-    ("⟨a:kråtky:věsť:nom:pl:U⟩ ⟨n:věsť:nom:pl⟩", "terse"),
+    ("⟨a:kråtky:sȯobčeńje:nom:pl:U⟩ ⟨n:sȯobčeńje:nom:pl⟩", "terse"),
     ("Ignorovati pisańje podčas boja", "flush"),
     ("Pokazati ⟨n:pozicija:acc⟩ jedino na ⟨n:konec:loc⟩ ⟨n:běg:gen⟩", "jump"),
     ("Pokazati ⟨pp:osvětliti:n⟩ tlo", "seefloor"),
@@ -3732,7 +3735,7 @@ mod tests {
         let lines: Vec<_> = text.lines().collect();
 
         assert_eq!(lines.len(), OPTION_COUNT);
-        assert_eq!(lines[0], "Kråtke věsti (\"terse\"): Da");
+        assert_eq!(lines[0], "Kråtke sȯobčeńja (\"terse\"): Da");
         assert_eq!(
             lines[1],
             "Ignorovati pisańje podčas boja (\"flush\"): Ne"
@@ -4680,7 +4683,7 @@ mod tests {
 
         assert_eq!(lines, expected);
         assert_eq!(lines.len(), 49);
-        assert!(full.contains("<SHIFT><dir>: běgati v tų stranų"));
+        assert!(full.contains("<SHIFT><dir>: běgati v tų strånų"));
         assert!(!full.contains('\t'));
         assert!(full.contains("boriti sę do smŕti ili skoro do smŕti"));
         assert!(full.contains("boriti sę dokolě někto ne umre"));
@@ -5100,9 +5103,9 @@ mod tests {
         assert_eq!(message_display_text("'^H': neznany"), "'^H': neznany");
 
         let mut state = state(1160);
-        let displayed = remembered_prompt(&mut state, "v kojų stranų? ");
-        assert_eq!(displayed, "V kojų stranų? ");
-        assert_eq!(state.game.recall_message, "v kojų stranų? ");
+        let displayed = remembered_prompt(&mut state, "v ktorų strånų? ");
+        assert_eq!(displayed, "V ktorų strånų? ");
+        assert_eq!(state.game.recall_message, "v ktorų strånų? ");
 
         state.game.message("h\tvlěvo");
         state.preserve_message_case = true;
@@ -5449,7 +5452,7 @@ mod tests {
             throw_direction.pending,
             Some(Pending::ThrowDirection(weapon_id))
         );
-        assert_eq!(throw_direction.modal.as_deref(), Some("V kojų stranų? "));
+        assert_eq!(throw_direction.modal.as_deref(), Some("V ktorų strånų? "));
         press_keys(&mut throw_app, &[KeyCode::KeyH]);
         throw_app.update();
         let throw_result = throw_app.world().resource::<State>();
@@ -5554,7 +5557,7 @@ mod tests {
         for ch in ['n', 'x', '\u{1b}', ' '] {
             let mut state = state(340);
             state.pending = Some(Pending::QuitConfirm);
-            state.modal = Some("istinno izhod?".into());
+            state.modal = Some("istinno li ⟨v2:izhoditi⟩?".into());
             resolve_quit_confirmation(&mut state, ch);
             assert_eq!(state.game.end, mrzavec::game::EndState::Playing);
             assert_eq!(state.pending, None);
@@ -5665,9 +5668,9 @@ mod tests {
         let mut state = state(2070);
         assert_eq!(
             direction_prompt(&mut state, Pending::ZapDirection(1)).as_deref(),
-            Some("V kojų stranų? ")
+            Some("V ktorų strånų? ")
         );
-        assert_eq!(state.game.recall_message, "v kojų stranų? ");
+        assert_eq!(state.game.recall_message, "v ktorų strånų? ");
 
         state.game.options.terse = true;
         assert_eq!(

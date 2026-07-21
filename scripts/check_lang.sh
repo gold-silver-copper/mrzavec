@@ -13,4 +13,6 @@ cd "$SLOVOWIKI"
     "$CORPUS" --lexicon "$LEXICON" --summary --max-unknown 0 "$@"
 # Stage 2: the zero-pre-inflection lint (RUNTIME_INFLECTION_PROMPT.md).
 cd - >/dev/null
-exec python3 scripts/lint_inflection.py
+python3 scripts/lint_inflection.py
+# Stage 3: preposition-government lint (STYLE_PASS_2_PROMPT.md).
+exec python3 scripts/lint_government.py

@@ -177,3 +177,81 @@ dva pŕstenja→**dva pŕsteni**. Registry additions: věsť, běg, povråt,
 plate (UI placeholder and English diagnostic tokens colliding with
 dictionary words). Enforcement: `scripts/check_lang.sh` = template gate
 + inflection lint, both PASS.
+
+## Style pass (2026-07-21)
+
+Colon-listing confirmations upgraded to real sentences now that
+runtime inflection covers every case (verbose mode only; terse keeps
+telegraphic colons): pickup → "sejčas imaješ X-acc (a)", wield →
+"sejčas dŕžiš X-acc", wear/put-on-ring → "naděvaješ X-acc", take-off →
+"snimaješ X-acc", drop → "ostavjaješ X-acc", walk-over → "tu leži/ležet
+X" (number-agreeing verb), trap found → "nahodiš strělnų pasť"
+(accusative trap phrase). `inventory_name` gained a case parameter
+(5+ still forces Gen pl per numeral government); the nymph theft now
+uses the accusative.
+
+Flavor/idiom restorations: Ken Arnold easter egg back ("naglo znaješ
+vse, tako kako Ken Arnold, …"), purse → "tvoja torba staje sę legša",
+magic block → "čarovna sila ne pušćaje tę dalje" (dictionary spelling
+pušćati), hunger → "čuješ glad" / "načinaješ čuti glad", quit prompt →
+"istinno li izhodiš?", direction prompt → "v ktorų strånų?" (standard
+interrogative + dictionary spelling stråna), sense-of-loss tautology →
+"imaješ divno čuťje utraty", wand of teleport-to → "teleportacije k
+tebě".
+
+## Predicative-comparative convention (2026-07-21)
+
+After change-of-state and perception verbs (stavati sę, izgledati,
+čuti sę), comparatives are ADVERBIAL (⟨cav:…⟩ → silněje, slaběje,
+legše), never agreeing adjectives — matching the established "čuješ sę
+silněje" pattern. Root cause of the legša/legše report: the style pass
+reached for ⟨cmp⟩ (agreeing adjective — also grammatical, but the
+West/South-style pattern) against this convention; both affected sites
+fixed ("tvoja torba staje sę legše", "tvoja brȯnja sejčas izgledaje
+slaběje").
+
+Follow-up review (same day): two pre-existing case-government bugs
+found and fixed — death screens said "s N zlåtnikov" (s + genitive =
+'off of'; now instrumental "s N zlåtnikami", matching the quit
+screen), and the attack variant "zadavaješ odličny udar {acc}" was a
+double accusative (recipient of a blow takes the dative); replaced with
+the case-compatible adverbial "odlično udarjaješ {acc}".
+
+## Style pass 2 (2026-07-21)
+
+**Government lint added** (stage 3 of check_lang.sh): preposition→marker
+case government is now machine-checked against
+`interslavic::preposition_cases()` (queried live via
+examples/prep_cases.rs — no hand-copied tables). Result on the current
+tree: zero hard failures; 11 placeholder-crossing warns, each annotated
+with its code contract in scripts/government-notes.txt.
+
+**Verb-valence audit** (one-time sweep of every template with a verb
+marker plus a second case slot — no tool can check valence):
+
+| template verb | frame | slot | verdict |
+|---|---|---|---|
+| udarjati / raniti / poběđati / nahoditi / imati / viděti / slyšati / čuti | + Acc | Acc | OK |
+| dŕžati, okrųžati, zamråžati, oslabjati, prěmagati, loviti, strěgti, smųtiti, ubiti, ukrasti, pušćati, naděvati, snimati, ostavjati | + Acc (tę / name-acc) | Acc | OK |
+| škoditi | + Dat | ⟨ty:dat⟩ "ti" | OK |
+| liti sę | Dat benefactive + na Acc | ti / na glåvų | OK |
+| dostigati | + Gen | stųpenja | OK |
+| svŕběti | Acc experiencer ("svrbi tę") | Acc | OK |
+| hybiti | frame unattested in dictionary; Acc by analogy with udarjati | Acc | accepted by decision |
+| zadavati (+Acc +Dat) | REMOVED — replaced by "odlično udarjati" (double-Acc bug) | — | fixed |
+
+**Polish decisions**: terse label → "Kråtka sȯobčeńja" (official lemma
+sȯobčeńje; věsť dropped repo-wide, help "repeat last message" unified);
+"Kaka moć!" restores the muscle-flex flavor (moć official; avoids the
+silněje/sila near-duplicate). Effect-name split is PERMANENT: re-checked
+— none of the za-pattern scroll gerunds (dŕžańje, očarovańje, opoznańje,
+strašeńje, sȯzdańje, gněvańje, poddŕžańje, odbirańje) are official
+lemmas, so their genitives are unverifiable; za+Acc (an official
+paradigm cell) stays the correct dodge.
+
+**Corners audit**: usage() fully translated (easter egg aside);
+wizard-mode strings clean; save.rs's lint-exemption premise was FALSE —
+its two semantic errors reach players (browser-restore message, CLI
+stderr), so both are now marker templates ("nepodpirana verzija
+sȯhranjeńja", "ne možno obnoviti dokončenų ili mrtvų igrų") and the CLI
+restore eprintln speaks.
