@@ -198,3 +198,14 @@ pušćati), hunger → "čuješ glad" / "načinaješ čuti glad", quit prompt �
 interrogative + dictionary spelling stråna), sense-of-loss tautology →
 "imaješ divno čuťje utraty", wand of teleport-to → "teleportacije k
 tebě".
+
+## Predicative-comparative convention (2026-07-21)
+
+After change-of-state and perception verbs (stavati sę, izgledati,
+čuti sę), comparatives are ADVERBIAL (⟨cav:…⟩ → silněje, slaběje,
+legše), never agreeing adjectives — matching the established "čuješ sę
+silněje" pattern. Root cause of the legša/legše report: the style pass
+reached for ⟨cmp⟩ (agreeing adjective — also grammatical, but the
+West/South-style pattern) against this convention; both affected sites
+fixed ("tvoja torba staje sę legše", "tvoja brȯnja sejčas izgledaje
+slaběje").

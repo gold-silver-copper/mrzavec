@@ -4472,7 +4472,7 @@ impl Game {
                 self.player.gold = self.player.gold.saturating_sub(amount as i32);
                 self.monsters.remove(index);
                 if self.player.gold != old_gold {
-                    self.message("⟨a:tvoj:torba:nom⟩ ⟨n:torba:nom⟩ ⟨v3h:stajati:staje⟩ sę ⟨cmp:legky:torba:nom⟩");
+                    self.message("⟨a:tvoj:torba:nom⟩ ⟨n:torba:nom⟩ ⟨v3h:stajati:staje⟩ sę ⟨cav:legky⟩");
                 }
             }
             13 => self.nymph_steal(index),
@@ -4540,7 +4540,7 @@ impl Game {
         self.message(if self.options.terse {
             "⟨a:tvoj:brȯnja:nom⟩ ⟨n:brȯnja:nom⟩ ⟨v3:slaběti⟩"
         } else {
-            "⟨a:tvoj:brȯnja:nom⟩ ⟨n:brȯnja:nom⟩ sejčas ⟨v3:izględati⟩ ⟨cmp:slaby:brȯnja:nom⟩. O ne!"
+            "⟨a:tvoj:brȯnja:nom⟩ ⟨n:brȯnja:nom⟩ sejčas ⟨v3:izględati⟩ ⟨cav:slaby⟩. O ne!"
         });
     }
     fn drain_level(&mut self) {
@@ -5847,7 +5847,7 @@ mod tests {
         g.rust_armor();
         assert_eq!(
             g.messages.last().unwrap(),
-            "tvoja brȯnja sejčas izględaje slabějša. O ne!"
+            "tvoja brȯnja sejčas izględaje slaběje. O ne!"
         );
     }
 
@@ -8990,7 +8990,7 @@ mod tests {
 
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("tvoja brȯnja sejčas izględaje slabějša. O ne!")
+            Some("tvoja brȯnja sejčas izględaje slaběje. O ne!")
         );
         assert_eq!(
             g.player
