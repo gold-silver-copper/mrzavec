@@ -132,3 +132,29 @@ stųpnja→stųpenja, odrazu→naglo, koristanju→koristaješ), impersonal
 (silněje/slaběje/lěpje instead of masculine silnějši/slabši/lovkějši),
 hunger status Nemoć. Steen verbs.html confirms -ati 3sg in -aje
 (contracted -a is a variant; the dictionary standard uses -aje).
+
+## Runtime-inflection pass (interslavic 0.10.0, 2026-07-20)
+
+Zero pre-inflected forms policy implemented: message literals now carry
+⟨…⟩ markers (citation lemmas + cell codes) rendered by `lang::speak()`
+through the crate at the message sinks; `scripts/lint_inflection.py`
+(stage 2 of check_lang.sh) enforces it permanently.
+
+Crate corrections adopted over previous literals (the crate's
+parity-verified output wins): hočeš→**hoćeš**, izgledaje→**izględaje**,
+nepravilna→**nepraviľna**, slabša→**slabějša**, stųpenja→**stųpene**
+(both valid byforms; crate's first variant), "po vsěm tělě"→**"po vsem
+tělu"** (tělě was accidentally the word *telę* 'calf'!), "dva
+pŕstenja"→**"dva pŕstenji"** (proper 2–4 numeral government),
+ukradla→(unchanged, via paradigm path — see bug below).
+
+Upstream bug found and reported: `interslavic::l_participle("ukrasti",
+F, Sg)` returns "ukrasla", diverging from the crate's own compound-tense
+paradigm ("ukradla", 100% parity-verified, matches the slovowiki index).
+Worked around with the ⟨vpf3:…⟩ marker (paradigm-path 3sg perfect,
+auxiliary-less variant per the (je)-optional convention). Fix belongs in
+interslavic-rs's l_participle stem handling for -sti verbs.
+
+Also: `verb("stajati", …)` misses the dictionary present-stem hint
+(gives "stajaje" instead of "staje") — worked around with
+⟨v3h:stajati:staje⟩ carrying the dictionary's own hint.
