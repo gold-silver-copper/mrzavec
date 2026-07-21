@@ -24,7 +24,7 @@ pub fn encode_game(game: &Game) -> io::Result<Vec<u8>> {
 pub fn decode_game(bytes: &[u8]) -> io::Result<Game> {
     let game: Game = serde_json::from_slice(bytes)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    if game.save_version != 12 {
+    if game.save_version != 13 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "unsupported save version",
@@ -527,7 +527,7 @@ mod tests {
         let p = std::env::temp_dir().join(format!("mrzavec-consume-{}.json", std::process::id()));
         save(&Game::new(7), &p).unwrap();
         let restored = restore(&p).unwrap();
-        assert_eq!(restored.save_version, 12);
+        assert_eq!(restored.save_version, 13);
         assert_eq!(restored.options.save_file, p.to_string_lossy());
         assert!(!p.exists());
     }
@@ -542,7 +542,7 @@ mod tests {
         save(&Game::new(71), &path).unwrap();
 
         assert_eq!(fs::read(&predictable).unwrap(), b"belongs to somebody else");
-        assert_eq!(load(&path).unwrap().save_version, 12);
+        assert_eq!(load(&path).unwrap().save_version, 13);
         fs::remove_file(predictable).unwrap();
         fs::remove_file(path).unwrap();
     }

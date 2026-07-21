@@ -164,3 +164,20 @@ Project structure:
   modal, message, and 80×28 glyph-grid presentation state.
 - `FEATURE_PARITY.md`, `PORTING_NOTES.md`, and `BUG_FIXES.md` record the source
   comparison and every intentional difference.
+
+## Language tooling (Interslavic)
+
+The game text is Interslavic; every inflected form is produced at runtime by
+the [`interslavic`](https://crates.io/crates/interslavic) crate via the
+`lang::speak()` template markers (see `RUNTIME_INFLECTION_PROMPT.md` and
+`GLOSSARY.md`). Verification needs a sibling checkout of
+[slovowiki](https://github.com/gold-silver-copper/slovowiki) (release binary
+built; override the location with `SLOVOWIKI=/path`):
+
+```sh
+./scripts/check_lang.sh   # template gate (check-text) + zero-pre-inflection lint
+```
+
+`game-lexicon.tsv` is generated from `src/lang.rs` by the
+`regenerate_project_lexicon` test (golden file — the test fails on drift so
+the regenerated TSV must be reviewed and committed).

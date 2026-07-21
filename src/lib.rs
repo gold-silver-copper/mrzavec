@@ -4,6 +4,7 @@ pub mod effects;
 pub mod game;
 pub mod generation;
 pub mod item;
+pub mod lang;
 pub mod map;
 pub mod monster;
 pub mod platform;

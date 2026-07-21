@@ -264,10 +264,16 @@ pub fn read(path: &Path) -> io::Result<Vec<ScoreEntry>> {
     decode_scores(&fs::read(path)?).map_err(io::Error::other)
 }
 pub fn format(scores: &[ScoreEntry]) -> String {
-    let mut out = String::from("Top 10 Rogueists:\n   Score Name\n");
+    let mut out = format!(
+        "{} 10 rogueistov:\nRezultat Ime\n",
+        crate::lang::speak("⟨sup:dobry:čarovnik:gen:pl:U⟩")
+    );
+    // "na" + locative; the noun is inflected at runtime (player names and
+    // death causes are inserted verbatim, never routed through speak()).
+    let on_level = crate::lang::speak("na ⟨n:stųpenj:loc⟩");
     for (i, s) in scores.iter().enumerate() {
         out.push_str(&format!(
-            "{:2} {:5} {}: {} on level {}",
+            "{:2} {:5} {}: {} {on_level} {}",
             i + 1,
             s.score,
             s.name,
@@ -277,18 +283,18 @@ pub fn format(scores: &[ScoreEntry]) -> String {
         if matches!(s.reason, Reason::Killed | Reason::KilledWithAmulet)
             && let Some(cause) = &s.cause
         {
-            out.push_str(&format!(" by {cause}"));
+            out.push_str(&format!(" od {cause}"));
         }
         out.push_str(".\n")
     }
     out
 }
-fn reason_text(reason: Reason) -> &'static str {
+fn reason_text(reason: Reason) -> String {
     match reason {
-        Reason::Killed => "killed",
-        Reason::Quit => "quit",
-        Reason::Winner => "A total winner",
-        Reason::KilledWithAmulet => "killed with Amulet",
+        Reason::Killed => "smŕť".into(),
+        Reason::Quit => "izhod".into(),
+        Reason::Winner => crate::lang::speak("⟨a:pȯlny:poběda:nom:U⟩ ⟨n:poběda:nom⟩"),
+        Reason::KilledWithAmulet => crate::lang::speak("smŕť s ⟨n:amulet:ins:U⟩"),
     }
 }
 
@@ -445,11 +451,11 @@ mod tests {
             score: 123,
             name: "rogue".into(),
             reason: Reason::KilledWithAmulet,
-            cause: Some("a dragon".into()),
+            cause: Some("drakona".into()),
             level: 26,
             when: 0,
         }];
-        assert!(format(&scores).contains("killed with Amulet on level 26 by a dragon."));
+        assert!(format(&scores).contains("smŕť s Amuletom na stųpeni 26 od drakona."));
     }
 
     #[test]
