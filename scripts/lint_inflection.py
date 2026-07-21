@@ -44,6 +44,10 @@ def production_source(path: pathlib.Path) -> str:
     cut = src.find("#[cfg(test)]\nmod")
     if cut != -1:
         src = src[:cut]
+    # drop expect()/panic!/assert message literals — developer diagnostics,
+    # never rendered on the game grid
+    src = re.sub(r'\.expect\(\s*"(?:[^"\\]|\\.)*"\s*\)', ".expect(X)", src)
+    src = re.sub(r'(panic!|unreachable!|assert!|debug_assert!)\(\s*"(?:[^"\\]|\\.)*"', r"\1(X", src)
     # drop the SYLLABLES const block (gibberish, not lexicon words)
     m = re.search(r"const SYLLABLES: &\[&str\] = &\[.*?\];", src, re.S)
     if m:

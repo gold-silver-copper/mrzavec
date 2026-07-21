@@ -83,8 +83,9 @@ fn message_display_text(text: &str) -> String {
         return displayed;
     };
     let second = chars.next().map(|(_, ch)| ch);
-    if first.is_ascii_lowercase() && second != Some(')') {
-        displayed.replace_range(0..first.len_utf8(), &first.to_ascii_uppercase().to_string());
+    if first.is_lowercase() && second != Some(')') {
+        // Unicode-aware: ž/č/š-initial messages must capitalize too.
+        displayed.replace_range(0..first.len_utf8(), &first.to_uppercase().to_string());
     }
     displayed
 }

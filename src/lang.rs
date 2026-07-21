@@ -120,11 +120,14 @@ fn cache() -> &'static Mutex<HashMap<(u8, String, u8), String>> {
 
 fn memo(kind: u8, lemma: &str, cell: u8, produce: impl FnOnce() -> String) -> String {
     let key = (kind, lemma.to_string(), cell);
-    if let Some(hit) = cache().lock().unwrap().get(&key) {
+    let lock = |m: &'static Mutex<HashMap<(u8, String, u8), String>>| {
+        m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
+    if let Some(hit) = lock(cache()).get(&key) {
         return hit.clone();
     }
     let value = produce();
-    cache().lock().unwrap().insert(key, value.clone());
+    lock(cache()).insert(key, value.clone());
     value
 }
 
@@ -554,7 +557,7 @@ pub fn stick_effect_gen(which: usize) -> String {
 // Unknown markers panic loudly in debug (a template bug must not ship).
 // ---------------------------------------------------------------------------
 
-fn reg(lemma: &str) -> Lex {
+fn reg(lemma: &str) -> Option<Lex> {
     static REGISTRY: OnceLock<HashMap<&'static str, Lex>> = OnceLock::new();
     let map = REGISTRY.get_or_init(|| {
         let mut m: HashMap<&'static str, Lex> = HashMap::new();
@@ -681,88 +684,89 @@ fn reg(lemma: &str) -> Lex {
         }
         m
     });
-    *map.get(lemma).unwrap_or_else(|| panic!("speak: noun '{lemma}' not in registry"))
+    map.get(lemma).copied()
 }
 
-fn parse_case(code: &str) -> Case {
-    match code {
+fn parse_case(code: &str) -> Option<Case> {
+    Some(match code {
         "nom" => Case::Nom,
         "acc" => Case::Acc,
         "gen" => Case::Gen,
         "loc" => Case::Loc,
         "dat" => Case::Dat,
         "ins" => Case::Ins,
-        other => panic!("speak: unknown case code '{other}'"),
-    }
+        _ => return None,
+    })
 }
 
-fn parse_gender(code: &str) -> Gender {
-    match code {
+fn parse_gender(code: &str) -> Option<Gender> {
+    Some(match code {
         "m" => Masculine,
         "f" => Feminine,
         "n" => Neuter,
-        other => panic!("speak: unknown gender code '{other}'"),
-    }
+        _ => return None,
+    })
 }
 
-fn render_marker(body: &str) -> String {
+fn render_marker(body: &str) -> Option<String> {
     let parts: Vec<&str> = body.split(':').collect();
     let num = |p: &[&str]| if p.contains(&"pl") { Number::Plural } else { Number::Singular };
-    match parts[0] {
-        "v1" => v1(parts[1]),
-        "v2" => v2(parts[1]),
-        "v3" => v3(parts[1]),
-        "v3p" => v3pl(parts[1]),
-        "vim" => vimp(parts[1]),
-        "cav" => comp_adv(parts[1]),
+    let arg = |i: usize| parts.get(i).copied();
+    Some(match *parts.first()? {
+        "v1" => v1(arg(1)?),
+        "v2" => v2(arg(1)?),
+        "v3" => v3(arg(1)?),
+        "v3p" => v3pl(arg(1)?),
+        "vim" => vimp(arg(1)?),
+        "cav" => comparative(arg(1)?).map(|(_, adv)| adv)?,
         // adverb of manner / predicative neuter ("tako kosmično")
-        "adv" => first_variant(adj(parts[1], Case::Nom, Number::Singular, Neuter, Inanimate)),
+        "adv" => first_variant(adj(arg(1)?, Case::Nom, Number::Singular, Neuter, Inanimate)),
         // active present participle agreeing with a registry noun
         "ap" => {
-            let noun = reg(parts[2]);
-            first_variant(
-                interslavic::active_participle(parts[1], parse_case(parts[3]), num(&parts[4..]), noun.gender, noun.animacy)
-                    .unwrap_or_else(|| panic!("speak: no active participle for '{}'", parts[1])),
-            )
+            let noun = reg(arg(2)?)?;
+            first_variant(interslavic::active_participle(
+                arg(1)?, parse_case(arg(3)?)?, num(&parts[4..]), noun.gender, noun.animacy,
+            )?)
+        }
+        // 3sg perfect, auxiliary-less (the standard drops the 3rd-person
+        // auxiliary): structured accessor from interslavic 0.11.0.
+        "vpf3" => {
+            interslavic::perfect_parts(arg(1)?, Person::Third, Number::Singular, parse_gender(arg(2)?)?)
+                .participle
         }
         // 3sg present with an explicit dictionary present-stem hint
         // ("stajati (staje)") for lemmas where blind conjugation misfires
         "v3h" => first_variant(interslavic::verb_with_present_hint(
-            parts[1], &format!("({})", parts[2]),
+            arg(1)?, &format!("({})", arg(2)?),
             Person::Third, Number::Singular, Gender::Masculine, Tense::Present,
         )),
-        // 3sg perfect, auxiliary-less (the standard drops the 3rd-person
-        // auxiliary): structured accessor from interslavic 0.11.0.
-        "vpf3" => {
-            interslavic::perfect_parts(parts[1], Person::Third, Number::Singular, parse_gender(parts[2]))
-                .participle
-        }
         // declined comparative agreeing with a registry noun
         "cmp" => {
-            let base = comparative(parts[1]).map(|(a, _)| a).expect("speak: non-gradable comparative");
-            let noun = reg(parts[2]);
-            first_variant(adj(&base, parse_case(parts[3]), num(&parts[4..]), noun.gender, noun.animacy))
+            let base = comparative(arg(1)?).map(|(a, _)| a)?;
+            let noun = reg(arg(2)?)?;
+            first_variant(adj(&base, parse_case(arg(3)?)?, num(&parts[4..]), noun.gender, noun.animacy))
         }
         // declined superlative agreeing with a registry noun
         "sup" => {
-            let base = isv_superlative(parts[1])
-                .map(|(a, _)| a)
-                .expect("speak: non-gradable superlative");
-            let noun = reg(parts[2]);
-            first_variant(adj(&base, parse_case(parts[3]), num(&parts[4..]), noun.gender, noun.animacy))
+            let base = isv_superlative(arg(1)?).map(|(a, _)| a)?;
+            let noun = reg(arg(2)?)?;
+            first_variant(adj(&base, parse_case(arg(3)?)?, num(&parts[4..]), noun.gender, noun.animacy))
         }
-        "lp" => lpart(parts[1], parse_gender(parts[2]), num(&parts[3..])),
+        "lp" => lpart(arg(1)?, parse_gender(arg(2)?)?, num(&parts[3..])),
         "pp" => {
-            let l = Lex { lemma: "", gender: parse_gender(parts[2]), animacy: Inanimate, indecl: false };
-            let case = parts.get(3).filter(|c| **c != "pl").map(|c| parse_case(c)).unwrap_or(Case::Nom);
-            ppart(parts[1], &l, case, num(&parts[3..]))
+            let l = Lex { lemma: "", gender: parse_gender(arg(2)?)?, animacy: Inanimate, indecl: false };
+            let case = match parts.get(3).filter(|c| **c != "pl") {
+                Some(c) => parse_case(c)?,
+                None => Case::Nom,
+            };
+            ppart(arg(1)?, &l, case, num(&parts[3..]))
         }
-        "n" => decl(&reg(parts[1]), parse_case(parts[2]), num(&parts[3..])),
+        "n" => decl(&reg(arg(1)?)?, parse_case(arg(2)?)?, num(&parts[3..])),
         "a" => {
-            let noun = reg(parts[2]);
-            let case = parse_case(parts[3]);
+            let noun = reg(arg(2)?)?;
+            let case = parse_case(arg(3)?)?;
             let n = num(&parts[4..]);
-            interslavic::pronoun(parts[1], case, n, noun.gender, noun.animacy)
+            interslavic::pronoun(arg(1)?, case, n, noun.gender, noun.animacy)
                 .map(first_variant)
                 .unwrap_or_else(|| adj_for(parts[1], &noun, case, n))
         }
@@ -777,19 +781,18 @@ fn render_marker(body: &str) -> String {
                 "vy" => (Person::Second, Number::Plural, Masculine),
                 _ => (Person::Third, Number::Plural, Masculine),
             };
-            let case = parse_case(parts[1]);
+            let case = parse_case(arg(1)?)?;
             let style = match parts.get(2) {
                 Some(&"f") => PronounStyle::Full,
                 Some(&"n") => PronounStyle::AfterPreposition,
-                Some(other) => panic!("speak: unknown pronoun style '{other}'"),
+                Some(_) => return None,
                 None => PronounStyle::Clitic,
             };
             personal_pronoun(person, number, gender, case, style)
-                .or_else(|| personal_pronoun(person, number, gender, case, PronounStyle::Full))
-                .expect("speak: unattested pronoun cell")
+                .or_else(|| personal_pronoun(person, number, gender, case, PronounStyle::Full))?
         }
         "toj" | "taky" | "nikaky" | "ktory" | "veś" => {
-            let case = parse_case(parts[1]);
+            let case = parse_case(arg(1)?)?;
             let (gender, animacy) = match parts.get(2).copied() {
                 Some("f") => (Feminine, Inanimate),
                 Some("n") => (Neuter, Inanimate),
@@ -797,21 +800,23 @@ fn render_marker(body: &str) -> String {
                 _ => (Masculine, Inanimate),
             };
             let n = num(&parts[2..]);
-            interslavic::pronoun(parts[0], case, n, gender, animacy)
-                .map(first_variant)
-                .expect("speak: pronominal cell missing")
+            interslavic::pronoun(parts[0], case, n, gender, animacy).map(first_variant)?
         }
         "ničto" | "čto" | "kto" | "nikto" => interslavic::pronoun(
-            parts[0], parse_case(parts[1]), Number::Singular, Masculine, Animacy::Animate,
+            parts[0], parse_case(arg(1)?)?, Number::Singular, Masculine, Animacy::Animate,
         )
-        .map(first_variant)
-        .unwrap_or_else(|| panic!("speak: pronoun '{}' not declinable", parts[0])),
-        other => panic!("speak: unknown marker kind '{other}'"),
-    }
+        .map(first_variant)?,
+        _ => return None,
+    })
 }
 
 /// Render a message template: replaces every ⟨…⟩ marker with the
 /// crate-produced surface form. Text outside markers passes through.
+///
+/// Malformed or unknown markers are passed through VERBATIM in release
+/// builds (message text can embed user-typed labels and the fruit name,
+/// so the renderer must never panic on player-reachable input); debug
+/// builds assert loudly so template bugs are caught by the test suite.
 pub fn speak(template: &str) -> String {
     if !template.contains('⟨') {
         return template.to_string();
@@ -821,17 +826,32 @@ pub fn speak(template: &str) -> String {
     while let Some(start) = rest.find('⟨') {
         out.push_str(&rest[..start]);
         let after = &rest[start + '⟨'.len_utf8()..];
-        let end = after.find('⟩').expect("speak: unterminated marker");
+        let Some(end) = after.find('⟩') else {
+            debug_assert!(false, "speak: unterminated marker in {template:?}");
+            out.push('⟨');
+            rest = after;
+            break;
+        };
         let body = &after[..end];
-        if let Some(stripped) = body.strip_suffix(":U") {
-            let rendered = render_marker(stripped);
-            let mut chars = rendered.chars();
-            if let Some(first) = chars.next() {
-                out.extend(first.to_uppercase());
-                out.push_str(chars.as_str());
+        let (inner, upper) = match body.strip_suffix(":U") {
+            Some(stripped) => (stripped, true),
+            None => (body, false),
+        };
+        match render_marker(inner) {
+            Some(rendered) if upper => {
+                let mut chars = rendered.chars();
+                if let Some(first) = chars.next() {
+                    out.extend(first.to_uppercase());
+                    out.push_str(chars.as_str());
+                }
             }
-        } else {
-            out.push_str(&render_marker(body));
+            Some(rendered) => out.push_str(&rendered),
+            None => {
+                debug_assert!(false, "speak: bad marker ⟨{body}⟩ in {template:?}");
+                out.push('⟨');
+                out.push_str(body);
+                out.push('⟩');
+            }
         }
         rest = &after[end + '⟩'.len_utf8()..];
     }
@@ -888,6 +908,16 @@ mod tests {
         assert_eq!(poss("tvoj", &torba, Case::Loc, Number::Singular), "tvojej");
         assert_eq!(comp_adv("bystry"), "bystrěje");
         assert_eq!(ppart("opoznati", &lex("žezlo", Neuter, Inanimate), Case::Nom, Number::Singular), "opoznano");
+    }
+
+    /// Release-only: player-reachable text must never panic the renderer
+    /// (debug builds assert instead — run with `cargo test --release`).
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn speak_passes_malformed_markers_through() {
+        assert_eq!(speak("nazvano «⟨» konec"), "nazvano «⟨» konec");
+        assert_eq!(speak("⟨totally:bogus⟩ text"), "⟨totally:bogus⟩ text");
+        assert_eq!(speak("⟨n:neregistrovany:gen⟩"), "⟨n:neregistrovany:gen⟩");
     }
 
     #[test]
@@ -1045,11 +1075,18 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n")
             + "\n";
-        std::fs::write(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/game-lexicon.tsv"),
-            body,
-        )
-        .expect("write game-lexicon.tsv");
+        // Golden-file semantics: regenerate on drift, but FAIL so the
+        // change must be reviewed and committed (a silently-rewritten
+        // lexicon would bypass CI).
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/game-lexicon.tsv");
+        let existing = std::fs::read_to_string(path).unwrap_or_default();
+        if existing != body {
+            std::fs::write(path, &body).expect("write game-lexicon.tsv");
+            panic!(
+                "game-lexicon.tsv was out of date and has been regenerated — \
+                 review and commit the updated file, then re-run the tests"
+            );
+        }
     }
 }
 

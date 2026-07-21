@@ -169,7 +169,8 @@ fn choose_unique_indices(rng: &mut GameRng, len: usize, count: usize) -> Vec<usi
 fn uppercase_first(value: &str) -> String {
     let mut chars = value.chars();
     match chars.next() {
-        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        // Unicode-aware: Interslavic initials (ž, č, š…) must capitalize too.
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
         None => String::new(),
     }
 }
@@ -403,7 +404,7 @@ impl Game {
         let appearances = Appearances::new(&mut rng);
         let dungeon = begin_layout(&mut rng);
         let mut g = Self {
-            save_version: 12,
+            save_version: 13,
             dungeon_number: seed as u32,
             rng,
             dungeon,
