@@ -155,9 +155,19 @@ Worked around with the ⟨vpf3:…⟩ marker (paradigm-path 3sg perfect,
 auxiliary-less variant per the (je)-optional convention). Fix belongs in
 interslavic-rs's l_participle stem handling for -sti verbs.
 
-Also: `verb("stajati", …)` misses the dictionary present-stem hint
-(gives "stajaje" instead of "staje") — worked around with
-⟨v3h:stajati:staje⟩ carrying the dictionary's own hint.
+Also: `verb("stajati", …)` gives "stajaje" — resolved upstream in 0.11.0
+as CORRECT for the parity standard (the JS reference never contracts OOV
+-jati presents; stajati is not a dictionary lemma). mrzavec deliberately
+keeps ⟨v3h:stajati:staje⟩: slovowiki's checker (our rendered-text
+arbiter) recognizes only "staje", and the contraction is the natural
+Slavic form. The slovowiki-vs-interslavic divergence on this row is
+documented on the interslavic side.
+
+**interslavic 0.11.0 adopted (2026-07-21)**: the l_participle -sti bug
+is fixed upstream (shared stem context); ⟨vpf3⟩ now uses the structured
+`perfect_parts` accessor instead of the shortest-variant heuristic;
+`vimp` simplified (imperative cells are surface-ready). Full battery
+re-verified, zero output changes, zero expectations re-blessed.
 
 Main/score conversion (same pass): further crate corrections blessed —
 kake čislo→**kako čislo** (neuter agreement), shranjeńja→**shrånjeńja**

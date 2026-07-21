@@ -2900,9 +2900,9 @@ dependencies = [
 
 [[package]]
 name = "interslavic"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "049009fc3b5a9711432d116f66e8441a86da6e65f6cb4fde438fda8851a9d06d"
+checksum = "ef7c2c01f4f5a7ede055870bfe249a8564d8fae52782ca44c4e3f19a6eae17cc"
 dependencies = [
  "interslavic-core",
  "phf",
@@ -2910,9 +2910,9 @@ dependencies = [
 
 [[package]]
 name = "interslavic-core"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6ade36ad46b661f62682bb3914b1834fc3004cae69dabb4e1ab5495693615d8"
+checksum = "c86c7c94de6e406636e3c880fd0d397dbfaf8ba6f1964f587757800acda85f28"
 
 [[package]]
 name = "inventory"

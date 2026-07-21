@@ -156,19 +156,16 @@ pub fn v1(inf: &str) -> String {
     })
 }
 
-/// Imperative 2sg ("počivaj"). Imperative cells carry the crate's internal
-/// `ĵ` marker; `cells::variants` is the documented flattening step.
+/// Imperative 2sg ("počivaj") — surface-ready since interslavic 0.11.0.
 pub fn vimp(inf: &str) -> String {
     memo(1, inf, 4, || {
-        let raw = verb_forms(inf)
-            .imperative
-            .first()
-            .cloned()
-            .unwrap_or_else(|| inf.to_string());
-        interslavic::cells::variants(&raw)
-            .into_iter()
-            .next()
-            .unwrap_or(raw)
+        first_variant(
+            verb_forms(inf)
+                .imperative
+                .first()
+                .cloned()
+                .unwrap_or_else(|| inf.to_string()),
+        )
     })
 }
 
@@ -734,17 +731,11 @@ fn render_marker(body: &str) -> String {
             parts[1], &format!("({})", parts[2]),
             Person::Third, Number::Singular, Gender::Masculine, Tense::Present,
         )),
-        // 3sg compound perfect ("jest ukradla") via the paradigm path —
-        // used where the bare l_participle diverges from the paradigm
-        // (crate bug on -sti stems, reported upstream)
+        // 3sg perfect, auxiliary-less (the standard drops the 3rd-person
+        // auxiliary): structured accessor from interslavic 0.11.0.
         "vpf3" => {
-            let raw = verb(parts[1], Person::Third, Number::Singular, parse_gender(parts[2]), Tense::Perfect);
-            // "(je) ukradla": the auxiliary is optional in the 3rd person and
-            // standard usage drops it — take the auxiliary-less variant.
-            interslavic::cells::variants(&raw)
-                .into_iter()
-                .min_by_key(|v| v.len())
-                .unwrap_or(raw)
+            interslavic::perfect_parts(parts[1], Person::Third, Number::Singular, parse_gender(parts[2]))
+                .participle
         }
         // declined comparative agreeing with a registry noun
         "cmp" => {
