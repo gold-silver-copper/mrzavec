@@ -322,7 +322,7 @@ perfective present, same pattern as usneš) — replacing poběđaješ
   naming the intended sense — all 11 pairs annotated with crate
   glosses); the hand-curated SUSPICIOUS set is gone.
 - noun_info now makes fruit gender agreement possible (not yet used).
-||||||| parent of d75edff (Kill message uses imperfective ubivati (ubivaješ))
+
 Kill message aspect (2026-07-22, owner request): ubivati (imperfective)
 over ubiti — "ubivaješ {acc}", plain present narration consistent with
 udarjaješ/raniš, replacing the perfective-present "ubiješ".
@@ -332,3 +332,40 @@ the governed noun form and the agreement (case, number) — the local
 quantified_case/quantified_number inference and its consistency test
 are deleted. Adjectives can no longer desynchronize from nouns by
 construction; the last duplicated grammar logic in the game is gone.
+
+## Webpage (WEBPAGE_PROMPT.md, 2026-07-22)
+
+Static Interslavic prose on web/index.html (about/how-to-play sections).
+Verified against slovowiki `bf041ca` via the check-text page stage in
+scripts/check_lang.sh (`--max-unknown 0`, extraction by
+scripts/extract_page_text.py, lexicon = game-lexicon.tsv +
+web/page-lexicon.tsv). All inflected surface forms were produced by the
+interslavic crate or lang::speak — dump: `cargo run --example page_forms`.
+
+New official words admitted for the page (all **O**, slovowiki
+best-verified; game concepts keep their game lemmas):
+universitet, Kalifornija, dělo, ekran, sistema, svět, kategorija, imę,
+prěvod, język, cělj, povŕhnja, bukva, komnata, koridor, pokušeńje,
+komanda, spis, směr, sȯzdati (create), prijdti (come), črtati (draw),
+širiti (spread), tvoriti, založiti (found), izslědovati (explore),
+bojevati (fight), sbirati (collect), krěpiti (strengthen), strěgti
+(protect), značiti, gotovy, konečny, slučajny, cěly, věrny, neznajemy,
+ukryty, každy, vtory, međuslovjansky, vkupě, dneś, opęť, toliko, kȯgda,
+okolo, potom, poniž, glųboko.
+
+Dissents / notes:
+- goal → **cělj** (top hit "gol" is the sport sense); genre → **kategorija**
+  ("žanr" unattested, "fantastika" wrong sense); win → phrase built on
+  **poběda** to match score.rs's "pȯlna poběda".
+- **dvėri, not dvere**: the in-game help renders ⟨n:dveri:nom:pl⟩ as
+  "dvere", which slovowiki does not know (official lemma is dvėri). The
+  page uses official "dvėri". Follow-up for the game: the help templates
+  are not covered by the gate corpus, and the dveri lemma diverges from
+  the dictionary — worth adding help_text() to the corpus and re-checking.
+- **prišėl** (prijdti) replaced pristųpiti: the dictionary lemma is the
+  phrase "pristųpiti do", so its participle is absent from the forms index.
+- Proper names (Mrzavec, Rogue, roguelike, Toy, Wichman, Arnold, Santa,
+  Cruz, Berkeley, Unix, Rust, …) are pinned in web/page-lexicon.tsv with
+  bare-name glosses so the consistency checker cannot map concepts onto
+  them. "Santa Cruz" is parenthesized in prose to keep it out of
+  preposition government. BSD is skipped by the extractor as an acronym.
