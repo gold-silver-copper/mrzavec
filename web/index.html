@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="isv">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -16,13 +16,12 @@
       body {
         min-height: 100vh;
         margin: 0;
-        display: grid;
-        place-items: center;
       }
 
       main {
         width: min(100%, 984px);
         min-width: 0;
+        margin: 0 auto;
       }
 
       #mrzavec {
@@ -43,6 +42,68 @@
         margin: 0.75rem;
         font-size: 0.875rem;
       }
+
+      section {
+        margin: 2rem 0.75rem 1rem;
+        line-height: 1.6;
+      }
+
+      section p {
+        margin: 0.75rem 0;
+        font-size: 1rem;
+      }
+
+      h2 {
+        font-size: 1.3rem;
+        margin: 0 0 0.5rem;
+        padding-bottom: 0.4rem;
+        border-bottom: 1px solid #333;
+      }
+
+      h3 {
+        font-size: 1.05rem;
+        margin: 1.75rem 0 0.5rem;
+      }
+
+      section ul {
+        margin: 0.75rem 0;
+        padding-left: 1.4rem;
+      }
+
+      section li {
+        margin: 0.35rem 0;
+      }
+
+      .commands {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0.75rem 0;
+      }
+
+      .commands td {
+        padding: 0.35rem 0.6rem 0.35rem 0;
+        border-bottom: 1px solid #222;
+        vertical-align: top;
+      }
+
+      .commands td:first-child {
+        white-space: nowrap;
+        width: 8.5rem;
+      }
+
+      kbd {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        background: #1c1c1c;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 0.05rem 0.35rem;
+        font-size: 0.9em;
+      }
+
+      .note {
+        color: #9a9a90;
+        font-size: 0.9rem;
+      }
     </style>
   </head>
   <body>
@@ -51,9 +112,146 @@
         id="mrzavec"
         tabindex="0"
         autofocus
-        aria-label="Mrzavec game; use the keyboard to play"
+        aria-label="Igra Mrzavec"
       ></canvas>
-      <p id="status">Loading the game…</p>
+      <p id="status">Igra načinaje sę…</p>
+
+      <section>
+        <h2>Čto jest Rogue?</h2>
+        <p>
+          Igrų Rogue sȯzdali Michael Toy i Glenn Wichman okolo goda 1980 na
+          universitetu Kalifornije (Santa Cruz); potom k dělu prišėl Ken
+          Arnold v Berkeley. Igra črtala temnicų na ekranu znakami i širila
+          sę vkupě s sistemojų BSD Unix na universitety cělogo světa. Každa
+          igra tvori novų slučajnų temnicų, a smŕť jest konečna: po smŕti
+          načinaješ opęť od pŕvogo stųpene. Te dvě myslji založili cělų
+          kategorijų igr, ktora dneś nosi imę igry Rogue: «roguelike».
+        </p>
+        <p>
+          Mrzavec jest věrny prěvod igry Rogue 5.4.5 v međuslovjansky
+          język; programa jest v języku Rust.
+        </p>
+      </section>
+
+      <section>
+        <h2>Kako igrati</h2>
+        <p>
+          Ty jesi znak <kbd>@</kbd> v Temnicah Pohibeli. Tvoja cělj: najdti
+          amulet Jendora, ktory čekaje glųboko na 26. stųpeni, i vråtiti sę
+          s njim na povŕhnjų. Igra čekaje na tvoj hod: čudovišča dvigajųt
+          sę jedino kȯgda ty dvigaješ sę. Bukvy na ekranu sųt čudovišča;
+          izslěduješ komnaty i koridory, boriš sę s čudoviščami, sbiraješ
+          zlåto i prědmety. Každa poběda krěpi tę.
+        </p>
+        <ul>
+          <li>Glåd: bez jedy staneš slaby i umreš.</li>
+          <li>
+            Napitky, svitky, pŕsteni i žezla sųt neznajeme do pŕvogo
+            pokušeńja.
+          </li>
+          <li>Brȯnja strěže tę.</li>
+          <li>Ukryte pasti i tajne dvėri najde komanda <kbd>s</kbd>.</li>
+          <li>Smŕť jest konečna — igra ne znaje vtorogo pokušeńja.</li>
+        </ul>
+
+        <h3>Komandy</h3>
+        <table class="commands">
+          <tbody>
+            <tr>
+              <td><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></td>
+              <td>vlěvo · dolu · gorě · vpravo</td>
+            </tr>
+            <tr>
+              <td><kbd>y</kbd> <kbd>u</kbd> <kbd>b</kbd> <kbd>n</kbd></td>
+              <td>
+                gorě i vlěvo · gorě i vpravo · dolu i vlěvo · dolu i vpravo
+              </td>
+            </tr>
+            <tr>
+              <td><kbd>&gt;</kbd> <kbd>&lt;</kbd></td>
+              <td>iti dolu · iti gorě</td>
+            </tr>
+            <tr>
+              <td><kbd>s</kbd></td>
+              <td>iskati pasť / tajne dvėri</td>
+            </tr>
+            <tr>
+              <td><kbd>.</kbd></td>
+              <td>čekati jedin hod</td>
+            </tr>
+            <tr>
+              <td><kbd>,</kbd></td>
+              <td>vzęti něčto</td>
+            </tr>
+            <tr>
+              <td><kbd>i</kbd></td>
+              <td>pokazati torbų</td>
+            </tr>
+            <tr>
+              <td><kbd>q</kbd></td>
+              <td>piti napitȯk</td>
+            </tr>
+            <tr>
+              <td><kbd>r</kbd></td>
+              <td>čitati svitȯk</td>
+            </tr>
+            <tr>
+              <td><kbd>e</kbd></td>
+              <td>jesti jedų</td>
+            </tr>
+            <tr>
+              <td><kbd>w</kbd></td>
+              <td>dŕžati orųžje</td>
+            </tr>
+            <tr>
+              <td><kbd>W</kbd> <kbd>T</kbd></td>
+              <td>nositi brȯnjų · sjęti brȯnjų</td>
+            </tr>
+            <tr>
+              <td><kbd>P</kbd> <kbd>R</kbd></td>
+              <td>naděti pŕstenj · sjęti pŕstenj</td>
+            </tr>
+            <tr>
+              <td><kbd>d</kbd></td>
+              <td>ostaviti prědmet</td>
+            </tr>
+            <tr>
+              <td><kbd>t</kbd> <kbd>dir</kbd></td>
+              <td>metnųti něčto</td>
+            </tr>
+            <tr>
+              <td><kbd>z</kbd> <kbd>dir</kbd></td>
+              <td>užiti žezlo</td>
+            </tr>
+            <tr>
+              <td><kbd>f</kbd> <kbd>dir</kbd></td>
+              <td>boriti sę do smŕti ili skoro do smŕti</td>
+            </tr>
+            <tr>
+              <td><kbd>S</kbd></td>
+              <td>shraniti igrų</td>
+            </tr>
+            <tr>
+              <td><kbd>Q</kbd></td>
+              <td>izhod</td>
+            </tr>
+            <tr>
+              <td><kbd>?</kbd></td>
+              <td>pokazati pomoć</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="note">
+          <kbd>dir</kbd> znači směr. Knopka <kbd>?</kbd> pokaže pȯlny spis
+          komand v igrě.
+        </p>
+
+        <h3>Poběda</h3>
+        <p>
+          Kto vyjde iz Temnic Pohibeli s amuletom, vidi dnevno světlo — to
+          jest pȯlna poběda.
+        </p>
+      </section>
     </main>
     <script type="module">
       // __BUILD__ is replaced with the commit SHA at deploy time so a
@@ -70,10 +268,9 @@
       try {
         await init({ module_or_path: `./pkg/mrzavec_bg.wasm?v=${build}` });
         canvas.focus();
-        status.textContent =
-          "Use Rogue keyboard commands. Click the game if it loses focus.";
+        status.textContent = "Igra načęla sę. Spis komand jest poniž igry.";
       } catch (error) {
-        status.textContent = `Unable to start Mrzavec: ${error}`;
+        status.textContent = `Igra ne načęla sę: ${error}`;
         throw error;
       }
     </script>
