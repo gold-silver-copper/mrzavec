@@ -25,4 +25,19 @@ wasm-bindgen \
     --out-name mrzavec \
     target/wasm32-unknown-unknown/wasm-release/mrzavec.wasm
 
+if command -v wasm-opt >/dev/null 2>&1; then
+    wasm-opt -Oz \
+        --enable-mutable-globals \
+        --enable-sign-ext \
+        --enable-nontrapping-float-to-int \
+        --enable-bulk-memory \
+        --enable-reference-types \
+        --enable-multivalue \
+        -o web/pkg/mrzavec_bg.wasm \
+        web/pkg/mrzavec_bg.wasm
+else
+    echo "wasm-opt not found; skipping the size pass (install binaryen)." >&2
+fi
+
+ls -la web/pkg/mrzavec_bg.wasm
 echo "Built web/pkg. Serve the repository root over HTTP and open web/."
