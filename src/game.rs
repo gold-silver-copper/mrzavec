@@ -803,7 +803,7 @@ impl Game {
             self.player.conditions.asleep_turns -= 1;
             if self.player.conditions.asleep_turns == 0 {
                 self.player_is_running = true;
-                self.message("⟨v2:mogti⟩ opęt dvigati sę");
+                self.message("⟨v2:mogti⟩ opęť dvigati sę");
             }
             self.advance_player_turn();
             return CommandResult::TURN;
@@ -918,18 +918,18 @@ impl Game {
         self.player.food_left = (self.player.food_left + 1100 + self.rng.rnd(400) as i32).min(2000);
         self.hungry_state = 0;
         if fruit {
-            self.message(format!("mmm, {}... kako ⟨adv:vkusny⟩!", self.options.fruit));
+            self.message(format!("mmm, {}... kako ⟨adv:vkųsny⟩!", self.options.fruit));
         } else if self.rng.rnd(100) > 70 {
             self.player.stats.experience += 1;
             self.message(
-                "fuj, ⟨toj:nom:f⟩ ⟨n:jeda:nom⟩ ⟨v3:imati⟩ ⟨a:užasny:vkus:acc⟩ ⟨n:vkus:acc⟩",
+                "fuj, ⟨toj:nom:f⟩ ⟨n:jeda:nom⟩ ⟨v3:imati⟩ ⟨a:užasny:vkųs:acc⟩ ⟨n:vkųs:acc⟩",
             );
             self.check_experience();
         } else {
             self.message(if self.player.conditions.hallucinating {
-                "o, hura, to ⟨lp:byti:n⟩ ⟨adv:vkusny⟩"
+                "o, hura, to ⟨lp:byti:n⟩ ⟨adv:vkųsny⟩"
             } else {
-                "mmm, to ⟨lp:byti:n⟩ ⟨adv:vkusny⟩"
+                "mmm, to ⟨lp:byti:n⟩ ⟨adv:vkųsny⟩"
             });
         }
         CommandResult::TURN
@@ -943,7 +943,7 @@ impl Game {
             self.message(if self.options.terse {
                 "to ne jest ⟨adv:pitny⟩"
             } else {
-                "fuj! Začto by ty hotěl piti to?"
+                "fuj! Začto ⟨v2:hotěti⟩ piti to?"
             });
             return CommandResult::TURN;
         }
@@ -997,7 +997,7 @@ impl Game {
                 self.player.stats.strength = (self.player.stats.strength + 1).min(31);
                 let base_strength = self.player.stats.strength - self.ring_strength_bonus();
                 self.player.max_strength = self.player.max_strength.max(base_strength.clamp(3, 31));
-                self.message("⟨v2:čuti⟩ sę ⟨cav:silny⟩.  ⟨a:kaky:myšca:nom:pl:U⟩ ⟨n:myšca:nom:pl⟩!")
+                self.message("⟨v2:čuti⟩ sę ⟨cav:siľny⟩.  ⟨a:kaky:myšca:nom:pl:U⟩ ⟨n:myšca:nom:pl⟩!")
             }
             4 => {
                 let was_blind = self.player.conditions.blind;
@@ -1007,7 +1007,7 @@ impl Game {
                 self.scheduler
                     .add_or_lengthen(Effect::SeeInvisible, self.rng.spread(850));
                 self.message(format!(
-                    "⟨toj:nom⟩ napitȯk ⟨v3:imati⟩ ⟨n:vkus:acc⟩ ⟨n:sok:gen⟩ iz {}",
+                    "⟨toj:nom⟩ napitȯk ⟨v3:imati⟩ ⟨n:vkųs:acc⟩ ⟨n:sok:gen⟩ iz {}",
                     crate::lang::decl_guess(
                         &self.options.fruit,
                         Case::Gen,
@@ -1016,9 +1016,9 @@ impl Game {
                 ));
                 if was_blind {
                     self.message(if self.player.conditions.hallucinating {
-                        "hura!  Vse opęt jest ⟨adv:kosmičny⟩"
+                        "hura!  Vse opęť jest ⟨adv:kosmičny⟩"
                     } else {
-                        "⟨n:zavěsa:nom⟩ ⟨n:tma:gen⟩ ⟨v3:izčezati⟩"
+                        "⟨n:zavěsa:nom⟩ ⟨n:ťma:gen⟩ ⟨v3:izčezati⟩"
                     });
                 }
             }
@@ -1033,9 +1033,9 @@ impl Game {
                     self.player.conditions.blind = false;
                     self.scheduler.cancel(Effect::Blindness);
                     self.message(if self.player.conditions.hallucinating {
-                        "hura!  Vse opęt jest ⟨adv:kosmičny⟩"
+                        "hura!  Vse opęť jest ⟨adv:kosmičny⟩"
                     } else {
-                        "⟨n:zavěsa:nom⟩ ⟨n:tma:gen⟩ ⟨v3:izčezati⟩"
+                        "⟨n:zavěsa:nom⟩ ⟨n:ťma:gen⟩ ⟨v3:izčezati⟩"
                     });
                 }
                 self.message("⟨v2:načinati⟩ čuti sę ⟨cav:dobry⟩")
@@ -1051,7 +1051,7 @@ impl Game {
                 self.message(if identified {
                     "⟨v2:čuti⟩ ⟨n:blizkosť:acc⟩ ⟨n:čudovišče:gen:pl⟩"
                 } else if self.player.conditions.hallucinating {
-                    "na moment ⟨v2:čuti⟩ sę normalno, potom to ⟨v3:prěhoditi⟩"
+                    "na moment ⟨v2:čuti⟩ sę normaľno, potom to ⟨v3:prěhoditi⟩"
                 } else {
                     "na moment ⟨v2:čuti⟩ sę ⟨adv:divny⟩, potom to ⟨v3:prěhoditi⟩"
                 })
@@ -1061,7 +1061,7 @@ impl Game {
                 self.message(if identified {
                     "⟨v2:čuti⟩ ⟨n:blizkosť:acc⟩ ⟨n:čar:gen:pl⟩ na ⟨toj:loc⟩ ⟨n:stųpenj:loc⟩"
                 } else if self.player.conditions.hallucinating {
-                    "na moment ⟨v2:čuti⟩ sę normalno, potom to ⟨v3:prěhoditi⟩"
+                    "na moment ⟨v2:čuti⟩ sę normaľno, potom to ⟨v3:prěhoditi⟩"
                 } else {
                     "na moment ⟨v2:čuti⟩ sę ⟨adv:divny⟩, potom to ⟨v3:prěhoditi⟩"
                 })
@@ -1091,9 +1091,9 @@ impl Game {
                     self.player.conditions.blind = false;
                     self.scheduler.cancel(Effect::Blindness);
                     self.message(if self.player.conditions.hallucinating {
-                        "hura!  Vse opęt jest ⟨adv:kosmičny⟩"
+                        "hura!  Vse opęť jest ⟨adv:kosmičny⟩"
                     } else {
-                        "⟨n:zavěsa:nom⟩ ⟨n:tma:gen⟩ ⟨v3:izčezati⟩"
+                        "⟨n:zavěsa:nom⟩ ⟨n:ťma:gen⟩ ⟨v3:izčezati⟩"
                     });
                 }
                 if self.player.conditions.hallucinating {
@@ -1112,7 +1112,7 @@ impl Game {
                     self.player.conditions.hasted = false;
                     self.haste_phase = false;
                     self.scheduler.cancel(Effect::Haste);
-                    self.message("⟨v2:padati⟩ v ⟨n:obmråk:acc⟩")
+                    self.message("⟨v2:omlěvati⟩")
                 } else {
                     self.player.conditions.hasted = true;
                     self.scheduler
@@ -1123,7 +1123,7 @@ impl Game {
             11 => {
                 self.player.stats.strength =
                     (self.player.max_strength + self.ring_strength_bonus()).clamp(3, 31);
-                self.message("hej, to je mnogo ⟨adv:vkusny⟩.  ⟨v2:čuti:U⟩ ⟨n:teplo:acc⟩ po ⟨a:veś:tělo:loc⟩ ⟨n:tělo:loc⟩")
+                self.message("hej, to jest mnogo ⟨adv:vkųsny⟩.  ⟨v2:čuti:U⟩ ⟨n:teplo:acc⟩ po ⟨a:veś:tělo:loc⟩ ⟨n:tělo:loc⟩")
             }
             12 => {
                 identified = true;
@@ -1133,7 +1133,7 @@ impl Game {
                 self.message(if self.player.conditions.hallucinating {
                     "o ne!  Vse jest ⟨adv:temny⟩!  Pomoć!"
                 } else {
-                    "⟨n:plašč:nom⟩ ⟨n:tma:gen⟩ ⟨v3:padati⟩ okolo ⟨ty:gen:f⟩"
+                    "⟨n:plašč:nom⟩ ⟨n:ťma:gen⟩ ⟨v3:padati⟩ okolo ⟨ty:gen:f⟩"
                 })
             }
             13 => {
@@ -1207,7 +1207,7 @@ impl Game {
             self.message(if self.options.terse {
                 "ne ⟨v2:imati⟩ ⟨čto:gen⟩ čitati"
             } else {
-                "na ⟨toj:loc⟩ ⟨ničto:gen⟩ ne ⟨v3:pisati⟩"
+                "na ⟨toj:loc⟩ ničto ne jest ⟨pp:napisati:n⟩"
             });
             return CommandResult::TURN;
         }
@@ -1274,7 +1274,7 @@ impl Game {
                 self.message(if held > 1 {
                     "⟨n:čudovišče:nom:pl⟩ okolo ⟨ty:gen:f⟩ ne ⟨v3p:mogti⟩ dvigati sę"
                 } else if held == 1 {
-                    "čudovišče ne može dvigati sę"
+                    "⟨n:čudovišče:nom⟩ ne ⟨v3:mogti⟩ dvigati sę"
                 } else {
                     "⟨v2:imati⟩ ⟨a:divny:čuťje:acc⟩ ⟨n:čuťje:acc⟩ ⟨n:utrata:gen⟩"
                 });
@@ -1453,19 +1453,11 @@ impl Game {
             return CommandResult::FREE;
         }
         if self.player.weapon == Some(id) {
-            self.message(if self.options.terse {
-                "in use"
-            } else {
-                "to uže ⟨v2:koristati⟩"
-            });
+            self.message("to uže ⟨v2:koristati⟩");
             return CommandResult::FREE;
         }
         if self.player.armor == Some(id) || self.player.rings.contains(&Some(id)) {
-            self.message(if self.options.terse {
-                "in use"
-            } else {
-                "to uže ⟨v2:koristati⟩"
-            });
+            self.message("to uže ⟨v2:koristati⟩");
             return CommandResult::FREE;
         }
         let letter = item.pack_letter.unwrap_or('?');
@@ -1524,7 +1516,7 @@ impl Game {
     }
     pub fn take_off(&mut self) -> CommandResult {
         let Some(id) = self.player.armor else {
-            self.message("ne ⟨v2:nositi⟩ ⟨n:brȯnja:gen⟩");
+            self.message("ne ⟨v2:nositi⟩ ⟨n:brȯnja:acc⟩");
             return CommandResult::FREE;
         };
         let item = self
@@ -1565,11 +1557,7 @@ impl Game {
             || self.player.armor == Some(id)
             || self.player.rings.contains(&Some(id))
         {
-            self.message(if self.options.terse {
-                "in use"
-            } else {
-                "to uže ⟨v2:koristati⟩"
-            });
+            self.message("to uže ⟨v2:koristati⟩");
             return CommandResult::TURN;
         }
         if hand > 1 || self.player.rings[hand].is_some() {
@@ -1616,7 +1604,7 @@ impl Game {
     }
     pub fn remove_ring(&mut self, hand: usize) -> CommandResult {
         let Some(id) = self.player.rings.get(hand).copied().flatten() else {
-            self.message("ne ⟨v2:nositi⟩ ⟨taky:gen⟩ ⟨n:pŕstenj:gen⟩");
+            self.message("ne ⟨v2:nositi⟩ ⟨taky:acc⟩ ⟨n:pŕstenj:acc⟩");
             return CommandResult::FREE;
         };
         let ring = self
@@ -1674,7 +1662,7 @@ impl Game {
             .iter()
             .any(|i| i.pos == Some(self.player.pos))
         {
-            self.message("tamo uže něčto jest");
+            self.message("tam uže něčto jest");
             return CommandResult::FREE;
         }
         let Some(index) = self.player.inventory.iter().position(|i| i.id == id) else {
@@ -2196,11 +2184,7 @@ impl Game {
             || self.player.armor == Some(id)
             || self.player.rings.contains(&Some(id))
         {
-            self.message(if self.options.terse {
-                "in use"
-            } else {
-                "to uže ⟨v2:koristati⟩"
-            });
+            self.message("to uže ⟨v2:koristati⟩");
             return CommandResult::TURN;
         }
         let mut projectile = self.player.inventory[index].clone();
@@ -2286,7 +2270,7 @@ impl Game {
         self.runto_monster(index);
         if self.reveal_xeroc(index) {
             self.message(if self.player.conditions.hallucinating {
-                "strašno!  To jest zlo stvorjeńje!"
+                "strašno!  To jest ⟨a:zly:stvorjeńje:nom⟩ ⟨n:stvorjeńje:nom⟩!"
             } else {
                 "⟨vim:počekati⟩!  To jest kserok!"
             });
@@ -2453,7 +2437,7 @@ impl Game {
                         self.message(if self.options.terse {
                             "⟨n:strěla:nom⟩ ⟨v3:izčezati⟩"
                         } else {
-                            "⟨n:strěla:nom⟩ ⟨v3:izčezati⟩ v ⟨n:oblačȯk:loc⟩ ⟨n:dym:gen⟩"
+                            "⟨n:strěla:nom⟩ ⟨v3:izčezati⟩ v ⟨n:oblåk:loc⟩ ⟨n:dym:gen⟩"
                         });
                         self.player.inventory[index].charges -= 1;
                         self.knowledge.sticks[which as usize] = true;
@@ -2503,7 +2487,7 @@ impl Game {
                     self.message(if self.options.terse {
                         "⟨n:strěla:nom⟩ ⟨v3:izčezati⟩"
                     } else {
-                        "⟨n:strěla:nom⟩ ⟨v3:izčezati⟩ v ⟨n:oblačȯk:loc⟩ ⟨n:dym:gen⟩"
+                        "⟨n:strěla:nom⟩ ⟨v3:izčezati⟩ v ⟨n:oblåk:loc⟩ ⟨n:dym:gen⟩"
                     })
                 }
             }
@@ -2622,7 +2606,7 @@ impl Game {
     ) {
         let name = match which {
             2 => "mȯlnja",
-            3 => "plamenj",
+            3 => "plåmenj",
             4 => "led",
             _ => unreachable!(),
         };
@@ -2657,9 +2641,9 @@ impl Game {
                 if !self.monster_saves(index, 3) {
                     if self.monsters[index].kind == 3 && which == 3 {
                         self.message(if self.options.terse {
-                            "⟨n:plamenj:nom⟩ ⟨v3:odskočiti⟩"
+                            "⟨n:plåmenj:nom⟩ ⟨v3:odskočiti⟩"
                         } else {
-                            "⟨n:plamenj:nom⟩ ⟨v3:odskočiti⟩ od ⟨n:drakon:gen⟩"
+                            "⟨n:plåmenj:nom⟩ ⟨v3:odskočiti⟩ od ⟨n:drakon:gen⟩"
                         });
                     } else {
                         self.runto_monster(index);
@@ -2779,9 +2763,9 @@ impl Game {
         let p = self.player.pos.offset(dx, dy);
         let Some(index) = self.monsters.iter().position(|m| m.pos == p) else {
             self.message(if self.options.terse {
-                "tamo ne jest ⟨n:čudovišče:gen⟩"
+                "tam ne jest ⟨n:čudovišče:gen⟩"
             } else {
-                "ne ⟨v2:viděti⟩ tamo ⟨n:čudovišče:gen⟩"
+                "ne ⟨v2:viděti⟩ tam ⟨n:čudovišče:acc⟩"
             });
             return CommandResult::FREE;
         };
@@ -2794,9 +2778,9 @@ impl Game {
         }
         if !self.can_see_monster(&self.monsters[index]) && !self.player.conditions.detect_monsters {
             self.message(if self.options.terse {
-                "tamo ne jest ⟨n:čudovišče:gen⟩"
+                "tam ne jest ⟨n:čudovišče:gen⟩"
             } else {
-                "ne ⟨v2:viděti⟩ tamo ⟨n:čudovišče:gen⟩"
+                "ne ⟨v2:viděti⟩ tam ⟨n:čudovišče:acc⟩"
             });
             return CommandResult::FREE;
         }
@@ -2829,9 +2813,9 @@ impl Game {
         let p = self.player.pos.offset(dx, dy);
         let Some(cell) = self.dungeon.map.get_mut(p) else {
             self.message(if self.options.terse {
-                "tamo ne jest ⟨n:pasť:gen⟩"
+                "tam ne jest ⟨n:pasť:gen⟩"
             } else {
-                "ne ⟨v2:nahoditi⟩ tamo ⟨n:pasť:gen⟩"
+                "ne ⟨v2:nahoditi⟩ tam ⟨n:pasť:acc⟩"
             });
             return CommandResult::FREE;
         };
@@ -2854,9 +2838,9 @@ impl Game {
             })
         } else {
             self.message(if self.options.terse {
-                "tamo ne jest ⟨n:pasť:gen⟩"
+                "tam ne jest ⟨n:pasť:gen⟩"
             } else {
-                "ne ⟨v2:nahoditi⟩ tamo ⟨n:pasť:gen⟩"
+                "ne ⟨v2:nahoditi⟩ tam ⟨n:pasť:acc⟩"
             })
         }
         CommandResult::FREE
@@ -3267,7 +3251,7 @@ impl Game {
                 let random_color =
                     |g: &mut GameRng| lang::COLOR_ADJ[g.rnd(lang::COLOR_ADJ.len() as u32) as usize];
                 let message = match self.rng.rnd(11) {
-                    0 => "naglo ⟨v2:byti⟩ v ⟨a:paralelny:svět:loc⟩ ⟨n:svět:loc⟩".into(),
+                    0 => "naglo ⟨v2:byti⟩ v ⟨a:paraleľny:svět:loc⟩ ⟨n:svět:loc⟩".into(),
                     1 => {
                         let color = random_color(&mut self.rng);
                         let svetlo = lex("světlo", Gender::Neuter, Animacy::Inanimate);
@@ -3277,7 +3261,7 @@ impl Game {
                         )
                     }
                     2 => "⟨v2:čuti⟩ ⟨n:ubod:acc⟩ v ⟨n:šija:loc⟩".into(),
-                    3 => "⟨a:pěstry:linija:nom:pl⟩ ⟨n:linija:nom:pl⟩ ⟨v3p:tancovati⟩ okolo ⟨ty:gen:f⟩ i ⟨v3p:izčezati⟩".into(),
+                    3 => "⟨a:pestry:linija:nom:pl⟩ ⟨n:linija:nom:pl⟩ ⟨v3p:tancevati⟩ okolo ⟨ty:gen:f⟩ i ⟨v3p:izčezati⟩".into(),
                     4 => {
                         let color = random_color(&mut self.rng);
                         let svetlo = lex("světlo", Gender::Neuter, Animacy::Inanimate);
@@ -3291,7 +3275,7 @@ impl Game {
                         let color = random_color(&mut self.rng);
                         let iskra = lex("iskra", Gender::Feminine, Animacy::Inanimate);
                         format!(
-                            "{} ⟨n:iskra:nom:pl⟩ ⟨v3p:tancovati⟩ po ⟨a:tvoj:brȯnja:loc⟩ ⟨n:brȯnja:loc⟩",
+                            "{} ⟨n:iskra:nom:pl⟩ ⟨v3p:tancevati⟩ po ⟨a:tvoj:brȯnja:loc⟩ ⟨n:brȯnja:loc⟩",
                             adj_for(color, &iskra, Case::Nom, Number::Plural)
                         )
                     }
@@ -3311,7 +3295,7 @@ impl Game {
             }
         }
         if self.player.stats.hp <= 0 {
-            self.die("pasti");
+            self.die("⟨n:pasť:gen⟩");
         }
     }
     fn passable(&self, p: Pos) -> bool {
@@ -3360,7 +3344,7 @@ impl Game {
         let mut item = self.floor_items.remove(index);
         if item.kind == ItemKind::Scroll && item.which == 10 && item.dropped_once {
             self.redirect_monsters_from(self.player.pos);
-            self.message("svitȯk ⟨v3:råzpadati⟩ sę v prah, kȯgda ⟨v2:brati⟩ ⟨on:acc:f⟩");
+            self.message("svitȯk ⟨v3:råzpadati⟩ sę v pråh, kȯgda ⟨v2:brati⟩ ⟨on:acc:f⟩");
             return CommandResult::TURN;
         }
         if item.kind == ItemKind::Gold {
@@ -3375,7 +3359,17 @@ impl Game {
             }
             self.player.gold += item.gold_value;
             self.message(if self.options.terse {
-                format!("{} gold pieces", item.gold_value)
+                format!(
+                    "{} {}",
+                    item.gold_value,
+                    interslavic::quantified(
+                        item.gold_value as u64,
+                        crate::lang::GOLD_COIN.lemma,
+                        Case::Nom,
+                        crate::lang::GOLD_COIN.gender,
+                        crate::lang::GOLD_COIN.animacy,
+                    )
+                )
             } else {
                 format!(
                     "⟨v2:nahoditi⟩ {} {}",
@@ -3588,7 +3582,7 @@ impl Game {
         }
         self.depth -= 1;
         self.new_level();
-        self.message("⟨v2:čuti⟩ ⟨a:silny:bolj:acc⟩ ⟨n:bolj:acc⟩ v ⟨n:želųdȯk:loc⟩");
+        self.message("⟨v2:čuti⟩ ⟨a:siľny:bolj:acc⟩ ⟨n:bolj:acc⟩ v ⟨n:želųdȯk:loc⟩");
         CommandResult::FREE
     }
     fn new_level(&mut self) {
@@ -3743,7 +3737,7 @@ impl Game {
         self.runto_monster(index);
         if self.reveal_xeroc(index) {
             self.message(if self.player.conditions.hallucinating {
-                "strašno!  To jest zlo stvorjeńje!"
+                "strašno!  To jest ⟨a:zly:stvorjeńje:nom⟩ ⟨n:stvorjeńje:nom⟩!"
             } else {
                 "⟨vim:počekati⟩!  To jest kserok!"
             });
@@ -3895,7 +3889,7 @@ impl Game {
             Some(subject) => {
                 const MONSTER: [&str; 4] = [
                     "odlično ⟨v3:udarjati⟩",
-                    "udarja",
+                    "⟨v3:udarjati⟩",
                     "⟨v3:raniti⟩",
                     "⟨v3:mahati⟩ i ⟨v3:udarjati⟩",
                 ];
@@ -4146,9 +4140,9 @@ impl Game {
                     self.scheduler.add_or_lengthen(Effect::Confusion, duration);
                     let name = self.monster_message_name(index, Case::Gen);
                     self.message(if name == "ono" || name == "něčto" {
-                        "⟨on:gen:f⟩ ⟨n:pogled:nom⟩ ⟨ty:acc⟩ ⟨lp:smųtiti:m⟩".into()
+                        "⟨on:gen:f⟩ ⟨n:poględ:nom⟩ ⟨ty:acc⟩ ⟨lp:smųtiti:m⟩".into()
                     } else {
-                        format!("⟨n:pogled:nom⟩ {name} ⟨ty:acc⟩ ⟨lp:smųtiti:m⟩")
+                        format!("⟨n:poględ:nom⟩ {name} ⟨ty:acc⟩ ⟨lp:smųtiti:m⟩")
                     });
                 }
             }
@@ -4552,7 +4546,7 @@ impl Game {
                     self.message(if self.options.terse {
                         "ne ⟨v2:mogti⟩ dvigati sę".into()
                     } else {
-                        format!("{attacker_name} ⟨ty:acc⟩ ⟨v3:zamråžati⟩")
+                        format!("{attacker_name} ⟨ty:acc⟩ ⟨v3:zamražati⟩")
                     });
                 }
                 if self.player.conditions.asleep_turns > 50 {
@@ -4723,8 +4717,8 @@ impl Game {
             let old_food = self.player.food_left;
             self.player.food_left -= 1;
             if old_food < -850 {
-                self.die("⟨n:glad:gen⟩");
-                self.message("⟨n:glad:nom⟩ ⟨ty:acc⟩ ⟨lp:ubiti:m⟩");
+                self.die("⟨n:glåd:gen⟩");
+                self.message("⟨n:glåd:nom⟩ ⟨ty:acc⟩ ⟨lp:ubiti:m⟩");
             } else if self.player.conditions.asleep_turns == 0 && self.rng.rnd(5) == 0 {
                 self.player.conditions.asleep_turns += self.rng.rnd(8) + 4;
                 self.hungry_state = 3;
@@ -4732,12 +4726,12 @@ impl Game {
                     if self.options.terse {
                         "Panika!"
                     } else {
-                        "⟨n:glad:nom⟩ ⟨v3:prěmagati⟩ ⟨ty:acc⟩.  Panika!"
+                        "⟨n:glåd:nom⟩ ⟨v3:prěmagati⟩ ⟨ty:acc⟩.  Panika!"
                     }
                 } else if self.options.terse {
-                    "⟨v2:padati:U⟩ v ⟨n:obmråk:acc⟩"
+                    "⟨v2:omlěvati:U⟩"
                 } else {
-                    "od ⟨n:nedostatȯk:gen⟩ ⟨n:jeda:gen⟩ ne ⟨v2:imati⟩ ⟨n:sila:gen:pl⟩.  ⟨v2:padati:U⟩ v ⟨n:obmråk:acc⟩"
+                    "od ⟨n:nedostatȯk:gen⟩ ⟨n:jeda:gen⟩ ne ⟨v2:imati⟩ ⟨n:sila:gen:pl⟩.  ⟨v2:omlěvati:U⟩"
                 });
             }
             return;
@@ -4769,18 +4763,18 @@ impl Game {
         if self.player.food_left < 150 && old_food >= 150 {
             self.hungry_state = 2;
             self.message(if self.player.conditions.hallucinating {
-                "od ⟨n:glad:gen⟩ ne ⟨v2:mogti⟩ dobro dvigati sę"
+                "od ⟨n:glåd:gen⟩ ne ⟨v2:mogti⟩ dobro dvigati sę"
             } else {
-                "⟨v2:načinati⟩ čuti sę slaby"
+                "⟨v2:načinati⟩ čuti sę ⟨adv:slaby⟩"
             })
         } else if self.player.food_left < 300 && old_food >= 300 {
             self.hungry_state = 1;
             self.message(if self.player.conditions.hallucinating {
                 "⟨v2:imati⟩ ⟨a:veliky:apetit:acc⟩ ⟨n:apetit:acc⟩"
             } else if self.options.terse {
-                "⟨v2:čuti⟩ ⟨n:glad:acc⟩"
+                "⟨v2:čuti⟩ ⟨n:glåd:acc⟩"
             } else {
-                "⟨v2:načinati⟩ čuti ⟨n:glad:acc⟩"
+                "⟨v2:načinati⟩ čuti ⟨n:glåd:acc⟩"
             })
         }
     }
@@ -4836,9 +4830,9 @@ impl Game {
                 Effect::Blindness => {
                     self.player.conditions.blind = false;
                     self.message(if self.player.conditions.hallucinating {
-                        "hura!  Vse opęt jest ⟨adv:kosmičny⟩"
+                        "hura!  Vse opęť jest ⟨adv:kosmičny⟩"
                     } else {
-                        "⟨n:zavěsa:nom⟩ ⟨n:tma:gen⟩ ⟨v3:izčezati⟩"
+                        "⟨n:zavěsa:nom⟩ ⟨n:ťma:gen⟩ ⟨v3:izčezati⟩"
                     });
                 }
                 Effect::Levitation => {
@@ -4846,7 +4840,7 @@ impl Game {
                     self.message(if self.player.conditions.hallucinating {
                         "buh!  ⟨v2:padati:U⟩ na ⟨n:zemja:acc⟩"
                     } else {
-                        "legko ⟨v2:spuščati⟩ sę na ⟨n:zemja:acc⟩"
+                        "legko ⟨v2:spušćati⟩ sę na ⟨n:zemja:acc⟩"
                     });
                 }
                 Effect::Haste => {
@@ -5573,7 +5567,7 @@ mod tests {
         assert_eq!(down.depth, 1);
         assert_eq!(
             down.messages.last().map(String::as_str),
-            Some("čuješ silny bolj v želųdku")
+            Some("čuješ siľny bolj v želųdku")
         );
     }
 
@@ -5672,7 +5666,7 @@ mod tests {
         assert_eq!(
             g.messages,
             [
-                "hura!  Vse opęt jest kosmično",
+                "hura!  Vse opęť jest kosmično",
                 "vse sejčas izględaje TAKO nudno.",
                 "načinaješ čuti sę mnogo lěpje",
             ]
@@ -5895,7 +5889,7 @@ mod tests {
         assert_eq!(g.execute(Command::Search), CommandResult::TURN);
         assert_eq!(g.player.conditions.asleep_turns, 0);
         assert!(g.player_is_running);
-        assert_eq!(g.messages.last().unwrap(), "možeš opęt dvigati sę");
+        assert_eq!(g.messages.last().unwrap(), "možeš opęť dvigati sę");
     }
 
     #[test]
@@ -5907,9 +5901,9 @@ mod tests {
             g.trigger_trap();
             let message = g.messages.last().unwrap();
             let fixed = [
-                "naglo jesi v paralelnom světu",
+                "naglo jesi v paraleľnom světu",
                 "čuješ ubod v šiji",
-                "pěstre linije tancujųt okolo tebe i izčezajųt",
+                "pestre linije tancujųt okolo tebe i izčezajųt",
                 "strěla leti mimo tvojego uha!",
                 "naglo čuješ velikų žęđų",
                 "čas naglo běži bystrěje",
@@ -6959,7 +6953,7 @@ mod tests {
         g.pickup();
         assert!(g.floor_items.is_empty());
         assert!(!g.player.inventory.iter().any(|i| i.id == id));
-        assert!(g.messages.last().unwrap().contains("prah"))
+        assert!(g.messages.last().unwrap().contains("pråh"))
     }
 
     #[test]
@@ -7864,7 +7858,7 @@ mod tests {
         assert_eq!(g.read_scroll(food), CommandResult::TURN);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("na tom ničego ne piše")
+            Some("na tom ničto ne jest napisano")
         );
 
         let scroll = g.id();
@@ -8086,7 +8080,7 @@ mod tests {
 
         assert_eq!(
             g.messages.last().unwrap(),
-            "na moment čuješ sę normalno, potom to prěhodi"
+            "na moment čuješ sę normaľno, potom to prěhodi"
         );
     }
 
@@ -8135,7 +8129,7 @@ mod tests {
         assert!(!g.monsters[0].awake);
         assert_ne!(g.monsters[0].flags & monster::HELD, 0);
         assert_eq!(g.monsters[0].destination, Some(g.dungeon.stairs));
-        assert_eq!(g.messages.last().unwrap(), "strěla izčezaje v oblačku dyma");
+        assert_eq!(g.messages.last().unwrap(), "strěla izčezaje v oblåku dyma");
     }
 
     #[test]
@@ -8441,7 +8435,7 @@ mod tests {
         assert!(!result.consumed_turn);
         assert!(g.player.inventory.iter().any(|item| item.id == food));
         assert!(g.floor_items.is_empty());
-        assert_eq!(g.messages.last().unwrap(), "tamo uže něčto jest");
+        assert_eq!(g.messages.last().unwrap(), "tam uže něčto jest");
     }
 
     #[test]
@@ -8745,7 +8739,7 @@ mod tests {
         assert!(
             g.messages
                 .iter()
-                .any(|message| message == "plamenj odskoči")
+                .any(|message| message == "plåmenj odskoči")
         );
     }
 
@@ -9015,7 +9009,7 @@ mod tests {
         assert_eq!(g.player.stats.hp, hp);
         assert!(g.player.conditions.asleep_turns >= 2);
         assert!(!g.player_is_running);
-        assert_eq!(g.messages.last().unwrap(), "ledeno čudovišče tę zamråžaje");
+        assert_eq!(g.messages.last().unwrap(), "leděno čudovišče tę zamražaje");
     }
 
     #[test]
@@ -9110,7 +9104,7 @@ mod tests {
 
         assert!(!result.consumed_turn);
         assert_eq!(g.monsters.len(), 1);
-        assert_eq!(g.messages.last().unwrap(), "ne vidiš tamo čudovišča");
+        assert_eq!(g.messages.last().unwrap(), "ne vidiš tam čudovišče");
     }
 
     #[test]
@@ -9157,7 +9151,7 @@ mod tests {
         g.fight_direction(Direction::Right, false);
 
         assert_eq!(g.monsters[0].hp, hp);
-        assert_eq!(g.messages.last().unwrap(), "tamo ne jest čudovišča");
+        assert_eq!(g.messages.last().unwrap(), "tam ne jest čudovišča");
     }
 
     #[test]
@@ -9543,7 +9537,7 @@ mod tests {
         g.digest();
         assert_eq!(g.player.food_left, -852);
         assert_eq!(g.end, EndState::Dead);
-        assert_eq!(g.death_cause.as_deref(), Some("glada"));
+        assert_eq!(g.death_cause.as_deref(), Some("glåda"));
     }
 
     #[test]
@@ -9558,7 +9552,7 @@ mod tests {
                 .push(Item::basic(food, ItemKind::Food, 0));
             g.eat(food);
             if g.player.stats.experience == 1 {
-                assert_eq!(g.messages.last().unwrap(), "fuj, ta jeda imaje užasny vkus");
+                assert_eq!(g.messages.last().unwrap(), "fuj, ta jeda imaje užasny vkųs");
                 found = true;
                 break;
             }
@@ -9674,7 +9668,7 @@ mod tests {
         assert_eq!(g.quaff(food), CommandResult::TURN);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("fuj! Začto by ty hotěl piti to?")
+            Some("fuj! Začto hoćeš piti to?")
         );
 
         let potion = g.id();
@@ -9828,7 +9822,7 @@ mod tests {
         g.tick_effects();
 
         assert!(!g.player.conditions.levitating);
-        assert_eq!(g.messages.last().unwrap(), "legko spuščaješ sę na zemjų");
+        assert_eq!(g.messages.last().unwrap(), "legko spušćaješ sę na zemjų");
     }
 
     #[test]
@@ -10032,7 +10026,7 @@ mod tests {
         assert!(!g.dungeon.map.get(pos).unwrap().trap_revealed);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("ne nahodiš tamo pasti")
+            Some("ne nahodiš tam pasť")
         );
     }
 
@@ -10048,7 +10042,7 @@ mod tests {
 
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("ne nahodiš tamo pasti")
+            Some("ne nahodiš tam pasť")
         );
     }
 
@@ -10337,7 +10331,7 @@ mod tests {
         g.options.terse = true;
         g.player.armor = None;
         g.take_off();
-        assert_eq!(g.messages.last().unwrap(), "ne nosiš brȯnje");
+        assert_eq!(g.messages.last().unwrap(), "ne nosiš brȯnjų");
 
         let food = g.id();
         g.player
@@ -10403,7 +10397,7 @@ mod tests {
         more_gold.pos = Some(gold_game.player.pos);
         gold_game.floor_items.push(more_gold);
         gold_game.pickup();
-        assert_eq!(gold_game.messages.last().unwrap(), "7 gold pieces");
+        assert_eq!(gold_game.messages.last().unwrap(), "7 zlåtnikov");
     }
 
     #[test]

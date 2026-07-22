@@ -7,6 +7,8 @@ Orųž   # footer abbreviation of orųžje (80-col limit)
 Ostav  # footer abbreviation of ostaviti (80-col limit)
 Stųp   # status abbreviation of stųpenj (80-col limit)
 Brȯn   # status abbreviation of brȯnja (80-col limit)
+Zdr    # status abbreviation of zdravje (80-col limit)
+Izk    # status abbreviation of izkušeńje (80-col limit)
 dolu   # directional adverb (steen: adverbs of place), homographic with dol Loc
 gorě   # directional adverb, homographic with gora Loc
 dir    # UI placeholder token <dir> in help text, not language (collides with dira gen.pl)

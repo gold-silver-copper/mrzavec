@@ -73,7 +73,7 @@ kvarc	noun	m	inanim	stone
 laz	noun	m	inanim	trapdoor
 lazurit	noun	m	inanim	stone
 lazurny	adj			attributive
-ledeny	adj			attributive
+leděny	adj			attributive
 leprekon	noun	m	anim	leprechaun
 levitacija	noun	f	inanim	levitation
 lipa	noun	f	inanim	wood
@@ -101,7 +101,6 @@ netopyŕ	noun	m	anim	bat
 nevidimosť	noun	f	inanim	invisibility
 nikelj	noun	m	inanim	metal
 nimfa	noun	f	anim	nymph
-obmråk	noun	m	inanim	swoon
 obsidian	noun	m	inanim	stone
 okovany	adj			attributive
 oljha	noun	f	inanim	wood
@@ -148,6 +147,7 @@ srěbrny	adj			attributive
 srěbro	noun	n	inanim	metal
 strěla	noun	f	inanim	arrow
 strělny	adj			attributive
+suspend	noun	m	inanim	the suspend command
 svitȯk	noun	m	inanim	scroll
 světly	adj			attributive
 sěry	adj			attributive

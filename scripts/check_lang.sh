@@ -25,4 +25,6 @@ cd "$SLOVOWIKI"
 cd "$REPO"
 python3 scripts/lint_inflection.py
 # Stage 3: preposition-government lint (STYLE_PASS_2_PROMPT.md).
-exec python3 scripts/lint_government.py
+python3 scripts/lint_government.py
+# Stage 4: strict lemma-spelling lint — the fold-blind gate closer.
+exec python3 scripts/lint_spelling.py

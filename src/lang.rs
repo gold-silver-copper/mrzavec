@@ -308,7 +308,7 @@ pub const MONSTER_LEX: [Phrase; 26] = [
     ph(None, lex("muholovka", Feminine, Inanimate)), // F venus flytrap
     ph(None, lex("inog", Masculine, Animate)),    // G griffin (generated)
     ph(None, lex("goblin", Masculine, Animate)),  // H hobgoblin (generated)
-    ph(Some("ledeny"), lex("čudovišče", Neuter, Inanimate)), // I ice monster
+    ph(Some("leděny"), lex("čudovišče", Neuter, Inanimate)), // I ice monster
     ph(None, lex("žabervok", Masculine, Animate)), // J jabberwock (coined)
     ph(None, lex("sokol", Masculine, Animate)),   // K kestrel (subst.: falcon)
     ph(None, lex("leprekon", Masculine, Animate)), // L leprechaun (generated)
@@ -777,11 +777,11 @@ fn reg(lemma: &str) -> Option<Lex> {
             lex("světlo", Neuter, Inanimate),
             lex("iskra", Feminine, Inanimate),
             lex("linija", Feminine, Inanimate),
-            lex("tma", Feminine, Inanimate),
+            lex("ťma", Feminine, Inanimate),
             lex("mgla", Feminine, Inanimate),
-            lex("prah", Masculine, Inanimate),
+            lex("pråh", Masculine, Inanimate),
             lex("sok", Masculine, Inanimate),
-            lex("vkus", Masculine, Inanimate),
+            lex("vkųs", Masculine, Inanimate),
             lex("zapah", Masculine, Inanimate),
             lex("teplo", Neuter, Inanimate),
             lex("směh", Masculine, Inanimate),
@@ -791,15 +791,15 @@ fn reg(lemma: &str) -> Option<Lex> {
             lex("prohod", Masculine, Inanimate),
             lex("komnata", Feminine, Inanimate),
             lex("voda", Feminine, Inanimate),
-            lex("plamenj", Masculine, Inanimate),
+            lex("plåmenj", Masculine, Inanimate),
             lex("dym", Masculine, Inanimate),
-            lex("oblačȯk", Masculine, Inanimate),
+            lex("oblåk", Masculine, Inanimate),
             lex("zvųk", Masculine, Inanimate),
             lex("karta", Feminine, Inanimate),
             lex("parola", Feminine, Inanimate),
             lex("čarovnik", Masculine, Animate),
             lex("čar", Masculine, Inanimate),
-            lex("glad", Masculine, Inanimate),
+            lex("glåd", Masculine, Inanimate),
             lex("slabosť", Feminine, Inanimate),
             lex("nedostatȯk", Masculine, Inanimate),
             lex("jedeńje", Neuter, Inanimate),
@@ -836,11 +836,11 @@ fn reg(lemma: &str) -> Option<Lex> {
             lex("dvėri", Feminine, Inanimate),
             lex("stěna", Feminine, Inanimate),
             lex("poběda", Feminine, Inanimate),
-            lex("ime", Neuter, Inanimate),
+            lex("imę", Neuter, Inanimate),
             lex("vȯzduh", Masculine, Inanimate),
             lex("jedinstvo", Neuter, Inanimate),
             lex("ščit", Masculine, Inanimate),
-            lex("pogled", Masculine, Inanimate),
+            lex("poględ", Masculine, Inanimate),
             lex("stųpenj", Masculine, Inanimate),
             lex("hlåd", Masculine, Inanimate),
             lex("nos", Masculine, Inanimate),
@@ -853,7 +853,9 @@ fn reg(lemma: &str) -> Option<Lex> {
             lex("myšca", Feminine, Inanimate),
             lex("želųdȯk", Masculine, Inanimate),
             lex("struja", Feminine, Inanimate),
-            lex("obmråk", Masculine, Inanimate),
+            lex("mŕzavec", Masculine, Animate),
+            lex("prěględka", Feminine, Inanimate),
+            lex("stvorjeńje", Neuter, Inanimate),
             lex("plašč", Masculine, Inanimate),
             lex("zavěsa", Feminine, Inanimate),
             lex("apetit", Masculine, Inanimate),
@@ -1125,7 +1127,7 @@ mod tests {
         use interslavic::{Person, PronounStyle};
         assert_eq!(v2("udarjati"), "udarjaješ");
         assert_eq!(v3("udarjati"), "udarjaje");
-        assert_eq!(v3pl("tancovati"), "tancujųt");
+        assert_eq!(v3pl("tancevati"), "tancujųt");
         assert_eq!(vimp("počivati"), "počivaj");
         assert_eq!(lpart("ubiti", Gender::Feminine, Number::Singular), "ubila");
         assert_eq!(
@@ -1174,7 +1176,7 @@ mod tests {
 
     #[test]
     fn speak_renders_markers() {
-        assert_eq!(speak("⟨v2:čuti⟩ sę ⟨cav:silny⟩"), "čuješ sę silněje");
+        assert_eq!(speak("⟨v2:čuti⟩ sę ⟨cav:siľny⟩"), "čuješ sę siľněje");
         assert_eq!(
             speak("⟨n:strěla:nom⟩ ⟨ty:acc⟩ ⟨lp:ubiti:f⟩"),
             "strěla tę ubila"
@@ -1373,7 +1375,11 @@ mod tests {
         );
         noun_into(&mut rows, &lex("pohibel", Feminine, Inanimate), "doom");
         noun_into(&mut rows, &lex("Jendor", Masculine, Inanimate), "Yendor");
-        noun_into(&mut rows, &lex("obmråk", Masculine, Inanimate), "swoon");
+        noun_into(
+            &mut rows,
+            &lex("suspend", Masculine, Inanimate),
+            "the suspend command",
+        );
         // Help-screen vocabulary (the corpus renders HELP_ENTRIES): two
         // deliberate technical loans. (The vzęti gerund was reworded away:
         // its oblique cases are absent from the official forms index and the

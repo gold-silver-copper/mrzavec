@@ -385,3 +385,68 @@ Dissents / notes:
   bare-name glosses so the consistency checker cannot map concepts onto
   them. "Santa Cruz" is parenthesized in prose to keep it out of
   preposition government. BSD is skipped by the extractor as an acronym.
+
+## Full sweep (2026-07-22, slovowiki f8dc218)
+
+Three-reviewer sweep (game messages / screens / vocabulary) plus machine
+triage of all ungated warnings. Changes:
+
+**Spelling vs official headwords** (the gates fold diacritics, so these
+passed silently; now enforced forever by `scripts/lint_spelling.py`,
+stage 4 of check_lang.sh): glad→glåd, tma→ťma, opęt→opęť, vkus(ny)→
+vkųs(ny), silny→siľny, silněje→siľněje, normalno→normaľno,
+plamenj→plåmenj, prah→pråh, paralelny→paraleľny, pěstry→pestry
+(over-etymologized), tancovati→tancevati, spuščati→spušćati (šć!),
+prokleto→⟨pp:proklęti:n⟩, pravilny→praviľny, ime→imę, ledeny→leděny,
+poględ (was pogled), pråzdny (was prazdny), zamražati (was zamråžati —
+the official headword has no å), iti→idti (iti was generated-grade).
+oblačȯk: dictionary headword is oblaček, but the crate cannot decline
+its mobile e (gives "oblačeku"); replaced with plain oblåk ("v oblåku
+dyma") per rule 5 (restructure over hand-fixing forms).
+
+**English leftovers translated**: terse "gold pieces" → quantified
+zlåtnik; terse "in use" ×4 → "to uže koristaješ"; browser → prěględka
+(official); "suspend" pinned as a project row (command name, like shell).
+
+**Gender-neutrality repairs**: "Začto by ty hotěl piti to?" → "Začto
+hoćeš piti to?"; "čuti sę slaby" → ⟨adv:slaby⟩ ("slabo").
+
+**Grammar**: tam (static location) replaces directional tamo in nine
+messages (steen correlatives); negated direct objects normalized to the
+accusative convention (nositi brȯnjų / taky pŕstenj, viděti čudovišče,
+nahoditi pasť) — existential "ne jest + gen" stays; "na tom ničego ne
+piše" → "ničto ne jest napisano"; monster hit variant "udarja" →
+⟨v3:udarjati⟩ (-aje standard); "je" → "jest"; zlo stvorjeńje → agreeing
+markers (stvorjeńje registered); die("pasti") and "vid pasti" →
+⟨n:pasť:gen⟩ markers; nom markers in acc slots fixed (tajne dvėri,
+kako čislo); verbose prompt "kaky prědmet hoćeš viděti? " gets its
+question mark; score header "Pȯlna"→"pȯlna" (no :U mid-line).
+
+**Vocabulary**: omlěvati/omlěti (faint) is now official — replaces
+"padaješ v obmråk" ×3; obmråk project row retired. "Top 10 rogueistov"
+(undocumented ad-hoc coinage) → "10 mŕzavcev" (official mŕzavec
+'villain, scoundrel, rogue' — also the game's namesake). 19 G-grade
+entries re-audited: all others confirmed best available.
+
+**Naming**: display name is now Mŕzavec (official spelling) — window
+title, page title/aria/prose. Crate/binary/repo/URL stay ASCII
+"mrzavec".
+
+**Status line**: Hp→Zdr (zdravje), Exp→Izk (izkušeńje) — status
+abbreviations carry no period (footer abbreviations do, with a trailing
+period, for the 80-col limit); both classes live in
+scripts/inflection-allow.txt. This sentence is the abbreviation
+convention of record.
+
+**Valence table addition**: slědovati + Dat (follow) — pan-Slavic
+frame (ru следовать кому/чему), used in the passgo option label.
+
+**Known crate/dictionary divergence** (reported, not changed): the
+crate declines official pancyŕ as "panciŕ" in every cell including
+Nom; rendered text is self-consistent, upstream issue filed against
+interslavic-rs alongside the earlier ukrasla report.
+
+**Deliberate keeps**: "skoro do smŕti" (official 'almost' sense,
+in-game help wording); pokušeńje; poniž; sjęti; pohibel; the page's
+"ne znaje vtorogo pokušeńja" genitive (steen-sanctioned, prose
+register).

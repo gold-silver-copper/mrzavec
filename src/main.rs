@@ -386,8 +386,8 @@ fn selected_seed(fallback: u64, options: &mrzavec::game::Options) -> u64 {
 #[cfg(not(target_arch = "wasm32"))]
 fn usage(program: &str, options: &mrzavec::game::Options) -> String {
     format!(
-        "Upotrěba: {program} [-SrdVh] [-s [fajl_rezultatov]] [fajl_shranjeńja]\n\n\
-         \t-S\t\tpri signalu izhod bez shranjeńja\n\
+        "Upotrěba: {program} [-SrdVh] [-s [fajl_rezultatov]] [fajl_shrånjeńja]\n\n\
+         \t-S\t\tpri signalu izhod bez shrånjeńja\n\
          \t-r\t\tignoruje sę (kompatibilnosť)\n\
          \t-s [fajl]\tpokazati spisȯk rezultatov\n\
          \t-d\t\tubiti igrača i råzsčitati rezultat\n\
@@ -549,7 +549,9 @@ fn main() {
         Ok(None) => Game::new(seed),
         Err(error) => {
             let mut game = Game::new(seed);
-            game.message(format!("ne možno obnoviti shranjeńje iz browsera: {error}"));
+            game.message(format!(
+                "ne možno obnoviti shrånjeńje iz ⟨n:prěględka:gen⟩: {error}"
+            ));
             game
         }
     };
@@ -602,7 +604,7 @@ fn game_app(game: Game, wizard_prompt: bool) -> App {
 
 fn game_window() -> Window {
     let window = Window {
-        title: "Rogue 5.4.5 — Mrzavec".into(),
+        title: "Rogue 5.4.5 — Mŕzavec".into(),
         resolution: WindowResolution::new(
             (CELL_W * DISPLAY_WIDTH as f32 + 24.0) as u32,
             (CELL_H * DISPLAY_HEIGHT as f32 + 24.0) as u32,
@@ -641,7 +643,7 @@ fn handle_termination_signal(
         return;
     }
     if let Err(error) = apply_termination_signal(&mut state.game, signal.signal_quit) {
-        eprintln!("Avtomatično shranjeńje ne udalo sę: {error}");
+        eprintln!("Avtomatično shrånjeńje ne udalo sę: {error}");
     }
     app_exit.write(AppExit::Success);
 }
@@ -687,13 +689,6 @@ fn finalize_end(mut state: ResMut<State>) {
             ),
             winner_sales_text(&state.game),
             score::amount(&state.game),
-            table
-        ),
-        mrzavec::game::EndState::Dead if state.game.options.tombstone => format!(
-            "                       __________\n                      /  POČIVAJ   \\\n                     /      V       \\\n                    /      MIRU      \\\n\n                 Smŕť od {}\n                  Zlåto: {}\n                 Stųpenj: {}\n\n{}",
-            death_cause_gen(&state.game),
-            score::amount(&state.game),
-            state.game.depth,
             table
         ),
         mrzavec::game::EndState::Dead => format!(
@@ -1208,7 +1203,7 @@ fn keyboard(
                 }
                 Pending::SaveFileText => {
                     if input.is_empty() {
-                        state.modal = Some(remembered_prompt(&mut state, "ime ⟨n:fajl:gen⟩: "));
+                        state.modal = Some(remembered_prompt(&mut state, "imę ⟨n:fajl:gen⟩: "));
                         return;
                     }
                     state.game.options.save_file = mrzavec::game::normalize_option_string(&input);
@@ -1243,7 +1238,7 @@ fn keyboard(
                     format!("{}{}", call_prompt(&state.game), state.input_buffer)
                 }
                 Pending::SaveFileText => {
-                    format!("{}{}", speak("ime ⟨n:fajl:gen⟩: "), state.input_buffer)
+                    format!("{}{}", speak("imę ⟨n:fajl:gen⟩: "), state.input_buffer)
                 }
                 Pending::WizardCreateGold => format!("koliko?{}", state.input_buffer),
                 _ => unreachable!(),
@@ -1384,7 +1379,7 @@ fn keyboard(
                 (Pending::SaveConfirm, 'n') => {
                     state.input_buffer.clear();
                     state.pending = Some(Pending::SaveFileText);
-                    state.modal = Some(remembered_prompt(&mut state, "ime ⟨n:fajl:gen⟩: "));
+                    state.modal = Some(remembered_prompt(&mut state, "imę ⟨n:fajl:gen⟩: "));
                 }
                 (Pending::SaveOverwrite, 'n') => {
                     state.pending = Some(Pending::SaveConfirm);
@@ -1640,7 +1635,7 @@ fn keyboard(
                         )
                     }
                     Pending::SaveFileText => {
-                        format!("{}{}", speak("Ime ⟨n:fajl:gen⟩: "), state.input_buffer)
+                        format!("{}{}", speak("Imę ⟨n:fajl:gen⟩: "), state.input_buffer)
                     }
                     Pending::WizardCreateGold => format!("Koliko?{}", state.input_buffer),
                     _ => unreachable!(),
@@ -1946,7 +1941,9 @@ fn keyboard(
                 }
             }
             #[cfg(target_arch = "wasm32")]
-            state.game.message("shell ne jest dostųpny v browseru");
+            state
+                .game
+                .message("shell ne jest dostųpny v ⟨n:prěględka:loc⟩");
             None
         }
         Command::Suspend => {
@@ -1979,7 +1976,7 @@ fn keyboard(
             if cursed_weapon {
                 state
                     .game
-                    .message("ne ⟨v2:mogti⟩.  ⟨v3:izględati:U⟩, že to jest prokleto");
+                    .message("ne ⟨v2:mogti⟩.  ⟨v3:izględati:U⟩, že to jest ⟨pp:proklęti:n⟩");
                 state
                     .game
                     .finish_action(mrzavec::command::CommandResult::TURN);
@@ -2234,7 +2231,7 @@ fn resolve_quit_confirmation(state: &mut State, ch: char) {
 }
 
 fn save_confirmation(game: &Game) -> String {
-    format!("shraniti fajl ({})? ", game.options.save_file)
+    format!("shråniti fajl ({})? ", game.options.save_file)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -2274,10 +2271,10 @@ fn save_and_exit(state: &mut State, app_exit: &mut MessageWriter<AppExit>) {
         Err(error) => {
             state
                 .game
-                .message(format!("shranjeńje ne udalo sę: {error}"));
+                .message(format!("shrånjeńje ne udalo sę: {error}"));
             state.pending = Some(Pending::SaveFileText);
             state.input_buffer.clear();
-            state.modal = Some(remembered_prompt(state, "ime ⟨n:fajl:gen⟩: "));
+            state.modal = Some(remembered_prompt(state, "imę ⟨n:fajl:gen⟩: "));
         }
     }
 }
@@ -2529,7 +2526,7 @@ fn continue_counted_command(state: &mut State) {
 fn ground_inventory_modal(state: &mut State) -> Option<String> {
     if state.game.floor_items.is_empty() {
         state.game.message(if state.game.options.terse {
-            "⟨a:prazdny:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩"
+            "⟨a:pråzdny:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩"
         } else {
             "ne ⟨v2:imati⟩ ⟨ničto:gen⟩"
         });
@@ -2604,7 +2601,7 @@ fn wizard_which_prompt(kind: ItemKind) -> String {
         (b'a' + highest - 10) as char
     };
     speak(&format!(
-        "{} ({}) — ⟨a:kaky:čislo:nom⟩ čislo ⟨v2:hotěti⟩? (0-{highest})",
+        "{} ({}) — ⟨a:kaky:čislo:acc⟩ čislo ⟨v2:hotěti⟩? (0-{highest})",
         kind.glyph(),
         wizard_kind_name(kind)
     ))
@@ -2817,7 +2814,7 @@ fn select_item_menu(state: &mut State, pending: Pending) -> Option<String> {
     Some(text)
 }
 fn retry_invalid_item(state: &mut State, pending: Pending, ch: char) {
-    let error = format!("'{}' ne jest pravilny prědmet", control_label(ch));
+    let error = format!("'{}' ne jest praviľny prědmet", control_label(ch));
     state.game.message(&error);
     state.modal = item_menu_text(&state.game, pending, Some(&message_display_text(&error)));
     if state.modal.is_none() {
@@ -3196,13 +3193,13 @@ fn collect_messages(state: &mut State) {
 }
 
 fn status_text(game: &Game) -> String {
-    let hunger = ["", "Glad", "Slabosť", "Nemoć"]
+    let hunger = ["", "Glåd", "Slabosť", "Nemoć"]
         .get(game.hungry_state as usize)
         .copied()
         .unwrap_or("");
     let hp_width = game.player.stats.max_hp.to_string().len();
     format!(
-        "Stųp: {}  Zlåto: {:<5}  Hp: {:>width$}({:>width$})  Sila: {:>2}({})  Brȯn: {:<2}  Exp: {}/{}  {}",
+        "Stųp: {}  Zlåto: {:<5}  Zdr: {:>width$}({:>width$})  Sila: {:>2}({})  Brȯn: {:<2}  Izk: {}/{}  {}",
         game.depth,
         game.player.gold,
         game.player.stats.hp,
@@ -3226,7 +3223,7 @@ fn inventory_modal(state: &mut State) -> Option<String> {
         .count();
     if pack_len == 0 {
         state.game.message(if state.game.options.terse {
-            "⟨a:prazdny:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩"
+            "⟨a:pråzdny:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩"
         } else {
             "ne ⟨v2:imati⟩ ⟨ničto:gen⟩"
         });
@@ -3261,7 +3258,7 @@ fn inventory_line(game: &Game, index: usize) -> String {
         .filter(|item| item.in_pack)
         .nth(index)
         .map_or_else(
-            || speak("⟨a:tvoj:torba:nom:U⟩ ⟨n:torba:nom⟩ jest ⟨a:prazdny:torba:nom⟩."),
+            || speak("⟨a:tvoj:torba:nom:U⟩ ⟨n:torba:nom⟩ jest ⟨a:pråzdny:torba:nom⟩."),
             |item| {
                 format!(
                     "{}) {}",
@@ -3299,7 +3296,7 @@ fn picky_inventory_prompt(state: &mut State) -> Option<String> {
     let prompt = if state.game.options.terse {
         "prědmet: "
     } else {
-        "kaky prědmet ⟨v2:hotěti⟩ viděti: "
+        "kaky prědmet ⟨v2:hotěti⟩ viděti? "
     };
     state.game.remember_message(prompt);
     Some(message_display_text(prompt))
@@ -3544,7 +3541,7 @@ const OPTION_LABELS: [(&str, &str); OPTION_COUNT] = [
     ("Slědovati ⟨n:povråt:dat:pl⟩ v ⟨n:prohod:loc:pl⟩", "passgo"),
     ("Pokazati kamenj ⟨n:grob:gen⟩ po ⟨n:smŕť:loc⟩", "tombstone"),
     ("Stiľ ⟨n:torba:gen⟩", "inven"),
-    ("Ime", "name"),
+    ("Imę", "name"),
     ("Ovoć", "fruit"),
     ("Fajl ⟨n:shrånjeńje:gen⟩", "file"),
     ("Fajl ⟨n:rezultat:gen:pl⟩", "score"),
@@ -3737,7 +3734,7 @@ mod tests {
             "Pokazati kamenj groba po smŕti (\"tombstone\"): Da"
         );
         assert_eq!(lines[6], "Stiľ torby (\"inven\"): Pomalo");
-        assert_eq!(lines[7], "Ime (\"name\"): Rodney");
+        assert_eq!(lines[7], "Imę (\"name\"): Rodney");
         assert_eq!(lines[8], "Ovoć (\"fruit\"): mango");
         assert!(lines[9].starts_with("Fajl shrånjeńja (\"file\"): "));
         assert!(lines[10].starts_with("Fajl rezultatov (\"score\"): "));
@@ -3777,7 +3774,7 @@ mod tests {
         let erased = options_text(&game, Some(7), Some(""), None);
 
         assert!(initial.lines().nth(7).unwrap().ends_with("Old Name"));
-        assert_eq!(erased.lines().nth(7).unwrap(), "Ime (\"name\"): ");
+        assert_eq!(erased.lines().nth(7).unwrap(), "Imę (\"name\"): ");
     }
 
     #[test]
@@ -4452,9 +4449,9 @@ mod tests {
         assert!(monster.contains("smŕť od"));
         assert!(monster.contains("akvatora"));
 
-        game.death_cause = Some("glada".into());
+        game.death_cause = Some("glåda".into());
         let starvation = tombstone_text(&game);
-        assert!(starvation.contains("glada"));
+        assert!(starvation.contains("glåda"));
 
         // The internal "signal" key stays machine-readable for score.rs but
         // renders as a genitive.
@@ -4497,7 +4494,7 @@ mod tests {
         game.hungry_state = 2;
         let status = status_text(&game);
         assert!(status.contains("Stųp: 7  Zlåto: 42   "));
-        assert!(status.contains("Hp:  9(12)"));
+        assert!(status.contains("Zdr:  9(12)"));
         assert!(status.contains("Sila: 14(16)"));
         assert!(status.ends_with("Slabosť"));
     }
@@ -5041,17 +5038,17 @@ mod tests {
                 .lines()
                 .next()
                 .unwrap()
-                .contains("'^H' ne jest pravilny prědmet")
+                .contains("'^H' ne jest praviľny prědmet")
         );
         assert!(modal.contains("a) "));
         assert!(!modal.contains("* for list"));
         collect_messages(&mut state);
         assert_eq!(
             state.visible_message.as_deref(),
-            Some("'^H' ne jest pravilny prědmet.")
+            Some("'^H' ne jest praviľny prědmet.")
         );
         assert!(state.modal.as_deref().unwrap().contains("a) "));
-        assert_eq!(state.game.recall_message, "'^H' ne jest pravilny prědmet");
+        assert_eq!(state.game.recall_message, "'^H' ne jest praviľny prědmet");
         assert!(!is_item_selection(Pending::Options(0)));
     }
 
@@ -5382,7 +5379,7 @@ mod tests {
                 .modal
                 .as_deref()
                 .unwrap()
-                .contains("'z' ne jest pravilny prědmet")
+                .contains("'z' ne jest praviľny prědmet")
         );
         assert!(state.modal.as_deref().unwrap().contains("a) "));
         assert_eq!(state.game.turn, starting_turn);
@@ -5522,7 +5519,7 @@ mod tests {
         game.options.save_file = "/tmp/rodney.save".into();
         assert_eq!(
             save_confirmation(&game),
-            "shraniti fajl (/tmp/rodney.save)? "
+            "shråniti fajl (/tmp/rodney.save)? "
         );
     }
 
@@ -5626,7 +5623,7 @@ mod tests {
         assert_eq!(state.modal_offset, 0);
         assert_eq!(state.pending, Some(Pending::Quaff));
         let modal = state.modal.as_deref().unwrap();
-        assert!(modal.contains("' ' ne jest pravilny prědmet"));
+        assert!(modal.contains("' ' ne jest praviľny prědmet"));
         assert!(modal.contains("a) "));
 
         press_keys(&mut app, &[KeyCode::KeyA]);
