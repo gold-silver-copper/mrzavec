@@ -196,6 +196,8 @@ fn main() {
     let verbs: &[(&str, Person, interslavic::Number)] = &[
         ("tvoriti", Third, Singular),
         ("boriti", Second, Singular),
+        ("uviděti", Third, Singular),
+        ("nahoditi", Third, Singular),
         ("umrěti", Second, Singular),
         ("načinati", Second, Singular),
         ("nositi", Third, Singular),

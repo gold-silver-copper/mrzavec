@@ -360,9 +360,24 @@ Dissents / notes:
 - **dvėri, not dvere**: the in-game help rendered ⟨n:dveri:nom:pl⟩ as
   "dvere", which slovowiki does not know (official lemma is dvėri).
   Fixed game-side (2026-07-22): the lang.rs lemma and every template now
-  use dvėri, so game and page agree on the dictionary form. Remaining
-  follow-up: help_text() templates are still not covered by the gate
-  corpus — worth adding so future help edits are checked too.
+  use dvėri, so game and page agree on the dictionary form.
+- **Help templates are now gated** (2026-07-22): HELP_ENTRIES moved to
+  src/help.rs (shared lib module) and rendered into the gate corpus.
+  Fallout fixed: technical loans escape/shell pinned as project rows;
+  the 'm' entry reworded to "iti i ⟨ničto:gen⟩ ne vzęti" because vzęťje's
+  oblique cases are absent from the official forms index and the loader
+  (slovowiki f8dc218) rejects a project row shadowing an official form.
+  Re-validated against slovowiki `f8dc218` (which now prints a lexicon
+  header before --json output — lint_inflection.py parses past it).
+- **Grammar review pass** (steen-verified, 2026-07-22): three fixes on
+  the page — "vyjde … vidi" → "… uvidi" (aspect concord in the
+  conditional-generic; uviděti attested), "prěvod v język" → "prěvod na
+  język" (English "into" calque; pan-Slavic frame is na + acc), and
+  "… najde komanda s" → "komanda s nahodi …" (habitual takes the
+  imperfective nahoditi; SVO restored where nom=acc would ambiguate).
+  Everything else verified fine, including dvě + nom-pl "myslji",
+  universal -li past plural, staneš (no sę) vs načęti sę, and predicate
+  nominative after byti/stati.
 - **prišėl** (prijdti) replaced pristųpiti: the dictionary lemma is the
   phrase "pristųpiti do", so its participle is absent from the forms index.
 - Proper names (Mrzavec, Rogue, roguelike, Toy, Wichman, Arnold, Santa,
