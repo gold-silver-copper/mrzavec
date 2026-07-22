@@ -3931,9 +3931,8 @@ impl Game {
             .monsters
             .iter()
             .filter(|candidate| {
-                if candidate.pos.distance2(self.player.pos) > 2
-                    || (self.player.conditions.detect_monsters
-                        && candidate.flags & monster::INVISIBLE != 0)
+                if self.player.conditions.detect_monsters
+                    && candidate.flags & monster::INVISIBLE != 0
                 {
                     return false;
                 }
@@ -3943,6 +3942,24 @@ impl Game {
                 let Some(player_cell) = player_cell else {
                     return false;
                 };
+                // look(true) parity: every monster in the shared LIT room is
+                // re-rolled each turn (reference: command.c runs look(true)
+                // before every command; misc.c wake_monster gives sleeping
+                // mean monsters a fresh rnd(3)!=0 chance per sighting).
+                if let (Some(proom), Some(mroom)) = (player_cell.room, monster_cell.room)
+                    && proom == mroom
+                    && self
+                        .dungeon
+                        .rooms
+                        .get(proom as usize)
+                        .is_some_and(|room| !room.dark)
+                {
+                    return true;
+                }
+                // Dark rooms and corridors: lamp-radius adjacency, as before.
+                if candidate.pos.distance2(self.player.pos) > 2 {
+                    return false;
+                }
                 if player_cell.terrain != Terrain::Door
                     && monster_cell.terrain != Terrain::Door
                     && player_cell.passage.is_some() != monster_cell.passage.is_some()
@@ -4130,7 +4147,7 @@ impl Game {
         let distance = from.distance2(self.player.pos);
         if kind == 3
             && distance <= 36
-            && self.area_key(from) == self.area_key(destination)
+            && self.chase_area(from) == self.chase_area(destination)
             && (from.x == self.player.pos.x
                 || from.y == self.player.pos.y
                 || (from.x - self.player.pos.x).abs() == (from.y - self.player.pos.y).abs())
@@ -4240,14 +4257,26 @@ impl Game {
             || (self.passable(from.offset(dx, 0)) && self.passable(from.offset(0, dy)))
     }
 
+    /// Chase-routing area: ROOM-first, matching do_chase's `t_room`/`roomin`
+    /// semantics (a door-stander counts as being in the room). `area_key`
+    /// stays passage-first for the wake/visibility logic that needs it.
+    fn chase_area(&self, p: Pos) -> Option<(bool, u8)> {
+        let cell = self.dungeon.map.get(p)?;
+        cell.room
+            .map(|room| (false, room))
+            .or_else(|| cell.passage.map(|passage| (true, passage)))
+    }
+
     fn monster_chase_target(&self, from: Pos, destination: Pos) -> Pos {
-        let Some(area) = self.area_key(from) else {
+        let Some(area) = self.chase_area(from) else {
             return destination;
         };
-        if Some(area) == self.area_key(destination) {
+        if Some(area) == self.chase_area(destination) {
+            // Same room (or same corridor): head straight for the target —
+            // this is what unfreezes a door-stander attacking into the room.
             return destination;
         }
-        let exits: Vec<Pos> = if area.0 {
+        let mut exits: Vec<Pos> = if area.0 {
             self.dungeon
                 .passage_exits
                 .get(area.1 as usize)
@@ -4256,6 +4285,16 @@ impl Game {
         } else {
             self.dungeon.rooms[area.1 as usize].exits.clone()
         };
+        // do_chase's door clause: a door-stander routing to another room
+        // considers its passage's exits too, keeping the running minimum
+        // (the C code's `goto over` without resetting mindist).
+        if let Some(cell) = self.dungeon.map.get(from)
+            && cell.terrain == Terrain::Door
+            && let Some(passage) = cell.passage
+            && let Some(passage_exits) = self.dungeon.passage_exits.get(passage as usize)
+        {
+            exits.extend(passage_exits.iter().copied());
+        }
         exits
             .into_iter()
             .min_by_key(|exit| exit.distance2(destination))
@@ -5238,6 +5277,88 @@ fn wizard_command_char(command: WizardCommand) -> char {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn door_stander_targets_player_inside_the_room() {
+        // Regression: chase routing resolved door tiles passage-first, so a
+        // monster standing in a doorway with the player inside the room
+        // targeted the door under its own feet and never moved.
+        let g = Game::new(7);
+        let mut checked = 0;
+        for y in 0..crate::DISPLAY_HEIGHT as i32 {
+            for x in 0..crate::DISPLAY_WIDTH as i32 {
+                let door = Pos::new(x, y);
+                let Some(cell) = g.dungeon.map.get(door) else { continue };
+                if cell.terrain != Terrain::Door {
+                    continue;
+                }
+                let Some(room) = cell.room else { continue };
+                // any floor cell of the same room stands in for the player
+                let Some(inside) = (0..crate::DISPLAY_HEIGHT as i32)
+                    .flat_map(|iy| (0..crate::DISPLAY_WIDTH as i32).map(move |ix| Pos::new(ix, iy)))
+                    .find(|p| {
+                        g.dungeon.map.get(*p).is_some_and(|c| {
+                            c.room == Some(room) && c.terrain == Terrain::Floor
+                        })
+                    })
+                else {
+                    continue;
+                };
+                assert_eq!(
+                    g.monster_chase_target(door, inside),
+                    inside,
+                    "door-stander at {door:?} must head straight for {inside:?}"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "level must contain at least one room door");
+    }
+
+    #[test]
+    fn lit_room_mean_monsters_wake_within_a_few_turns() {
+        // Regression: waking was a single roll at room entry; the reference
+        // re-rolls every turn for every visible monster (look(true)), so a
+        // mean monster in a lit room must wake almost immediately.
+        let mut g = Game::new(11);
+        let player_room = g
+            .dungeon
+            .map
+            .get(g.player.pos)
+            .and_then(|cell| cell.room)
+            .expect("player starts in a room");
+        g.dungeon.rooms[player_room as usize].dark = false;
+        // a far corner of the same room, beyond the old adjacency radius
+        let corner = (0..crate::DISPLAY_HEIGHT as i32)
+            .flat_map(|y| (0..crate::DISPLAY_WIDTH as i32).map(move |x| Pos::new(x, y)))
+            .filter(|p| {
+                g.dungeon
+                    .map
+                    .get(*p)
+                    .is_some_and(|c| c.room == Some(player_room) && c.terrain == Terrain::Floor)
+            })
+            .max_by_key(|p| p.distance2(g.player.pos))
+            .expect("room has floor");
+        assert!(corner.distance2(g.player.pos) > 2, "corner must be non-adjacent");
+        let id = g.id();
+        let mut monster = monster::create(id, 20, corner, g.depth, &mut g.rng); // troll: MEAN
+        monster.awake = false;
+        assert!(monster.flags & monster::MEAN != 0);
+        g.monsters.push(monster);
+        let mut woke_after = None;
+        for turn in 1..=15 {
+            g.begin_command();
+            if g.monsters.iter().find(|m| m.id == id).unwrap().awake {
+                woke_after = Some(turn);
+                break;
+            }
+        }
+        assert!(
+            woke_after.is_some(),
+            "mean monster in a shared lit room must wake within 15 turns"
+        );
+    }
+
     use super::*;
     use crate::command::Direction;
 
@@ -10533,6 +10654,12 @@ mod tests {
         g.wandering_countdown = 10_000;
         let start = g.player.pos;
         let room = g.dungeon.map.get(start).unwrap().room;
+        // Adjacency-delayed waking only applies where the monster is not yet
+        // visible: in a LIT room, look(true) parity wakes room-wide every
+        // turn. Darken the room so the lamp-radius path is what's under test.
+        if let Some(room) = room {
+            g.dungeon.rooms[room as usize].dark = true;
+        }
         for dx in 1..=2 {
             let cell = g.dungeon.map.get_mut(start.offset(dx, 0)).unwrap();
             cell.terrain = Terrain::Floor;

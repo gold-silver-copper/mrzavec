@@ -55,3 +55,23 @@ inspection but clamps further ascent at zero. The regression test is
 
 Platform adaptations are described in `PORTING_NOTES.md` and are not gameplay
 changes.
+
+## AI fixes vs the initial port (2026-07-22)
+
+- **Monsters sometimes never woke.** The port rolled the mean-monster wake
+  chance once at room entry (plus per-turn within lamp radius); the
+  reference re-rolls every turn for every *visible* monster (`look(true)`
+  runs before each command; `wake_monster` gives sleeping mean monsters a
+  fresh `rnd(3)!=0` chance per sighting). ~1/3 of room monsters therefore
+  slept permanently until approached, and teleporting into a room woke
+  nobody. `wake_nearby_monsters` now includes every monster in the shared
+  LIT room each turn (dark rooms/corridors keep the lamp-radius adjacency),
+  restoring reference probabilities and covering teleports.
+- **Monsters froze in doorways.** Chase routing resolved door tiles
+  passage-first, so a monster standing in a doorway with the player inside
+  the adjacent room targeted "the nearest passage exit" — the door under
+  its own feet — and never moved. Routing now uses room-first areas
+  (`chase_area`, mirroring `do_chase`'s `t_room`/`roomin`) with the door
+  clause's exit union (`goto over` kept `mindist` across room + passage
+  exits). Regression tests cover both (`door_stander_targets_player_inside
+  _the_room`, `lit_room_mean_monsters_wake_within_a_few_turns`).
