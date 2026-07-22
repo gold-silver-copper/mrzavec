@@ -25,9 +25,9 @@ use std::{
     },
 };
 
-const CELL_W: f32 = 10.0;
-const CELL_H: f32 = 19.0;
-const FONT_SIZE: f32 = 16.0;
+const CELL_W: f32 = 12.0;
+const CELL_H: f32 = 24.0;
+const FONT_SIZE: f32 = 20.0;
 const MODAL_MORE_ROW: usize = DISPLAY_HEIGHT - 1;
 const MODAL_PAGE_ROWS: usize = MODAL_MORE_ROW;
 const KEYBINDING_FIRST_TEXT: &str =

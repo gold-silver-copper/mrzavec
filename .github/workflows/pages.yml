@@ -23,6 +23,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      - name: Install binaryen for the wasm-opt size pass
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends binaryen
       - name: Install the lockfile-compatible wasm-bindgen CLI
         run: |
           version=$(awk '

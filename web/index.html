@@ -21,7 +21,7 @@
       }
 
       main {
-        width: min(100%, 824px);
+        width: min(100%, 984px);
         min-width: 0;
       }
 
@@ -30,7 +30,7 @@
         width: 100% !important;
         max-width: 100%;
         height: auto !important;
-        aspect-ratio: 824 / 556;
+        aspect-ratio: 984 / 696;
         outline: 1px solid #333;
         background: #000;
       }
@@ -50,9 +50,10 @@
       <canvas
         id="mrzavec"
         tabindex="0"
+        autofocus
         aria-label="Mrzavec game; use the keyboard to play"
       ></canvas>
-      <p id="status">Click the game to focus it, then use Rogue keyboard commands.</p>
+      <p id="status">Loading the game…</p>
     </main>
     <script type="module">
       import init from "./pkg/mrzavec.js";
@@ -60,10 +61,13 @@
       const canvas = document.querySelector("#mrzavec");
       const status = document.querySelector("#status");
       canvas.addEventListener("pointerdown", () => canvas.focus());
+      canvas.focus();
 
       try {
         await init();
         canvas.focus();
+        status.textContent =
+          "Use Rogue keyboard commands. Click the game if it loses focus.";
       } catch (error) {
         status.textContent = `Unable to start Mrzavec: ${error}`;
         throw error;
