@@ -2877,12 +2877,13 @@ impl Game {
             } else if !self.player.conditions.levitating
                 && let Some(item) = self.floor_items.iter().find(|item| item.pos == Some(to))
             {
-                let name = self.inventory_name(item, true);
-                let name_acc = self.inventory_name_case(item, true, Case::Acc);
                 self.message(if self.options.terse {
-                    format!("tu: {name}")
+                    format!("tu: {}", self.inventory_name(item, true))
                 } else {
-                    format!("⟨v2:stųpati⟩ na {name_acc}")
+                    format!(
+                        "⟨v2:stųpati⟩ na {}",
+                        self.inventory_name_case(item, true, Case::Acc)
+                    )
                 });
             }
             return (CommandResult::TURN, false, stops_running);
@@ -3316,11 +3317,13 @@ impl Game {
             } else {
                 "v ⟨a:tvoj:torba:loc⟩ ⟨n:torba:loc⟩ ne jest ⟨n:město:gen⟩"
             });
-            let name_acc = self.inventory_name_case(&item, true, Case::Acc);
             self.message(if self.options.terse {
                 format!("tu: {name}")
             } else {
-                format!("⟨v2:stųpati⟩ na {name_acc}")
+                format!(
+                    "⟨v2:stųpati⟩ na {}",
+                    self.inventory_name_case(&item, true, Case::Acc)
+                )
             });
             self.floor_items.push(item);
             return CommandResult::TURN;

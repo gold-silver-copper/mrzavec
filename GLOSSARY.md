@@ -282,6 +282,18 @@ KEEP (documented, research done): munchies-overpower drug humor
 (prěmagaje + Panika! stays — no register-faithful rendering without
 inventing words); "faint" verb family absent from dictionary (obmråk
 noun construction chosen instead); sick/feel-verbs stay impersonal per
-the gender-neutral convention. Remaining ~180 pairs re-checked: LITERAL.
+the gender-neutral convention; "welcome to level N" → "dostigaješ
+stųpenja N" (the literal greeting takes a gendered participle);
+original first-person narrator lines ("I see no way down") →
+second-person ("ne vidiš pųť dolu") — deliberate perspective
+normalization, the game addresses the player as "ty" throughout.
+Sweep status, honestly stated: the remaining pairs were verified
+LITERAL across the cumulative review passes (grammar pass, style
+passes 1–2, this pass's targeted audit), not in one fresh itemized
+sitting — anything found later belongs in this table, not a new pass.
+
+Valence addition: mråviti — Acc experiencer ("koža tę mråvi"), by
+analogy with svŕběti; frame unattestable (generated word), accepted
+by decision.
 New registry nouns: žęđa, myšca, želųdȯk, struja, obmråk*, plašč,
 zavěsa (*project-flagged). scripts/bless.py added (escape-safe blessing).

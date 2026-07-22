@@ -57,6 +57,7 @@ def main() -> int:
                             n += 1
             open(fname, "w").write(head + tail)
         print("iter", iteration, "blessed", n)
+        subprocess.run(["git", "diff", "--stat"])  # corruption would show here
         if n == 0:
             return 1
     return 1
