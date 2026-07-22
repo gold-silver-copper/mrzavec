@@ -991,7 +991,7 @@ impl Game {
                 self.player.stats.strength = (self.player.stats.strength + 1).min(31);
                 let base_strength = self.player.stats.strength - self.ring_strength_bonus();
                 self.player.max_strength = self.player.max_strength.max(base_strength.clamp(3, 31));
-                self.message("⟨v2:čuti⟩ sę ⟨cav:silny⟩.  ⟨a:kaky:moć:nom:U⟩ ⟨n:moć:nom⟩!")
+                self.message("⟨v2:čuti⟩ sę ⟨cav:silny⟩.  ⟨a:kaky:myšca:nom:pl:U⟩ ⟨n:myšca:nom:pl⟩!")
             }
             4 => {
                 let was_blind = self.player.conditions.blind;
@@ -1008,7 +1008,7 @@ impl Game {
                     self.message(if self.player.conditions.hallucinating {
                         "hura!  Vse opęt jest ⟨adv:kosmičny⟩"
                     } else {
-                        "⟨n:tma:nom⟩ ⟨v3:izčezati⟩"
+                        "⟨n:zavěsa:nom⟩ ⟨n:tma:gen⟩ ⟨v3:izčezati⟩"
                     });
                 }
             }
@@ -1025,7 +1025,7 @@ impl Game {
                     self.message(if self.player.conditions.hallucinating {
                         "hura!  Vse opęt jest ⟨adv:kosmičny⟩"
                     } else {
-                        "⟨n:tma:nom⟩ ⟨v3:izčezati⟩"
+                        "⟨n:zavěsa:nom⟩ ⟨n:tma:gen⟩ ⟨v3:izčezati⟩"
                     });
                 }
                 self.message("⟨v2:načinati⟩ čuti sę ⟨cav:dobry⟩")
@@ -1058,7 +1058,7 @@ impl Game {
             }
             8 => {
                 identified = true;
-                self.message("naglo vse ⟨v2:dělati⟩ mnogo ⟨cav:dobry⟩");
+                self.message("naglo vse ⟨v2:dělati⟩ mnogo bolje umělo");
                 self.player.stats.experience = crate::player::EXPERIENCE_LEVELS
                     .get((self.player.stats.level - 1) as usize)
                     .copied()
@@ -1083,7 +1083,7 @@ impl Game {
                     self.message(if self.player.conditions.hallucinating {
                         "hura!  Vse opęt jest ⟨adv:kosmičny⟩"
                     } else {
-                        "⟨n:tma:nom⟩ ⟨v3:izčezati⟩"
+                        "⟨n:zavěsa:nom⟩ ⟨n:tma:gen⟩ ⟨v3:izčezati⟩"
                     });
                 }
                 if self.player.conditions.hallucinating {
@@ -1102,7 +1102,7 @@ impl Game {
                     self.player.conditions.hasted = false;
                     self.haste_phase = false;
                     self.scheduler.cancel(Effect::Haste);
-                    self.message("⟨v2:padati⟩ bez ⟨n:sila:gen:pl⟩")
+                    self.message("⟨v2:padati⟩ v ⟨n:obmråk:acc⟩")
                 } else {
                     self.player.conditions.hasted = true;
                     self.scheduler
@@ -1123,7 +1123,7 @@ impl Game {
                 self.message(if self.player.conditions.hallucinating {
                     "o ne!  Vse jest ⟨adv:temny⟩!  Pomoć!"
                 } else {
-                    "⟨n:tma:nom⟩ ⟨v3:okrųžati⟩ ⟨ty:acc⟩"
+                    "⟨n:plašč:nom⟩ ⟨n:tma:gen⟩ ⟨v3:padati⟩ okolo ⟨ty:gen:f⟩"
                 })
             }
             13 => {
@@ -2203,7 +2203,7 @@ impl Game {
             } else {
                 "prědmet".to_string()
             };
-            self.message(format!("{name} ⟨v3:padati⟩ i ⟨v3:izčezati⟩"));
+            self.message(format!("{name} ⟨v3:izčezati⟩ pri ⟨n:udar:loc⟩ o ⟨n:zemja:acc⟩"));
         }
     }
 
@@ -2665,7 +2665,7 @@ impl Game {
             })
             .collect();
         if targets.is_empty() {
-            self.message("⟨n:koža:nom⟩ ⟨ty:acc⟩ ⟨v3:svŕběti⟩");
+            self.message("⟨n:koža:nom⟩ ⟨ty:acc⟩ ⟨v3:mråviti⟩");
             return;
         }
         self.player.stats.hp /= 2;
@@ -2877,17 +2877,12 @@ impl Game {
             } else if !self.player.conditions.levitating
                 && let Some(item) = self.floor_items.iter().find(|item| item.pos == Some(to))
             {
-                let count = item.count;
                 let name = self.inventory_name(item, true);
-                let lezi = if count == 1 {
-                    crate::lang::v3("ležati")
-                } else {
-                    crate::lang::v3pl("ležati")
-                };
+                let name_acc = self.inventory_name_case(item, true, Case::Acc);
                 self.message(if self.options.terse {
                     format!("tu: {name}")
                 } else {
-                    format!("tu {lezi} {name}")
+                    format!("⟨v2:stųpati⟩ na {name_acc}")
                 });
             }
             return (CommandResult::TURN, false, stops_running);
@@ -3180,7 +3175,7 @@ impl Game {
                 }
             }
             Trap::Rust => {
-                self.message("⟨n:voda:nom⟩ ⟨v3:liti⟩ sę ⟨ty:dat⟩ na ⟨n:glåva:acc⟩");
+                self.message("⟨n:struja:nom⟩ ⟨n:voda:gen⟩ ⟨v3:udarjati⟩ ⟨ty:acc⟩ v ⟨n:glåva:acc⟩");
                 self.rust_armor()
             }
             Trap::Mysterious => {
@@ -3217,7 +3212,7 @@ impl Game {
                             adj_for(color, &iskra, Case::Nom, Number::Plural)
                         )
                     }
-                    7 => "naglo ⟨v2:hotěti⟩ piti".into(),
+                    7 => "naglo ⟨v2:čuti⟩ ⟨a:veliky:žęđa:acc⟩ ⟨n:žęđa:acc⟩".into(),
                     8 => "čas naglo ⟨v3:běgti⟩ ⟨cav:bystry⟩".into(),
                     9 => "čas sejčas ⟨v3:běgti⟩ pomalo".into(),
                     _ => {
@@ -3321,15 +3316,11 @@ impl Game {
             } else {
                 "v ⟨a:tvoj:torba:loc⟩ ⟨n:torba:loc⟩ ne jest ⟨n:město:gen⟩"
             });
-            let lezi = if item.count == 1 {
-                crate::lang::v3("ležati")
-            } else {
-                crate::lang::v3pl("ležati")
-            };
+            let name_acc = self.inventory_name_case(&item, true, Case::Acc);
             self.message(if self.options.terse {
                 format!("tu: {name}")
             } else {
-                format!("tu {lezi} {name}")
+                format!("⟨v2:stųpati⟩ na {name_acc}")
             });
             self.floor_items.push(item);
             return CommandResult::TURN;
@@ -3351,7 +3342,7 @@ impl Game {
             self.message(if self.options.terse {
                 format!("{name} ({letter})")
             } else {
-                format!("sejčas ⟨v2:imati⟩ {name} ({letter})")
+                format!("⟨v2:podbirati⟩ {name} ({letter})")
             });
             return CommandResult::TURN;
         }
@@ -3369,7 +3360,7 @@ impl Game {
         self.message(if self.options.terse {
             format!("{name} ({letter})")
         } else {
-            format!("sejčas ⟨v2:imati⟩ {name} ({letter})")
+            format!("⟨v2:podbirati⟩ {name} ({letter})")
         });
         CommandResult::TURN
     }
@@ -3492,7 +3483,7 @@ impl Game {
             return CommandResult::FREE;
         }
         if !self.has_amulet {
-            self.message("⟨a:čarovny:sila:nom⟩ ⟨n:sila:nom⟩ ne ⟨v3:pušćati⟩ ⟨ty:acc⟩ dalje");
+            self.message("⟨a:tvoj:pųť:nom⟩ ⟨n:pųť:nom⟩ jest ⟨adv:čarovny⟩ ⟨pp:zablokovati:m⟩");
             return CommandResult::FREE;
         }
         if self.depth == 1 {
@@ -3502,7 +3493,7 @@ impl Game {
         }
         self.depth -= 1;
         self.new_level();
-        self.message("⟨v2:čuti⟩ ⟨n:bolj:acc⟩ po ⟨a:veś:tělo:loc⟩ ⟨n:tělo:loc⟩");
+        self.message("⟨v2:čuti⟩ ⟨a:silny:bolj:acc⟩ ⟨n:bolj:acc⟩ v ⟨n:želųdȯk:loc⟩");
         CommandResult::FREE
     }
     fn new_level(&mut self) {
@@ -4606,9 +4597,9 @@ impl Game {
                         "⟨n:glad:nom⟩ ⟨v3:prěmagati⟩ ⟨ty:acc⟩.  Panika!"
                     }
                 } else if self.options.terse {
-                    "⟨v2:padati:U⟩ bez ⟨n:sila:gen:pl⟩"
+                    "⟨v2:padati:U⟩ v ⟨n:obmråk:acc⟩"
                 } else {
-                    "od ⟨n:nedostatȯk:gen⟩ ⟨n:jeda:gen⟩ ne ⟨v2:imati⟩ ⟨n:sila:gen:pl⟩.  ⟨v2:padati:U⟩"
+                    "od ⟨n:nedostatȯk:gen⟩ ⟨n:jeda:gen⟩ ne ⟨v2:imati⟩ ⟨n:sila:gen:pl⟩.  ⟨v2:padati:U⟩ v ⟨n:obmråk:acc⟩"
                 });
             }
             return;
@@ -4713,7 +4704,7 @@ impl Game {
                     self.message(if self.player.conditions.hallucinating {
                         "hura!  Vse opęt jest ⟨adv:kosmičny⟩"
                     } else {
-                        "⟨n:tma:nom⟩ ⟨v3:izčezati⟩"
+                        "⟨n:zavěsa:nom⟩ ⟨n:tma:gen⟩ ⟨v3:izčezati⟩"
                     });
                 }
                 Effect::Levitation => {
@@ -5209,7 +5200,7 @@ impl Game {
         self.message(if self.options.terse {
             format!("{name} ({letter})")
         } else {
-            format!("sejčas ⟨v2:imati⟩ {name} ({letter})")
+            format!("⟨v2:podbirati⟩ {name} ({letter})")
         });
     }
 }
@@ -5358,7 +5349,7 @@ mod tests {
         assert_eq!(down.depth, 1);
         assert_eq!(
             down.messages.last().map(String::as_str),
-            Some("čuješ bolj po vsem tělu")
+            Some("čuješ silny bolj v želųdku")
         );
     }
 
@@ -5496,7 +5487,7 @@ mod tests {
         assert_eq!(g.player.stats.level, 2);
         assert_eq!(
             g.messages[g.messages.len() - 2..],
-            ["naglo vse dělaješ mnogo lěpje", "dostigaješ stųpene 2"]
+            ["naglo vse dělaješ mnogo bolje umělo", "dostigaješ stųpene 2"]
         );
         assert_eq!(
             g.player.stats.experience,
@@ -5520,7 +5511,7 @@ mod tests {
         assert_eq!(g.player.stats.level, 1);
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("naglo vse dělaješ mnogo lěpje")
+            Some("naglo vse dělaješ mnogo bolje umělo")
         );
     }
 
@@ -5701,7 +5692,7 @@ mod tests {
                 "čuješ ubod v šiji",
                 "pěstre linije tancujųt okolo tebe i izčezajųt",
                 "strěla leti mimo tvojego uha!",
-                "naglo hoćeš piti",
+                "naglo čuješ velikų žęđų",
                 "čas naglo běži bystrěje",
                 "čas sejčas běži pomalo",
             ];
@@ -6716,7 +6707,7 @@ mod tests {
         assert_eq!(g.inventory_name(item, false), "něčto divno ^[");
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("sejčas imaješ něčto divno ^[ (f)")
+            Some("podbiraješ něčto divno ^[ (f)")
         );
     }
 
@@ -10225,7 +10216,7 @@ mod tests {
         assert!(g.floor_items.iter().any(|item| item.id == food_id));
         assert_eq!(
             g.messages.last().map(String::as_str),
-            Some("tu leži porcija jedy")
+            Some("stųpaješ na porcijų jedy")
         );
     }
 

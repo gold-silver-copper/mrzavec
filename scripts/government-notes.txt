@@ -6,3 +6,4 @@ od — death causes are stored pre-declined GENITIVE by project contract (die()/
 s — the {} is a bare digit amount; the case rides on the following ⟨n:zlåtnik:ins:pl⟩ marker
 iz — "soka iz {}" receives lang::decl_guess(fruit, Case::Gen, Singular); material_of() likewise renders "iz <Gen>"
 o — {loc_pl} is built with lang::decl(.., Case::Loc, Plural) at the discoveries call site
+na — "stųpaješ na {name_acc}": placeholder is inventory_name_case(.., Case::Acc); na+Acc is the motion reading
