@@ -1,9 +1,14 @@
-use bevy::{prelude::*, text::LineHeight, window::WindowResolution};
+use bevy::{
+    input::touch::Touches,
+    prelude::*,
+    text::LineHeight,
+    window::{PrimaryWindow, WindowResolution},
+};
 use mrzavec::help::HELP_ENTRIES;
 use mrzavec::{
-    DISPLAY_HEIGHT, DISPLAY_WIDTH, DUNGEON_FIRST_ROW, EVENT_ROWS, Game, KEYBINDING_FIRST_ROW,
-    KEYBINDING_SECOND_ROW, STATUS_ROW,
-    command::{Command, WizardCommand, parse},
+    COMMAND_BAR_ROWS, DISPLAY_HEIGHT, DISPLAY_WIDTH, DUNGEON_FIRST_ROW, EVENT_ROWS, Game,
+    KEYBINDING_FIRST_ROW, STATUS_ROW,
+    command::{Command, Direction, WizardCommand, parse},
     item::{
         ARMOR_NAMES, ARMOR_WEIGHTS, ItemKind, POTION_NAMES, POTION_WEIGHTS, RING_NAMES,
         RING_WEIGHTS, SCROLL_NAMES, SCROLL_WEIGHTS, STICK_NAMES, STICK_WEIGHTS, WEAPON_NAMES,
@@ -13,7 +18,6 @@ use mrzavec::{
     map::Pos,
     save, score,
 };
-use std::time::Duration;
 #[cfg(test)]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(not(target_arch = "wasm32"))]
@@ -25,16 +29,13 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+use std::{sync::OnceLock, time::Duration};
 
 const CELL_W: f32 = 12.0;
 const CELL_H: f32 = 24.0;
 const FONT_SIZE: f32 = 20.0;
 const MODAL_MORE_ROW: usize = DISPLAY_HEIGHT - 1;
 const MODAL_PAGE_ROWS: usize = MODAL_MORE_ROW;
-const KEYBINDING_FIRST_TEXT: &str =
-    "Iti h/j/k/l  Torba i  Piti q  Čitati r  Jesti e  Orųž. w  Ostav. d";
-const KEYBINDING_SECOND_TEXT: &str =
-    "Nositi W  Sjęti T  Metnųti t  Žezlo z  Iskati s  Čekati .  Pomoć ?";
 const MOVEMENT_REPEAT_DELAY: Duration = Duration::from_millis(300);
 const MOVEMENT_REPEAT_INTERVAL: Duration = Duration::from_millis(100);
 const MOVEMENT_KEYS: [(KeyCode, char); 8] = [
@@ -49,7 +50,99 @@ const MOVEMENT_KEYS: [(KeyCode, char); 8] = [
 ];
 const GLYPH_COLOR: Color = Color::srgb(0.82, 0.82, 0.78);
 const KEYBINDING_DIM_COLOR: Color = Color::srgb(0.55, 0.55, 0.52);
+const COMMAND_HIGHLIGHT_COLOR: Color = Color::srgb(0.16, 0.25, 0.32);
 const ROGUE_RELEASE: &str = "2026-07-17";
+
+#[derive(Debug)]
+struct CommandBarEntry {
+    command: char,
+    row: usize,
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug)]
+struct CommandBarLayout {
+    rows: Vec<String>,
+    entries: Vec<CommandBarEntry>,
+}
+
+fn command_group(command: char) -> u8 {
+    match command {
+        'h' | 'j' | 'k' | 'l' | 'y' | 'u' | 'b' | 'n' | '>' | '<' | '.' | ',' | 's' => 0,
+        'f' | 'F' | 't' | 'm' | 'z' | '^' => 1,
+        '/' | 'i' | 'I' | 'q' | 'r' | 'e' | 'd' | 'c' => 2,
+        'w' | 'W' | 'T' | 'P' | 'R' | ')' | ']' | '=' | '@' => 3,
+        _ => 4,
+    }
+}
+
+fn command_bar_entry_text(command: char, description: &str) -> String {
+    help_entry_text(command, description)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn build_command_bar() -> CommandBarLayout {
+    let mut commands: Vec<_> = HELP_ENTRIES
+        .iter()
+        .filter(|(command, _, print)| *print && *command != '\0')
+        .collect();
+    commands.sort_by_key(|(command, _, _)| command_group(*command));
+
+    let mut rows = vec![String::new()];
+    let mut entries: Vec<CommandBarEntry> = Vec::new();
+    let mut current_group = None;
+    for (command, description, _) in commands {
+        let group = command_group(*command);
+        let text = command_bar_entry_text(*command, description);
+        assert!(
+            text.chars().count() <= DISPLAY_WIDTH,
+            "command bar entry exceeds the 80-column grid: {text}"
+        );
+        let row = rows.len() - 1;
+        let used = rows[row].chars().count();
+        if current_group.is_some_and(|current| current != group) && used > 0 {
+            rows.push(String::new());
+        }
+        let row = rows.len() - 1;
+        let used = rows[row].chars().count();
+        let separator = usize::from(used > 0) * 2;
+        if used + separator + text.chars().count() > DISPLAY_WIDTH {
+            rows.push(String::new());
+        }
+        let row = rows.len() - 1;
+        if !rows[row].is_empty() {
+            rows[row].push_str("  ");
+        }
+        let start = rows[row].chars().count();
+        if let Some(previous) = entries.last_mut()
+            && previous.row == row
+        {
+            previous.end = start;
+        }
+        rows[row].push_str(&text);
+        entries.push(CommandBarEntry {
+            command: *command,
+            row,
+            start,
+            end: DISPLAY_WIDTH,
+        });
+        current_group = Some(group);
+    }
+    assert_eq!(
+        rows.len(),
+        COMMAND_BAR_ROWS,
+        "COMMAND_BAR_ROWS must match the HELP_ENTRIES-derived layout"
+    );
+    CommandBarLayout { rows, entries }
+}
+
+fn command_bar() -> &'static CommandBarLayout {
+    static LAYOUT: OnceLock<CommandBarLayout> = OnceLock::new();
+    LAYOUT.get_or_init(build_command_bar)
+}
 
 fn held_repeat_keys() -> impl Iterator<Item = (KeyCode, char)> {
     MOVEMENT_KEYS.into_iter().chain([(KeyCode::Period, '.')])
@@ -183,6 +276,15 @@ struct Glyph;
 struct MovementRepeat {
     key: Option<KeyCode>,
     remaining: Duration,
+}
+
+#[derive(Resource, Default)]
+struct InjectedInput(Option<char>);
+
+#[derive(Resource, Default)]
+struct PointerUi {
+    hovered_command: Option<char>,
+    last_tapped_command: Option<char>,
 }
 
 impl MovementRepeat {
@@ -529,7 +631,9 @@ fn main() {
         Update,
         (
             handle_termination_signal,
+            pointer_input,
             keyboard,
+            advance_pointer_travel,
             finalize_end,
             prepare_messages,
             render,
@@ -561,7 +665,15 @@ fn main() {
     game_app(game, false)
         .add_systems(
             Update,
-            (keyboard, finalize_end, prepare_messages, render).chain(),
+            (
+                pointer_input,
+                keyboard,
+                advance_pointer_travel,
+                finalize_end,
+                prepare_messages,
+                render,
+            )
+                .chain(),
         )
         .run();
 }
@@ -579,6 +691,8 @@ fn game_app(game: Game, wizard_prompt: bool) -> App {
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(MovementRepeat::default())
+        .insert_resource(InjectedInput::default())
+        .insert_resource(PointerUi::default())
         .insert_resource(State {
             game,
             modal: wizard_prompt.then(|| password_prompt(Pending::StartupPassword)),
@@ -873,6 +987,7 @@ fn setup(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
                             align_items: AlignItems::Center,
                             ..default()
                         },
+                        BackgroundColor(Color::BLACK),
                     ))
                     .with_child((
                         Glyph,
@@ -890,13 +1005,373 @@ fn setup(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
         });
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PointerCell {
+    column: usize,
+    row: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PointerAction {
+    Key(char),
+    Travel(Pos),
+    OptionRow(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PointerControl {
+    start: usize,
+    end: usize,
+    command: char,
+    label: String,
+}
+
+/// Cursor and touch positions supplied by Bevy/winit are logical pixels.
+/// Keeping the conversion in that coordinate space makes native DPI and a
+/// CSS-scaled wasm canvas use the same hit testing.
+fn pointer_cell(position: Vec2, window_size: Vec2) -> Option<PointerCell> {
+    let grid_size = Vec2::new(
+        CELL_W * DISPLAY_WIDTH as f32,
+        CELL_H * DISPLAY_HEIGHT as f32,
+    );
+    let origin = (window_size - grid_size) / 2.0;
+    let local = position - origin;
+    if local.x < 0.0 || local.y < 0.0 || local.x >= grid_size.x || local.y >= grid_size.y {
+        return None;
+    }
+    Some(PointerCell {
+        column: (local.x / CELL_W).floor() as usize,
+        row: (local.y / CELL_H).floor() as usize,
+    })
+}
+
+fn command_at_cell(state: &State, cell: PointerCell) -> Option<char> {
+    let footer_visible =
+        state.modal.is_none() || state.modal_overlay || has_inline_event_prompt(state);
+    if !footer_visible || cell.row < KEYBINDING_FIRST_ROW {
+        return None;
+    }
+    let row = cell.row - KEYBINDING_FIRST_ROW;
+    command_bar()
+        .entries
+        .iter()
+        .find(|entry| entry.row == row && (entry.start..entry.end).contains(&cell.column))
+        .map(|entry| entry.command)
+}
+
+fn pointer_controls(state: &State) -> (usize, Vec<PointerControl>) {
+    if state.modal.is_none() {
+        return (EVENT_ROWS - 1, Vec::new());
+    }
+    let full_screen = !state.modal_overlay && !has_inline_event_prompt(state);
+    let row = if state.pending.is_some_and(direction_pending) && state.modal_overlay {
+        STATUS_ROW - 1
+    } else if full_screen {
+        MODAL_MORE_ROW
+    } else {
+        EVENT_ROWS - 1
+    };
+    let mut commands: Vec<char> = match state.pending {
+        Some(Pending::SaveConfirm | Pending::SaveOverwrite | Pending::QuitConfirm) => {
+            vec!['y', 'n']
+        }
+        Some(Pending::PutRingHand(_) | Pending::RemoveRingHand) => vec!['l', 'r'],
+        Some(Pending::Discoveries) => vec!['!', '?', '=', '/', '*'],
+        _ => Vec::new(),
+    };
+    commands.push('\u{1b}');
+    let segment_width = if commands.len() > 4 { 8 } else { 12 };
+    let total = commands.len() * segment_width;
+    let first = DISPLAY_WIDTH.saturating_sub(total);
+    let controls = commands
+        .into_iter()
+        .enumerate()
+        .map(|(index, command)| PointerControl {
+            start: first + index * segment_width,
+            end: first + (index + 1) * segment_width,
+            command,
+            label: match command {
+                '\u{1b}' => "Escape".into(),
+                ch if ch.is_ascii_alphabetic() => ch.to_ascii_uppercase().to_string(),
+                ch => control_label(ch),
+            },
+        })
+        .collect();
+    (row, controls)
+}
+
+fn dungeon_pos_at_cell(cell: PointerCell) -> Option<Pos> {
+    (DUNGEON_FIRST_ROW..STATUS_ROW)
+        .contains(&cell.row)
+        .then(|| {
+            Pos::new(
+                cell.column as i32,
+                (cell.row - DUNGEON_FIRST_ROW + 1) as i32,
+            )
+        })
+}
+
+fn direction_command_toward(player: Pos, target: Pos) -> Option<char> {
+    let direction = Direction::from_delta(
+        (target.x - player.x).signum(),
+        (target.y - player.y).signum(),
+    )?;
+    Some(match direction {
+        Direction::Left => 'h',
+        Direction::Down => 'j',
+        Direction::Up => 'k',
+        Direction::Right => 'l',
+        Direction::UpLeft => 'y',
+        Direction::UpRight => 'u',
+        Direction::DownLeft => 'b',
+        Direction::DownRight => 'n',
+    })
+}
+
+fn direction_pending(pending: Pending) -> bool {
+    matches!(
+        pending,
+        Pending::ThrowDirection(_)
+            | Pending::ZapDirection(_)
+            | Pending::FightDirection(_)
+            | Pending::MoveDirection
+            | Pending::TrapDirection
+    )
+}
+
+fn overlay_start_x(modal: &str) -> usize {
+    let width = modal
+        .lines()
+        .take(STATUS_ROW)
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(DISPLAY_WIDTH - 2);
+    (DISPLAY_WIDTH - 1).saturating_sub(width)
+}
+
+fn modal_advances_with_map_tap(state: &State) -> bool {
+    state.game.end != mrzavec::game::EndState::Playing
+        || matches!(
+            state.pending,
+            Some(
+                Pending::MagicDetection
+                    | Pending::FoodDetection
+                    | Pending::Help
+                    | Pending::DiscoveryMore
+                    | Pending::SlowDiscoveryPrompt
+                    | Pending::SlowDiscovery(_)
+                    | Pending::SlowInventory(_)
+                    | Pending::More
+            )
+        )
+}
+
+fn item_menu_letters(game: &Game, pending: Pending) -> Vec<char> {
+    game.player
+        .inventory
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item.in_pack && item_matches_selection(game, pending, item.kind))
+        .map(|(index, item)| item.pack_letter.unwrap_or((b'a' + index as u8) as char))
+        .collect()
+}
+
+fn inventory_letters(game: &Game) -> Vec<char> {
+    game.player
+        .inventory
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item.in_pack)
+        .map(|(index, item)| item.pack_letter.unwrap_or((b'a' + index as u8) as char))
+        .collect()
+}
+
+fn pointer_action_at_cell(state: &State, cell: PointerCell) -> Option<PointerAction> {
+    let (control_row, controls) = pointer_controls(state);
+    if cell.row == control_row
+        && let Some(control) = controls
+            .iter()
+            .find(|control| (control.start..control.end).contains(&cell.column))
+    {
+        return Some(PointerAction::Key(control.command));
+    }
+
+    if let Some(pending) = state.pending {
+        if direction_pending(pending) {
+            if let Some(modal) = &state.modal {
+                let start_x = overlay_start_x(modal);
+                if cell.column >= start_x && (1..=8).contains(&cell.row) {
+                    return direction_menu_entries()
+                        .nth(cell.row - 1)
+                        .map(|(command, _)| PointerAction::Key(command));
+                }
+            }
+            if let Some(target) = dungeon_pos_at_cell(cell) {
+                return direction_command_toward(state.game.player.pos, target)
+                    .map(PointerAction::Key);
+            }
+        }
+        if pending == Pending::IdentifyGlyph
+            && let Some(target) = dungeon_pos_at_cell(cell)
+        {
+            return Some(PointerAction::Key(state.game.glyph_at(target)));
+        }
+        if let Pending::Options(_) = pending
+            && cell.row < OPTION_COUNT
+        {
+            return Some(PointerAction::OptionRow(cell.row));
+        }
+        if pending == Pending::PickyInventory {
+            let letters = inventory_letters(&state.game);
+            let leading_rows = state.modal.as_deref().map_or(0, |modal| {
+                modal.lines().count().saturating_sub(letters.len())
+            });
+            if let Some(index) = cell.row.checked_sub(leading_rows)
+                && let Some(letter) = letters.get(index)
+            {
+                return Some(PointerAction::Key(*letter));
+            }
+        }
+        if is_item_selection(pending) {
+            let letters = item_menu_letters(&state.game, pending);
+            let leading_rows = state.modal.as_deref().map_or(0, |modal| {
+                modal.lines().count().saturating_sub(letters.len())
+            });
+            let absolute_row = state.modal_offset + cell.row;
+            if let Some(index) = absolute_row.checked_sub(leading_rows)
+                && let Some(letter) = letters.get(index)
+            {
+                return Some(PointerAction::Key(*letter));
+            }
+        }
+        if modal_advances_with_map_tap(state) && dungeon_pos_at_cell(cell).is_some() {
+            return Some(PointerAction::Key(' '));
+        }
+        return None;
+    }
+
+    if state.modal.is_some() && state.game.end != mrzavec::game::EndState::Playing {
+        if dungeon_pos_at_cell(cell).is_some() {
+            return Some(PointerAction::Key(' '));
+        }
+        return None;
+    }
+    if let Some(command) = command_at_cell(state, cell) {
+        return Some(PointerAction::Key(command));
+    }
+    dungeon_pos_at_cell(cell).map(PointerAction::Travel)
+}
+
+fn apply_option_pointer(state: &mut State, index: usize) {
+    show_option(state, index);
+    match index {
+        0..=5 => {
+            let current = match index {
+                0 => state.game.options.terse,
+                1 => state.game.options.fight_flush,
+                2 => state.game.options.jump,
+                3 => state.game.options.see_floor,
+                4 => state.game.options.passgo,
+                5 => state.game.options.tombstone,
+                _ => unreachable!(),
+            };
+            set_boolean_option(&mut state.game, index, !current);
+            state.modal = Some(options_text(&state.game, Some(index), None, None));
+        }
+        6 => {
+            state.game.options.inventory_style = match state.game.options.inventory_style {
+                mrzavec::game::InventoryStyle::Overwrite => mrzavec::game::InventoryStyle::Slow,
+                mrzavec::game::InventoryStyle::Slow => mrzavec::game::InventoryStyle::Clear,
+                mrzavec::game::InventoryStyle::Clear => mrzavec::game::InventoryStyle::Overwrite,
+            };
+            state.modal = Some(options_text(&state.game, Some(index), None, None));
+        }
+        7..OPTION_COUNT => {}
+        _ => unreachable!("pointer option row is bounded by OPTION_COUNT"),
+    }
+}
+
+fn pointer_input(
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    touches: Res<Touches>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut pointer_ui: ResMut<PointerUi>,
+    mut injected: ResMut<InjectedInput>,
+    mut state: ResMut<State>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let window_size = Vec2::new(window.width(), window.height());
+    let mouse_cell = window
+        .cursor_position()
+        .and_then(|position| pointer_cell(position, window_size));
+    let hovered_command = mouse_cell.and_then(|cell| command_at_cell(&state, cell));
+    if pointer_ui.hovered_command != hovered_command {
+        pointer_ui.hovered_command = hovered_command;
+    }
+
+    let touch_position = touches
+        .iter_just_pressed()
+        .next()
+        .map(|touch| touch.position());
+    let activation = touch_position.or_else(|| {
+        mouse_buttons
+            .just_pressed(MouseButton::Left)
+            .then(|| window.cursor_position())
+            .flatten()
+    });
+    let Some(cell) = activation.and_then(|position| pointer_cell(position, window_size)) else {
+        return;
+    };
+    if state.game.is_traveling() {
+        state.game.cancel_travel();
+        return;
+    }
+    let Some(action) = pointer_action_at_cell(&state, cell) else {
+        return;
+    };
+    match action {
+        PointerAction::Key(command) => {
+            if command_at_cell(&state, cell) == Some(command) {
+                pointer_ui.last_tapped_command = Some(command);
+            }
+            injected.0 = Some(command);
+        }
+        PointerAction::Travel(destination) => {
+            state.game.start_travel(destination);
+        }
+        PointerAction::OptionRow(index) => apply_option_pointer(&mut state, index),
+    }
+}
+
+fn advance_pointer_travel(mut state: ResMut<State>) {
+    if !state.game.is_traveling() {
+        return;
+    }
+    if state.pending.is_some()
+        || state.modal.is_some()
+        || state.game.end != mrzavec::game::EndState::Playing
+        || state.game.player.conditions.asleep_turns > 0
+    {
+        state.game.cancel_travel();
+        return;
+    }
+    state.game.advance_travel();
+}
+
 fn keyboard(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut movement_repeat: ResMut<MovementRepeat>,
+    mut injected: ResMut<InjectedInput>,
     mut state: ResMut<State>,
     mut app_exit: MessageWriter<AppExit>,
 ) {
+    let injected_input = injected.0.take();
+    let space_pressed = keys.just_pressed(KeyCode::Space) || injected_input == Some(' ');
+    let escape_pressed = keys.just_pressed(KeyCode::Escape) || injected_input == Some('\u{1b}');
     let shifted = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     let controlled = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
     let alt_or_super = [
@@ -918,7 +1393,11 @@ fn keyboard(
             && state.game.end == mrzavec::game::EndState::Playing
             && state.game.player.conditions.asleep_turns == 0,
     );
-    if keys.get_just_pressed().next().is_some() || repeated_input.is_some() {
+    if keys.get_just_pressed().next().is_some()
+        || repeated_input.is_some()
+        || injected_input.is_some()
+    {
+        state.game.cancel_travel();
         state.preserve_message_case = false;
         state.visible_message = None;
     }
@@ -937,7 +1416,7 @@ fn keyboard(
     if matches!(
         state.pending,
         Some(Pending::MagicDetection | Pending::FoodDetection)
-    ) && keys.just_pressed(KeyCode::Space)
+    ) && space_pressed
     {
         state.pending = None;
         state.modal = None;
@@ -948,11 +1427,11 @@ fn keyboard(
         return;
     }
     if state.pending == Some(Pending::Help) {
-        if keys.just_pressed(KeyCode::Escape) {
+        if escape_pressed {
             state.pending = None;
             state.modal = None;
             state.modal_offset = 0;
-        } else if keys.just_pressed(KeyCode::Space)
+        } else if space_pressed
             && state
                 .modal
                 .as_deref()
@@ -963,7 +1442,7 @@ fn keyboard(
         return;
     }
     if let Some(pending) = state.pending.filter(|pending| is_item_selection(*pending))
-        && keys.just_pressed(KeyCode::Space)
+        && space_pressed
     {
         if state
             .modal
@@ -976,7 +1455,7 @@ fn keyboard(
         }
         return;
     }
-    if state.pending == Some(Pending::DiscoveryMore) && keys.just_pressed(KeyCode::Space) {
+    if state.pending == Some(Pending::DiscoveryMore) && space_pressed {
         if state
             .modal
             .as_deref()
@@ -995,7 +1474,7 @@ fn keyboard(
     if matches!(
         state.pending,
         Some(Pending::SlowDiscoveryPrompt | Pending::SlowDiscovery(_))
-    ) && keys.just_pressed(KeyCode::Space)
+    ) && space_pressed
     {
         let next = match state.pending {
             Some(Pending::SlowDiscoveryPrompt) => 0,
@@ -1018,7 +1497,7 @@ fn keyboard(
         }
         return;
     }
-    if keys.just_pressed(KeyCode::Space)
+    if space_pressed
         && let Some(modal) = &state.modal
         && !state.modal_overlay
     {
@@ -1041,7 +1520,7 @@ fn keyboard(
         return;
     }
     if state.pending == Some(Pending::More) {
-        if keys.just_pressed(KeyCode::Space) {
+        if space_pressed || escape_pressed {
             state.pending = None;
             state.modal = None;
             state.modal_offset = 0;
@@ -1049,11 +1528,11 @@ fn keyboard(
         }
         return;
     }
-    if matches!(state.pending, Some(Pending::Options(_))) && keys.just_pressed(KeyCode::Escape) {
+    if matches!(state.pending, Some(Pending::Options(_))) && escape_pressed {
         finish_options(&mut state);
         return;
     }
-    if keys.just_pressed(KeyCode::Escape) {
+    if escape_pressed {
         if state.game.end != mrzavec::game::EndState::Playing {
             app_exit.write(AppExit::Success);
             return;
@@ -1116,7 +1595,7 @@ fn keyboard(
         return;
     }
     if let Some(Pending::SlowInventory(index)) = state.pending
-        && keys.just_pressed(KeyCode::Space)
+        && space_pressed
     {
         let next = index + 1;
         let pack_len = state
@@ -1275,7 +1754,7 @@ fn keyboard(
     } else {
         None
     };
-    let special = control.or_else(|| {
+    let special = injected_input.or(control).or_else(|| {
         if keys.just_pressed(KeyCode::Period) {
             Some(if shifted { '>' } else { '.' })
         } else if keys.just_pressed(KeyCode::Comma) {
@@ -1359,7 +1838,7 @@ fn keyboard(
         })
         .or(repeated_input);
     let Some(mut ch) = ch else { return };
-    if shifted && ch.is_ascii_alphabetic() {
+    if injected_input.is_none() && shifted && ch.is_ascii_alphabetic() {
         ch = ch.to_ascii_uppercase()
     }
     if state.game.player.conditions.asleep_turns > 0 {
@@ -2710,8 +3189,23 @@ fn direction_prompt(state: &mut State, pending: Pending) -> Option<String> {
         "v ⟨ktory:acc:f⟩ ⟨n:stråna:acc⟩? "
     };
     state.pending = Some(pending);
+    state.modal_overlay = true;
     state.game.remember_message(prompt);
-    Some(message_display_text(prompt))
+    let mut lines = vec![message_display_text(prompt)];
+    lines.extend(direction_menu_entries().map(|(_, text)| text));
+    Some(lines.join("\n"))
+}
+
+fn direction_menu_entries() -> impl Iterator<Item = (char, String)> {
+    ['h', 'j', 'k', 'l', 'y', 'u', 'b', 'n']
+        .into_iter()
+        .map(|command| {
+            let (_, description, _) = HELP_ENTRIES
+                .iter()
+                .find(|(candidate, _, _)| *candidate == command)
+                .expect("every pointer direction is in HELP_ENTRIES");
+            (command, help_entry_text(command, description))
+        })
 }
 fn ring_hand_prompt(game: &Game) -> String {
     if game.options.terse {
@@ -2774,20 +3268,18 @@ fn item_matches_selection(game: &Game, pending: Pending, kind: ItemKind) -> bool
     }
 }
 fn item_menu_text(game: &Game, pending: Pending, feedback: Option<&str>) -> Option<String> {
-    let mut lines = Vec::new();
-    for (index, item) in game
+    let mut lines: Vec<String> = game
         .player
         .inventory
         .iter()
         .enumerate()
         .filter(|(_, item)| item.in_pack)
-    {
-        if !item_matches_selection(game, pending, item.kind) {
-            continue;
-        }
-        let letter = item.pack_letter.unwrap_or((b'a' + index as u8) as char);
-        lines.push(format!("{letter}) {}", game.inventory_name(item, false)));
-    }
+        .filter(|(_, item)| item_matches_selection(game, pending, item.kind))
+        .map(|(index, item)| {
+            let letter = item.pack_letter.unwrap_or((b'a' + index as u8) as char);
+            format!("{letter}) {}", game.inventory_name(item, false))
+        })
+        .collect();
     if lines.is_empty() {
         return None;
     }
@@ -2911,11 +3403,6 @@ fn pending_is_inline_prompt(pending: Pending) -> bool {
         pending,
         Pending::PutRingHand(_)
             | Pending::RemoveRingHand
-            | Pending::ThrowDirection(_)
-            | Pending::ZapDirection(_)
-            | Pending::FightDirection(_)
-            | Pending::MoveDirection
-            | Pending::TrapDirection
             | Pending::CallText(_)
             | Pending::AutoCall
             | Pending::SaveConfirm
@@ -2944,23 +3431,32 @@ fn has_inline_event_prompt(state: &State) -> bool {
 
 fn render(
     state: Res<State>,
-    cells: Query<(&Cell, &Children)>,
+    pointer_ui: Res<PointerUi>,
+    mut cells: Query<(&Cell, &Children, &mut BackgroundColor)>,
     mut glyphs: Query<(&mut Text, &mut TextColor), With<Glyph>>,
 ) {
-    if !state.is_changed() {
+    if !state.is_changed() && !pointer_ui.is_changed() {
         return;
     }
     let buffer = display(&state);
     let footer_visible =
         state.modal.is_none() || state.modal_overlay || has_inline_event_prompt(&state);
-    for (cell, children) in cells {
+    let highlighted = pointer_ui
+        .hovered_command
+        .or(pointer_ui.last_tapped_command);
+    for (cell, children, mut background) in &mut cells {
+        let column = cell.0 % DISPLAY_WIDTH;
+        let row = cell.0 / DISPLAY_WIDTH;
+        let cell_command = command_at_cell(&state, PointerCell { column, row });
+        background.0 = if cell_command.is_some() && cell_command == highlighted {
+            COMMAND_HIGHLIGHT_COLOR
+        } else {
+            Color::BLACK
+        };
         for child in children.iter() {
             if let Ok((mut text, mut color)) = glyphs.get_mut(child) {
                 text.0 = buffer[cell.0].to_string();
-                let row = cell.0 / DISPLAY_WIDTH;
-                color.0 = if footer_visible
-                    && matches!(row, KEYBINDING_FIRST_ROW | KEYBINDING_SECOND_ROW)
-                {
+                color.0 = if footer_visible && row >= KEYBINDING_FIRST_ROW {
                     KEYBINDING_DIM_COLOR
                 } else {
                     GLYPH_COLOR
@@ -2998,6 +3494,7 @@ fn display(state: &State) -> Vec<char> {
         if reserve_more {
             write_terminal_text(&mut out, MODAL_MORE_ROW, 0, " --Dalje--", DISPLAY_WIDTH);
         }
+        write_pointer_controls(&mut out, state);
         return out;
     }
     let mut event_text = state.visible_message.clone().or_else(|| {
@@ -3026,20 +3523,9 @@ fn display(state: &State) -> Vec<char> {
     }
     let status = status_text(&state.game);
     write_terminal_text(&mut out, STATUS_ROW, 0, &status, DISPLAY_WIDTH);
-    write_terminal_text(
-        &mut out,
-        KEYBINDING_FIRST_ROW,
-        0,
-        KEYBINDING_FIRST_TEXT,
-        DISPLAY_WIDTH,
-    );
-    write_terminal_text(
-        &mut out,
-        KEYBINDING_SECOND_ROW,
-        0,
-        KEYBINDING_SECOND_TEXT,
-        DISPLAY_WIDTH,
-    );
+    for (row, text) in command_bar().rows.iter().enumerate() {
+        write_terminal_text(&mut out, KEYBINDING_FIRST_ROW + row, 0, text, DISPLAY_WIDTH);
+    }
     if let Some(modal) = &state.modal
         && state.modal_overlay
     {
@@ -3058,7 +3544,21 @@ fn display(state: &State) -> Vec<char> {
             write_terminal_text(&mut out, y, start_x, line, DISPLAY_WIDTH);
         }
     }
+    write_pointer_controls(&mut out, state);
     out
+}
+
+fn write_pointer_controls(out: &mut [char], state: &State) {
+    let (row, controls) = pointer_controls(state);
+    for control in controls {
+        let width = control.end - control.start;
+        let label_width = control.label.chars().count();
+        let start = control.start + width.saturating_sub(label_width) / 2;
+        for column in control.start..control.end.min(DISPLAY_WIDTH) {
+            out[row * DISPLAY_WIDTH + column] = ' ';
+        }
+        write_terminal_text(out, row, start, &control.label, control.end);
+    }
 }
 
 fn modal_has_next_page(modal: &str, offset: usize) -> bool {
@@ -3274,19 +3774,25 @@ fn slow_inventory_line(game: &Game, index: usize) -> String {
 }
 
 fn picky_inventory_prompt(state: &mut State) -> Option<String> {
-    let pack: Vec<_> = state
+    let pack_len = state
         .game
         .player
         .inventory
         .iter()
         .filter(|item| item.in_pack)
-        .collect();
-    if pack.is_empty() {
+        .count();
+    if pack_len == 0 {
         state.game.message("⟨ničto:gen⟩ ne ⟨v2:nositi⟩");
         return None;
     }
-    if pack.len() == 1 {
-        let item = pack[0];
+    if pack_len == 1 {
+        let item = state
+            .game
+            .player
+            .inventory
+            .iter()
+            .find(|item| item.in_pack)
+            .unwrap();
         let description = state.game.inventory_name(item, false);
         let letter = item.pack_letter.unwrap_or('?');
         state.game.message(format!("{letter}) {description}"));
@@ -3299,7 +3805,11 @@ fn picky_inventory_prompt(state: &mut State) -> Option<String> {
         "kaky prědmet ⟨v2:hotěti⟩ viděti? "
     };
     state.game.remember_message(prompt);
-    Some(message_display_text(prompt))
+    let items = (0..pack_len)
+        .map(|index| inventory_line(&state.game, index))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(format!("{}\n{items}", message_display_text(prompt)))
 }
 fn inventory_text(game: &Game) -> String {
     let mut text = String::new();
@@ -3692,9 +4202,45 @@ mod tests {
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.insert_resource(Time::<()>::default());
         app.insert_resource(MovementRepeat::default());
+        app.insert_resource(InjectedInput::default());
         app.add_message::<AppExit>();
         app.add_systems(Update, keyboard);
         app
+    }
+
+    fn pointer_keyboard_app(initial_state: State) -> App {
+        let mut app = App::new();
+        app.insert_resource(initial_state);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(ButtonInput::<MouseButton>::default());
+        app.insert_resource(Touches::default());
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(MovementRepeat::default());
+        app.insert_resource(InjectedInput::default());
+        app.insert_resource(PointerUi::default());
+        app.add_message::<AppExit>();
+        app.world_mut().spawn((game_window(), PrimaryWindow));
+        app.add_systems(Update, (pointer_input, keyboard).chain());
+        app
+    }
+
+    fn click_cell(app: &mut App, cell: PointerCell) {
+        let position = Vec2::new(
+            12.0 + CELL_W * (cell.column as f32 + 0.5),
+            12.0 + CELL_H * (cell.row as f32 + 0.5),
+        )
+        .as_dvec2();
+        let mut windows = app
+            .world_mut()
+            .query_filtered::<&mut Window, With<PrimaryWindow>>();
+        windows
+            .single_mut(app.world_mut())
+            .expect("test app has one primary window")
+            .set_physical_cursor_position(Some(position));
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
     }
 
     fn press_keys(app: &mut App, keys_to_press: &[KeyCode]) {
@@ -3707,6 +4253,326 @@ mod tests {
         for key in keys_to_press {
             keys.press(*key);
         }
+    }
+
+    fn seen_passable_neighbor(game: &Game) -> Pos {
+        let player = game.player.pos;
+        [
+            Direction::Left,
+            Direction::Down,
+            Direction::Up,
+            Direction::Right,
+            Direction::UpLeft,
+            Direction::UpRight,
+            Direction::DownLeft,
+            Direction::DownRight,
+        ]
+        .into_iter()
+        .map(|direction| {
+            let (dx, dy) = direction.delta();
+            player.offset(dx, dy)
+        })
+        .find(|position| {
+            game.dungeon
+                .map
+                .get(*position)
+                .is_some_and(|cell| cell.seen && cell.terrain.passable())
+        })
+        .expect("the player starts with at least one remembered neighboring floor tile")
+    }
+
+    #[test]
+    fn pointer_coordinate_math_uses_grid_margins_and_logical_pixels() {
+        let window_size = Vec2::new(
+            CELL_W * DISPLAY_WIDTH as f32 + 24.0,
+            CELL_H * DISPLAY_HEIGHT as f32 + 24.0,
+        );
+        let position = Vec2::new(12.0 + CELL_W * 17.5, 12.0 + CELL_H * 9.5);
+        assert_eq!(
+            pointer_cell(position, window_size),
+            Some(PointerCell { column: 17, row: 9 })
+        );
+        assert_eq!(pointer_cell(Vec2::new(11.9, 12.0), window_size), None);
+        assert_eq!(pointer_cell(Vec2::new(12.0, 11.9), window_size), None);
+
+        let mut scaled = game_window();
+        scaled
+            .resolution
+            .set_scale_factor_and_apply_to_physical_size(2.0);
+        scaled.set_physical_cursor_position(Some(position.as_dvec2() * 2.0));
+        assert_eq!(scaled.cursor_position(), Some(position));
+        assert_eq!(
+            pointer_cell(
+                scaled.cursor_position().unwrap(),
+                Vec2::new(scaled.width(), scaled.height())
+            ),
+            Some(PointerCell { column: 17, row: 9 })
+        );
+    }
+
+    #[test]
+    fn command_bar_is_help_derived_grouped_and_cell_addressable() {
+        let state = state(90_001);
+        let layout = command_bar();
+        assert_eq!(layout.rows.len(), COMMAND_BAR_ROWS);
+        assert!(
+            layout
+                .rows
+                .iter()
+                .all(|row| row.chars().count() <= DISPLAY_WIDTH)
+        );
+        for (command, description, print) in HELP_ENTRIES {
+            if !print || *command == '\0' {
+                continue;
+            }
+            let entry = layout
+                .entries
+                .iter()
+                .find(|entry| entry.command == *command)
+                .expect("every printable non-run help entry is in the command bar");
+            assert!(
+                layout.rows[entry.row].contains(&command_bar_entry_text(*command, description))
+            );
+            let action = pointer_action_at_cell(
+                &state,
+                PointerCell {
+                    column: entry.start,
+                    row: KEYBINDING_FIRST_ROW + entry.row,
+                },
+            );
+            assert_eq!(action, Some(PointerAction::Key(*command)));
+        }
+        assert!(!layout.entries.iter().any(|entry| entry.command == '\0'));
+    }
+
+    #[test]
+    fn injected_command_bar_input_uses_the_normal_keyboard_path() {
+        let mut initial = state(90_002);
+        initial.game.player.inventory = vec![pack_item(91_000, ItemKind::Potion, 0, 'a')];
+        let mut app = keyboard_app(initial);
+        app.world_mut().resource_mut::<InjectedInput>().0 = Some('q');
+        press_keys(&mut app, &[KeyCode::ShiftLeft]);
+
+        app.update();
+
+        let state = app.world().resource::<State>();
+        assert_eq!(state.pending, Some(Pending::Quaff));
+        assert!(
+            state
+                .modal
+                .as_deref()
+                .is_some_and(|modal| modal.starts_with("a) "))
+        );
+    }
+
+    #[test]
+    fn native_mouse_click_uses_the_command_path_and_second_input_cancels_travel() {
+        let mut initial = state(90_010);
+        initial.game.player.inventory = vec![pack_item(91_010, ItemKind::Potion, 0, 'a')];
+        let target = seen_passable_neighbor(&initial.game);
+        assert!(initial.game.start_travel(target));
+        let q = command_bar()
+            .entries
+            .iter()
+            .find(|entry| entry.command == 'q')
+            .unwrap();
+        let q_cell = PointerCell {
+            column: q.start,
+            row: KEYBINDING_FIRST_ROW + q.row,
+        };
+        let mut app = pointer_keyboard_app(initial);
+
+        click_cell(&mut app, q_cell);
+
+        let current = app.world().resource::<State>();
+        assert!(!current.game.is_traveling());
+        assert_eq!(current.pending, None);
+
+        let mut ready = state(90_011);
+        ready.game.player.inventory = vec![pack_item(91_011, ItemKind::Potion, 0, 'a')];
+        let mut app = pointer_keyboard_app(ready);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::ShiftLeft);
+        click_cell(&mut app, q_cell);
+        assert_eq!(
+            app.world().resource::<State>().pending,
+            Some(Pending::Quaff)
+        );
+    }
+
+    #[test]
+    fn pointer_routes_item_rows_directions_map_identification_and_cancel() {
+        let mut item_state = state(90_003);
+        item_state.game.player.inventory = vec![
+            pack_item(91_001, ItemKind::Potion, 0, 'a'),
+            pack_item(91_002, ItemKind::Potion, 1, 'b'),
+        ];
+        item_state.modal = select_item_menu(&mut item_state, Pending::Quaff);
+        assert_eq!(
+            pointer_action_at_cell(&item_state, PointerCell { column: 70, row: 1 }),
+            Some(PointerAction::Key('b'))
+        );
+        let (cancel_row, cancel) = pointer_controls(&item_state);
+        let escape = cancel.last().unwrap();
+        assert_eq!(
+            pointer_action_at_cell(
+                &item_state,
+                PointerCell {
+                    column: escape.start,
+                    row: cancel_row,
+                },
+            ),
+            Some(PointerAction::Key('\u{1b}'))
+        );
+
+        let mut picky = state(90_012);
+        picky.game.player.inventory = vec![
+            pack_item(91_012, ItemKind::Potion, 0, 'a'),
+            pack_item(91_013, ItemKind::Food, 0, 'b'),
+        ];
+        picky.modal = picky_inventory_prompt(&mut picky);
+        assert_eq!(
+            pointer_action_at_cell(&picky, PointerCell { column: 70, row: 2 }),
+            Some(PointerAction::Key('b'))
+        );
+        let mut app = pointer_keyboard_app(picky);
+        click_cell(&mut app, PointerCell { column: 70, row: 2 });
+        let picky = app.world().resource::<State>();
+        assert_eq!(picky.pending, None);
+        assert!(
+            picky
+                .game
+                .messages
+                .last()
+                .is_some_and(|line| line.starts_with("b) "))
+        );
+
+        let mut direction_state = state(90_004);
+        direction_state.modal = direction_prompt(&mut direction_state, Pending::ZapDirection(1));
+        let start_x = overlay_start_x(direction_state.modal.as_deref().unwrap());
+        assert_eq!(
+            pointer_action_at_cell(
+                &direction_state,
+                PointerCell {
+                    column: start_x,
+                    row: 1,
+                },
+            ),
+            Some(PointerAction::Key('h'))
+        );
+        let player = direction_state.game.player.pos;
+        let target_column = if player.x > 0 { 0 } else { 1 };
+        let expected = if target_column < player.x { 'h' } else { 'l' };
+        assert_eq!(
+            pointer_action_at_cell(
+                &direction_state,
+                PointerCell {
+                    column: target_column as usize,
+                    row: DUNGEON_FIRST_ROW + player.y as usize - 1,
+                },
+            ),
+            Some(PointerAction::Key(expected))
+        );
+
+        let mut identify = state(90_005);
+        identify.pending = Some(Pending::IdentifyGlyph);
+        identify.modal = Some("Čto hoćeš opoznati?".into());
+        let target = identify.game.player.pos;
+        assert_eq!(
+            pointer_action_at_cell(
+                &identify,
+                PointerCell {
+                    column: target.x as usize,
+                    row: DUNGEON_FIRST_ROW + target.y as usize - 1,
+                },
+            ),
+            Some(PointerAction::Key('@'))
+        );
+    }
+
+    #[test]
+    fn pointer_prompt_answers_options_and_more_are_semantic_actions() {
+        let mut confirm = state(90_006);
+        confirm.pending = Some(Pending::QuitConfirm);
+        confirm.modal = Some("Istinno li izhoditi?".into());
+        let (row, controls) = pointer_controls(&confirm);
+        assert_eq!(
+            controls
+                .iter()
+                .map(|control| control.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Y", "N", "Escape"]
+        );
+        for (control, expected) in controls.iter().zip(['y', 'n', '\u{1b}']) {
+            assert_eq!(
+                pointer_action_at_cell(
+                    &confirm,
+                    PointerCell {
+                        column: control.start,
+                        row,
+                    },
+                ),
+                Some(PointerAction::Key(expected))
+            );
+        }
+        let rendered = display(&confirm);
+        assert!(display_row(&rendered, row).contains("Escape"));
+
+        let mut options = state(90_007);
+        options.pending = Some(Pending::Options(0));
+        options.modal = Some(options_text(&options.game, Some(0), None, None));
+        let old = options.game.options.passgo;
+        assert_eq!(
+            pointer_action_at_cell(&options, PointerCell { column: 40, row: 4 }),
+            Some(PointerAction::OptionRow(4))
+        );
+        apply_option_pointer(&mut options, 4);
+        assert_eq!(options.game.options.passgo, !old);
+        apply_option_pointer(&mut options, 7);
+        assert_eq!(options.pending, Some(Pending::Options(7)));
+
+        let mut more = state(90_008);
+        more.pending = Some(Pending::More);
+        more.modal = Some("Torba\n --Dalje--".into());
+        assert_eq!(
+            pointer_action_at_cell(
+                &more,
+                PointerCell {
+                    column: 10,
+                    row: DUNGEON_FIRST_ROW,
+                },
+            ),
+            Some(PointerAction::Key(' '))
+        );
+
+        let (control_row, controls) = pointer_controls(&more);
+        let escape = controls.last().unwrap();
+        let escape_cell = PointerCell {
+            column: escape.start,
+            row: control_row,
+        };
+        let mut app = pointer_keyboard_app(more);
+        click_cell(&mut app, escape_cell);
+        let state = app.world().resource::<State>();
+        assert_eq!(state.pending, None);
+        assert_eq!(state.modal, None);
+    }
+
+    #[test]
+    fn blocking_ui_state_cancels_core_pointer_travel() {
+        let mut initial = state(90_009);
+        let target = seen_passable_neighbor(&initial.game);
+        assert!(initial.game.start_travel(target));
+        initial.pending = Some(Pending::Help);
+        initial.modal = Some(help_text());
+        let mut app = App::new();
+        app.insert_resource(initial);
+        app.add_systems(Update, advance_pointer_travel);
+
+        app.update();
+
+        assert!(!app.world().resource::<State>().game.is_traveling());
     }
 
     #[test]
@@ -3943,9 +4809,18 @@ mod tests {
 
         let mut multiple = state(112);
         multiple.game.options.terse = true;
+        let prompt = picky_inventory_prompt(&mut multiple).unwrap();
+        assert!(prompt.starts_with("Prědmet: \na) "));
         assert_eq!(
-            picky_inventory_prompt(&mut multiple).as_deref(),
-            Some("Prědmet: ")
+            prompt.lines().count(),
+            multiple
+                .game
+                .player
+                .inventory
+                .iter()
+                .filter(|item| item.in_pack)
+                .count()
+                + 1
         );
         assert_eq!(multiple.pending, Some(Pending::PickyInventory));
     }
@@ -3971,10 +4846,10 @@ mod tests {
     }
 
     #[test]
-    fn clear_screen_modal_pages_use_all_twenty_seven_content_rows() {
+    fn clear_screen_modal_pages_use_every_row_above_the_command_bar() {
         let mut state = state(103);
         state.modal = Some(
-            (0..32)
+            (0..MODAL_PAGE_ROWS + 5)
                 .map(|line| format!("line {line}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
@@ -3986,11 +4861,11 @@ mod tests {
         state.modal_offset = MODAL_PAGE_ROWS;
         let second = display(&state);
         let second_text = display_row(&second, 0);
-        assert!(second_text.starts_with("line 27"));
+        assert!(second_text.starts_with(&format!("line {MODAL_PAGE_ROWS}")));
     }
 
     #[test]
-    fn normal_display_uses_three_event_rows_then_map_status_and_footer() {
+    fn normal_display_uses_three_event_rows_then_map_status_and_full_command_bar() {
         let mut state = state(104);
         state.visible_message = Some("Hello.".into());
         let player = state.game.player.pos;
@@ -4012,18 +4887,24 @@ mod tests {
             display_row(&buffer, STATUS_ROW).trim_end(),
             expected_status.trim_end()
         );
-        assert_eq!(
-            display_row(&buffer, KEYBINDING_FIRST_ROW).trim_end(),
-            KEYBINDING_FIRST_TEXT
-        );
-        assert_eq!(
-            display_row(&buffer, KEYBINDING_SECOND_ROW).trim_end(),
-            KEYBINDING_SECOND_TEXT
-        );
+        let layout = command_bar();
+        assert_eq!(layout.rows.len(), COMMAND_BAR_ROWS);
+        for (offset, expected) in layout.rows.iter().enumerate() {
+            assert_eq!(
+                display_row(&buffer, KEYBINDING_FIRST_ROW + offset).trim_end(),
+                expected
+            );
+        }
+        let printed_commands: Vec<char> = HELP_ENTRIES
+            .iter()
+            .filter_map(|(command, _, print)| (*print && *command != '\0').then_some(*command))
+            .collect();
+        let bar_commands: Vec<char> = layout.entries.iter().map(|entry| entry.command).collect();
+        assert_eq!(bar_commands.len(), printed_commands.len());
         assert!(
-            display_row(&buffer, KEYBINDING_SECOND_ROW)
-                .trim_end()
-                .ends_with("Pomoć ?")
+            printed_commands
+                .iter()
+                .all(|command| bar_commands.contains(command))
         );
     }
 
@@ -5423,7 +6304,12 @@ mod tests {
             throw_direction.pending,
             Some(Pending::ThrowDirection(weapon_id))
         );
-        assert_eq!(throw_direction.modal.as_deref(), Some("V ktorų strånų? "));
+        assert!(
+            throw_direction
+                .modal
+                .as_deref()
+                .is_some_and(|modal| modal.starts_with("V ktorų strånų? \nh       vlěvo"))
+        );
         press_keys(&mut throw_app, &[KeyCode::KeyH]);
         throw_app.update();
         let throw_result = throw_app.world().resource::<State>();
@@ -5604,7 +6490,7 @@ mod tests {
         initial_state.game.player.inventory = vec![potion];
         initial_state.pending = Some(Pending::Quaff);
         initial_state.modal = Some(
-            (0..32)
+            (0..MODAL_PAGE_ROWS + 5)
                 .map(|line| format!("line {line}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
@@ -5637,17 +6523,15 @@ mod tests {
     #[test]
     fn direction_prompts_preserve_the_reference_forms_with_the_terse_typo_fixed() {
         let mut state = state(2070);
-        assert_eq!(
-            direction_prompt(&mut state, Pending::ZapDirection(1)).as_deref(),
-            Some("V ktorų strånų? ")
-        );
+        let verbose = direction_prompt(&mut state, Pending::ZapDirection(1)).unwrap();
+        assert!(verbose.starts_with("V ktorų strånų? \nh       vlěvo"));
+        assert_eq!(verbose.lines().count(), 9);
         assert_eq!(state.game.recall_message, "v ktorų strånų? ");
 
         state.game.options.terse = true;
-        assert_eq!(
-            direction_prompt(&mut state, Pending::ZapDirection(1)).as_deref(),
-            Some("Strana: ")
-        );
+        let terse = direction_prompt(&mut state, Pending::ZapDirection(1)).unwrap();
+        assert!(terse.starts_with("Strana: \nh       vlěvo"));
+        assert_eq!(terse.lines().count(), 9);
         assert_eq!(state.game.recall_message, "strana: ");
     }
 

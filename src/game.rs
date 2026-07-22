@@ -12,6 +12,7 @@ use crate::{
 };
 use interslavic::Case;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 fn trap_name(trap: Trap) -> String {
     crate::lang::phrase(
@@ -395,6 +396,23 @@ pub struct Game {
     fight_kamikaze: bool,
     #[serde(skip)]
     fight_safety_max_hit: i32,
+    /// Pointer travel is an ephemeral input gesture. Saving or restoring a
+    /// game must never resume unattended movement.
+    #[serde(skip)]
+    travel_target: Option<Pos>,
+    /// A monotonic-within-step damage signal keeps same-turn healing from
+    /// hiding an interruption. It is cleared whenever pointer travel stops.
+    #[serde(skip)]
+    travel_damage_seen: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TravelSnapshot {
+    depth: u32,
+    hp: i32,
+    held_turns: u32,
+    asleep_turns: u32,
+    visible_monsters: HashSet<u64>,
 }
 
 impl Game {
@@ -458,6 +476,8 @@ impl Game {
             fight_target: None,
             fight_kamikaze: false,
             fight_safety_max_hit: 0,
+            travel_target: None,
+            travel_damage_seen: false,
         };
         g.init_inventory(starting_arrows);
         g.build_current_level();
@@ -784,6 +804,169 @@ impl Game {
         }
         monster
     }
+
+    /// Begin pointer travel toward a remembered dungeon tile. The destination
+    /// and every intermediate tile must already be known to the player; the
+    /// route never consults unseen terrain.
+    pub fn start_travel(&mut self, destination: Pos) -> bool {
+        if self.end != EndState::Playing || destination == self.player.pos {
+            self.travel_target = None;
+            return false;
+        }
+        if self.travel_first_step(destination).is_none() {
+            self.travel_target = None;
+            return false;
+        }
+        self.travel_target = Some(destination);
+        self.travel_damage_seen = false;
+        true
+    }
+
+    pub fn cancel_travel(&mut self) {
+        self.travel_target = None;
+        self.travel_damage_seen = false;
+    }
+
+    pub fn is_traveling(&self) -> bool {
+        self.travel_target.is_some()
+    }
+
+    fn travel_snapshot(&self) -> TravelSnapshot {
+        TravelSnapshot {
+            depth: self.depth,
+            hp: self.player.stats.hp,
+            held_turns: self.player.conditions.held_turns,
+            asleep_turns: self.player.conditions.asleep_turns,
+            visible_monsters: self
+                .monsters
+                .iter()
+                .filter(|monster| self.can_see_monster(monster))
+                .map(|monster| monster.id)
+                .collect(),
+        }
+    }
+
+    fn travel_interrupted(
+        &self,
+        before: &TravelSnapshot,
+        expected: Pos,
+        stepped_on_trap: bool,
+        result: CommandResult,
+    ) -> bool {
+        !result.consumed_turn
+            || self.end != EndState::Playing
+            || self.depth != before.depth
+            || self.player.pos != expected
+            || self.player.stats.hp < before.hp
+            || self.travel_damage_seen
+            || self.player.conditions.held_turns > before.held_turns
+            || self.player.conditions.asleep_turns > before.asleep_turns
+            || stepped_on_trap
+            || self.monsters.iter().any(|monster| {
+                self.can_see_monster(monster) && !before.visible_monsters.contains(&monster.id)
+            })
+    }
+
+    /// Execute one ordinary movement command along the current pointer route.
+    /// Returns the ordinary command result so callers can observe whether the
+    /// attempted step consumed a turn.
+    pub fn advance_travel(&mut self) -> CommandResult {
+        let Some(destination) = self.travel_target else {
+            return CommandResult::FREE;
+        };
+        let Some(next) = self.travel_first_step(destination) else {
+            self.cancel_travel();
+            return CommandResult::FREE;
+        };
+        let dx = next.x - self.player.pos.x;
+        let dy = next.y - self.player.pos.y;
+        let Some(direction) = Direction::from_delta(dx, dy) else {
+            self.cancel_travel();
+            return CommandResult::FREE;
+        };
+        let stepped_on_trap = self
+            .dungeon
+            .map
+            .get(next)
+            .is_some_and(|cell| cell.trap.is_some())
+            && !self.player.conditions.levitating
+            && self.floor_items.iter().all(|item| item.pos != Some(next));
+        self.travel_damage_seen = false;
+        let before = self.travel_snapshot();
+        let result = self.execute(Command::Move(direction));
+        let interrupted = self.travel_interrupted(&before, next, stepped_on_trap, result);
+        self.travel_damage_seen = false;
+        if next == destination || interrupted {
+            self.cancel_travel();
+        }
+        result
+    }
+
+    fn travel_first_step(&self, destination: Pos) -> Option<Pos> {
+        let start = self.player.pos;
+        if !self.travel_tile_known(destination) {
+            return None;
+        }
+        let mut frontier = VecDeque::from([start]);
+        let mut parent = HashMap::from([(start, start)]);
+        const DIRECTIONS: [Direction; 8] = [
+            Direction::Left,
+            Direction::Down,
+            Direction::Up,
+            Direction::Right,
+            Direction::UpLeft,
+            Direction::UpRight,
+            Direction::DownLeft,
+            Direction::DownRight,
+        ];
+        while let Some(current) = frontier.pop_front() {
+            if current == destination {
+                break;
+            }
+            for direction in DIRECTIONS {
+                let (dx, dy) = direction.delta();
+                let next = current.offset(dx, dy);
+                if parent.contains_key(&next) || !self.travel_tile_known(next) {
+                    continue;
+                }
+                if dx != 0
+                    && dy != 0
+                    && (!self.travel_tile_known(current.offset(dx, 0))
+                        || !self.travel_tile_known(current.offset(0, dy)))
+                {
+                    continue;
+                }
+                parent.insert(next, current);
+                frontier.push_back(next);
+            }
+        }
+        if !parent.contains_key(&destination) {
+            return None;
+        }
+        let mut step = destination;
+        while parent[&step] != start {
+            step = parent[&step];
+        }
+        Some(step)
+    }
+
+    fn travel_tile_known(&self, pos: Pos) -> bool {
+        self.dungeon
+            .map
+            .get(pos)
+            .is_some_and(|cell| cell.seen && cell.terrain.passable())
+    }
+
+    fn damage_player(&mut self, damage: i32) {
+        if damage <= 0 {
+            return;
+        }
+        if self.travel_target.is_some() {
+            self.travel_damage_seen = true;
+        }
+        self.player.stats.hp -= damage;
+    }
+
     pub fn execute(&mut self, command: Command) -> CommandResult {
         if self.end != EndState::Playing {
             return CommandResult::FREE;
@@ -2682,7 +2865,8 @@ impl Game {
                 hit_player = false;
                 changed = !changed;
                 if !self.player_saves(3) {
-                    self.player.stats.hp -= self.rng.roll(6, 6);
+                    let damage = self.rng.roll(6, 6);
+                    self.damage_player(damage);
                     if self.player.stats.hp <= 0 {
                         if let Some(kind) = source_kind {
                             self.die(Self::monster_killer(kind));
@@ -2728,7 +2912,8 @@ impl Game {
             self.message("⟨n:koža:nom⟩ ⟨ty:acc⟩ ⟨v3:mråviti⟩");
             return;
         }
-        self.player.stats.hp /= 2;
+        let damage = self.player.stats.hp - self.player.stats.hp / 2;
+        self.damage_player(damage);
         let damage = self.player.stats.hp / targets.len() as i32;
         for &i in targets.iter().rev() {
             self.monsters[i].hp -= damage;
@@ -3167,7 +3352,8 @@ impl Game {
                     self.player.stats.armor,
                     1,
                 ) {
-                    self.player.stats.hp -= self.rng.roll(1, 6);
+                    let damage = self.rng.roll(1, 6);
+                    self.damage_player(damage);
                     if self.player.stats.hp <= 0 {
                         self.die("⟨n:strěla:gen⟩");
                         self.message("⟨n:strěla:nom⟩ ⟨ty:acc⟩ ⟨lp:ubiti:f⟩");
@@ -3225,7 +3411,8 @@ impl Game {
                     self.player.stats.armor,
                     1,
                 ) {
-                    self.player.stats.hp -= self.rng.roll(1, 4);
+                    let damage = self.rng.roll(1, 4);
+                    self.damage_player(damage);
                     if self.player.stats.hp <= 0 {
                         self.die("⟨n:drotik:gen⟩");
                         self.message("⟨a:jadny:drotik:nom⟩ ⟨n:drotik:nom⟩ ⟨ty:acc⟩ ⟨lp:ubiti:m⟩");
@@ -3586,6 +3773,7 @@ impl Game {
         CommandResult::FREE
     }
     fn new_level(&mut self) {
+        self.cancel_travel();
         self.player.conditions.held_turns = 0;
         self.flytrap_holder = None;
         self.flytrap_hits = 0;
@@ -4474,7 +4662,7 @@ impl Game {
         );
         if kind == 5 && self.monsters[index].flags & monster::CANCELLED == 0 {
             if !outcome.hit {
-                self.player.stats.hp -= self.flytrap_hits;
+                self.damage_player(self.flytrap_hits);
                 if self.player.stats.hp <= 0 {
                     self.die(Self::monster_killer(kind));
                     return;
@@ -4486,7 +4674,7 @@ impl Game {
                 return;
             }
             let old_hp = self.player.stats.hp;
-            self.player.stats.hp -= outcome.damage;
+            self.damage_player(outcome.damage);
             if !suppress_attack_message {
                 let message = self.attack_hit_message(Some(&attacker_name), None);
                 self.message(message);
@@ -4498,7 +4686,7 @@ impl Game {
             self.record_fight_hit(old_hp - self.player.stats.hp);
             self.flytrap_hits += 1;
             self.flytrap_holder = Some(self.monsters[index].id);
-            self.player.stats.hp -= 1;
+            self.damage_player(1);
             if self.player.stats.hp <= 0 {
                 self.die(Self::monster_killer(kind))
             }
@@ -4506,7 +4694,7 @@ impl Game {
         }
         if !outcome.hit {
             if kind == 5 && self.flytrap_hits > 0 {
-                self.player.stats.hp -= self.flytrap_hits;
+                self.damage_player(self.flytrap_hits);
                 if self.player.stats.hp <= 0 {
                     self.die(Self::monster_killer(kind));
                     return;
@@ -4519,7 +4707,7 @@ impl Game {
             return;
         }
         let old_hp = self.player.stats.hp;
-        self.player.stats.hp -= outcome.damage;
+        self.damage_player(outcome.damage);
         if kind != 8 && !suppress_attack_message {
             let message = self.attack_hit_message(Some(&attacker_name), None);
             self.message(message);
@@ -4677,7 +4865,8 @@ impl Game {
     }
     fn drain_max_hp(&mut self, loss: i32, cause: &str) {
         self.player.stats.max_hp -= loss;
-        self.player.stats.hp = (self.player.stats.hp - loss).max(1);
+        let damage = self.player.stats.hp - (self.player.stats.hp - loss).max(1);
+        self.damage_player(damage);
         if self.player.stats.max_hp <= 0 {
             self.die(cause);
             return;
@@ -5476,9 +5665,140 @@ mod tests {
             let cell = game.dungeon.map.get_mut(start.offset(dx, 0)).unwrap();
             cell.terrain = Terrain::Passage;
             cell.passage = Some(0);
+            cell.seen = true;
+            cell.remembered = '#';
         }
         (game, start)
     }
+
+    #[test]
+    fn pointer_travel_routes_only_over_player_known_tiles() {
+        let (mut game, start) = straight_test_passage(8_001);
+        let hidden = start.offset(1, 0);
+        game.dungeon.map.get_mut(hidden).unwrap().seen = false;
+
+        assert!(!game.start_travel(start.offset(3, 0)));
+        assert!(!game.is_traveling());
+
+        game.dungeon.map.get_mut(hidden).unwrap().seen = true;
+        assert!(game.start_travel(start.offset(3, 0)));
+        assert_eq!(game.travel_first_step(start.offset(3, 0)), Some(hidden));
+    }
+
+    #[test]
+    fn pointer_travel_executes_one_ordinary_turn_per_step_and_cancels() {
+        let (mut game, start) = straight_test_passage(8_002);
+        let initial_turn = game.turn;
+        assert!(game.start_travel(start.offset(3, 0)));
+
+        let result = game.advance_travel();
+
+        assert!(result.consumed_turn);
+        assert_eq!(game.player.pos, start.offset(1, 0));
+        assert_eq!(game.turn, initial_turn + 1);
+        assert!(game.is_traveling());
+        game.cancel_travel();
+        assert!(!game.is_traveling());
+        assert_eq!(game.advance_travel(), CommandResult::FREE);
+        assert_eq!(game.player.pos, start.offset(1, 0));
+    }
+
+    #[test]
+    fn pointer_travel_stops_on_traps_and_newly_visible_monsters() {
+        let (mut trapped, start) = straight_test_passage(8_003);
+        trapped
+            .dungeon
+            .map
+            .get_mut(start.offset(1, 0))
+            .unwrap()
+            .trap = Some(Trap::Bear);
+        assert!(trapped.start_travel(start.offset(3, 0)));
+        trapped.advance_travel();
+        assert_eq!(trapped.player.pos, start.offset(1, 0));
+        assert!(!trapped.is_traveling());
+
+        let (mut spotted, start) = straight_test_passage(8_004);
+        let id = spotted.id();
+        let mut monster =
+            monster::create(id, 0, start.offset(2, 0), spotted.depth, &mut spotted.rng);
+        monster.awake = false;
+        spotted.monsters.push(monster);
+        assert!(!spotted.can_see_monster(&spotted.monsters[0]));
+        assert!(spotted.start_travel(start.offset(3, 0)));
+        spotted.advance_travel();
+        assert!(spotted.can_see_monster(&spotted.monsters[0]));
+        assert!(!spotted.is_traveling());
+    }
+
+    #[test]
+    fn pointer_travel_stops_after_damage_and_attacks_an_adjacent_monster() {
+        let (mut damaged, start) = straight_test_passage(8_005);
+        assert!(damaged.start_travel(start.offset(1, 0)));
+        let ring_id = damaged.id();
+        damaged
+            .player
+            .inventory
+            .push(Item::basic(ring_id, ItemKind::Ring, 9));
+        damaged.player.rings[0] = Some(ring_id);
+        let before = damaged.travel_snapshot();
+        let hp = damaged.player.stats.hp;
+        damaged.damage_player(1);
+        damaged.heal();
+        assert_eq!(damaged.player.stats.hp, hp);
+        assert!(damaged.travel_interrupted(&before, start, false, CommandResult::TURN));
+
+        let (mut attacking, start) = straight_test_passage(8_006);
+        let id = attacking.id();
+        let monster = monster::create(
+            id,
+            0,
+            start.offset(1, 0),
+            attacking.depth,
+            &mut attacking.rng,
+        );
+        attacking.monsters.push(monster);
+        let initial_turn = attacking.turn;
+        assert!(attacking.start_travel(start.offset(1, 0)));
+
+        let result = attacking.advance_travel();
+
+        assert!(result.consumed_turn);
+        assert_eq!(attacking.player.pos, start);
+        assert_eq!(attacking.turn, initial_turn + 1);
+        assert!(!attacking.is_traveling());
+    }
+
+    #[test]
+    fn pointer_travel_interruption_classifier_covers_every_core_stop() {
+        let (base, start) = straight_test_passage(8_007);
+        let before = base.travel_snapshot();
+        assert!(!base.travel_interrupted(&before, start, false, CommandResult::TURN));
+        assert!(base.travel_interrupted(&before, start, false, CommandResult::FREE));
+        assert!(base.travel_interrupted(&before, start.offset(1, 0), false, CommandResult::TURN));
+        assert!(base.travel_interrupted(&before, start, true, CommandResult::TURN));
+
+        let mut changed = base.clone();
+        changed.depth += 1;
+        assert!(changed.travel_interrupted(&before, start, false, CommandResult::TURN));
+        changed = base.clone();
+        changed.player.stats.hp -= 1;
+        assert!(changed.travel_interrupted(&before, start, false, CommandResult::TURN));
+        changed = base.clone();
+        changed.player.conditions.held_turns += 1;
+        assert!(changed.travel_interrupted(&before, start, false, CommandResult::TURN));
+        changed = base.clone();
+        changed.player.conditions.asleep_turns += 1;
+        assert!(changed.travel_interrupted(&before, start, false, CommandResult::TURN));
+        changed = base.clone();
+        changed.end = EndState::Quit;
+        assert!(changed.travel_interrupted(&before, start, false, CommandResult::TURN));
+
+        changed = base;
+        assert!(changed.start_travel(start.offset(1, 0)));
+        changed.new_level();
+        assert!(!changed.is_traveling());
+    }
+
     #[test]
     fn movement_consumes_a_turn() {
         let mut g = Game::new(1);
