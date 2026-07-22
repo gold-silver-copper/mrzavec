@@ -9022,9 +9022,9 @@ mod tests {
                 .messages
                 .iter()
                 .rev()
-                .find(|message| message.contains("poběđaješ"))
+                .find(|message| message.contains("ubiješ"))
                 .unwrap(),
-            "poběđaješ něčto"
+            "ubiješ něčto"
         );
 
         let mut hallucinating = Game::new(2125);
@@ -9049,7 +9049,7 @@ mod tests {
                 .messages
                 .iter()
                 .rev()
-                .find(|message| message.contains("poběđaješ"))
+                .find(|message| message.contains("ubiješ"))
                 .unwrap(),
             "poběđaješ netopyŕa"
         );
