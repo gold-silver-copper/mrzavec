@@ -322,3 +322,7 @@ perfective present, same pattern as usneš) — replacing poběđaješ
   naming the intended sense — all 11 pairs annotated with crate
   glosses); the hand-curated SUSPICIOUS set is gone.
 - noun_info now makes fruit gender agreement possible (not yet used).
+||||||| parent of d75edff (Kill message uses imperfective ubivati (ubivaješ))
+Kill message aspect (2026-07-22, owner request): ubivati (imperfective)
+over ubiti — "ubivaješ {acc}", plain present narration consistent with
+udarjaješ/raniš, replacing the perfective-present "ubiješ".
