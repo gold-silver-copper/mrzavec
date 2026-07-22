@@ -9051,7 +9051,7 @@ mod tests {
                 .rev()
                 .find(|message| message.contains("ubiješ"))
                 .unwrap(),
-            "poběđaješ netopyŕa"
+            "ubiješ netopyŕa"
         );
     }
 
