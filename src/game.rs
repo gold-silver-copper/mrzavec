@@ -2097,10 +2097,12 @@ impl Game {
             ItemKind::Gold => format!(
                 "{} {}",
                 item.gold_value,
-                decl(
-                    &lang::GOLD_COIN,
-                    if (2..=4).contains(&item.gold_value) { Case::Nom } else { Case::Gen },
-                    if item.gold_value == 1 { Singular } else { Plural }
+                interslavic::quantified(
+                    item.gold_value as u64,
+                    lang::GOLD_COIN.lemma,
+                    case,
+                    lang::GOLD_COIN.gender,
+                    lang::GOLD_COIN.animacy,
                 )
             ),
             ItemKind::Bizarre(glyph) => {
@@ -2259,10 +2261,10 @@ impl Game {
             self.monsters[index].awake,
         );
         if !outcome.hit {
-            let defender = self.monster_message_name(index, Case::Acc);
+            let defender = self.monster_message_name(index, Case::Gen);
             self.message(if item.kind == ItemKind::Weapon {
                 format!(
-                    "{} ⟨v3:hybiti⟩ {defender}",
+                    "{} ⟨v3:letěti⟩ mimo {defender}",
                     crate::lang::phrase(
                         &crate::lang::WEAPON_LEX[item.which as usize],
                         Case::Nom,
@@ -2270,7 +2272,7 @@ impl Game {
                     )
                 )
             } else {
-                format!("⟨v2:hybiti⟩ {defender}")
+                format!("⟨v2:udarjati⟩ mimo {defender}")
             });
             return false;
         }
@@ -3295,7 +3297,17 @@ impl Game {
             self.message(if self.options.terse {
                 format!("{} gold pieces", item.gold_value)
             } else {
-                format!("⟨v2:nahoditi⟩ {} {}", item.gold_value, crate::lang::decl(&crate::lang::GOLD_COIN, if (2..=4).contains(&item.gold_value) { Case::Nom } else { Case::Gen }, if item.gold_value == 1 { interslavic::Number::Singular } else { interslavic::Number::Plural }))
+                format!(
+                    "⟨v2:nahoditi⟩ {} {}",
+                    item.gold_value,
+                    interslavic::quantified(
+                        item.gold_value as u64,
+                        crate::lang::GOLD_COIN.lemma,
+                        Case::Acc,
+                        crate::lang::GOLD_COIN.gender,
+                        crate::lang::GOLD_COIN.animacy,
+                    )
+                )
             });
             return CommandResult::TURN;
         }
@@ -3709,7 +3721,7 @@ impl Game {
         );
         if !outcome.hit {
             if !suppress_messages {
-                let defender = self.monster_message_name(index, Case::Acc);
+                let defender = self.monster_message_name(index, Case::Gen);
                 let message = self.attack_miss_message(None, Some(&defender));
                 self.message(message);
             }
@@ -3813,7 +3825,10 @@ impl Game {
         }
     }
 
-    /// Same contract as `attack_hit_message` (Nom attacker / Acc defender).
+    /// Nom attacker / GENITIVE defender (miss phrasings are built on
+    /// `mimo` + Gen and negation + Gen: the dictionary marks `hybiti`
+    /// intransitive — verb_info, interslavic 0.12.0 — so the old
+    /// accusative object was ungrammatical).
     fn attack_miss_message(&mut self, attacker: Option<&str>, defender: Option<&str>) -> String {
         if self.options.terse {
             return crate::lang::speak(&match attacker {
@@ -3825,18 +3840,18 @@ impl Game {
         match attacker {
             None => {
                 const PLAYER: [&str; 4] = [
-                    "⟨v2:hybiti⟩",
-                    "⟨v2:mahati⟩ i ⟨v2:hybiti⟩",
-                    "jedva ⟨v2:hybiti⟩",
+                    "⟨v2:udarjati⟩ mimo",
+                    "⟨v2:mahati⟩ i ⟨v2:udarjati⟩ mimo",
+                    "jedva ⟨v2:udarjati⟩ mimo",
                     "ne ⟨v2:udarjati⟩",
                 ];
                 crate::lang::speak(&format!("{} {target}", PLAYER[self.rng.rnd(4) as usize]))
             }
             Some(subject) => {
                 const MONSTER: [&str; 4] = [
-                    "⟨v3:hybiti⟩",
-                    "⟨v3:mahati⟩ i ⟨v3:hybiti⟩",
-                    "jedva ⟨v3:hybiti⟩",
+                    "⟨v3:udarjati⟩ mimo",
+                    "⟨v3:mahati⟩ i ⟨v3:udarjati⟩ mimo",
+                    "jedva ⟨v3:udarjati⟩ mimo",
                     "ne ⟨v3:udarjati⟩",
                 ];
                 crate::lang::speak(&format!(
@@ -10566,7 +10581,7 @@ mod tests {
         assert!(!miss.thrown_attack(0, &dagger));
         assert_eq!(
             miss.messages.last().unwrap(),
-            "kinžal hybi zombi"
+            "kinžal leti mimo zombi"
         );
     }
 

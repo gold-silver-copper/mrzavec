@@ -237,7 +237,7 @@ marker plus a second case slot — no tool can check valence):
 | liti sę | Dat benefactive + na Acc | ti / na glåvų | OK |
 | dostigati | + Gen | stųpenja | OK |
 | svŕběti | Acc experiencer ("svrbi tę") | Acc | OK |
-| hybiti | frame unattested in dictionary; Acc by analogy with udarjati | Acc | accepted by decision |
+| hybiti | **v.intr. per verb_info (interslavic 0.12.0)** — the by-analogy Acc was wrong | bare (terse) / restructured | fixed: verbose misses now use "udarjati mimo + Gen" and "ne udarjati + Gen" |
 | zadavati (+Acc +Dat) | REMOVED — replaced by "odlično udarjati" (double-Acc bug) | — | fixed |
 
 **Polish decisions**: terse label → "Kråtka sȯobčeńja" (official lemma
@@ -302,3 +302,23 @@ Kill message (2026-07-22, owner request): "you have defeated X" now
 renders with the kill verb — ⟨v2:ubiti⟩ "ubiješ {acc}" (narrative
 perfective present, same pattern as usneš) — replacing poběđaješ
 (defeat), which read as sports-victory register.
+
+## interslavic 0.12.0 adopted (2026-07-22)
+
+- **quantified() owns count government**: lang::counted_in and the gold
+  sites delegate the noun form to the crate (adjective agreement mirrors
+  the documented policy, guarded by the
+  adjective_agreement_matches_quantified consistency test). Real fix:
+  end screens said "s 1 zlåtnikami" — quantified gives "s 1 zlåtnikom".
+- **hybiti is intransitive** (verb_info exposes the dictionary's
+  v.intr.) — the valence audit's by-analogy accusative is corrected:
+  verbose miss messages are now "udarjaješ mimo {Gen}" / "mahaješ i
+  udarjaješ mimo {Gen}" / "jedva udarjaješ mimo {Gen}" / "ne udarjaješ
+  {Gen}" (genitive of negation is used HERE because all four variants
+  share one pre-declined genitive target; the elsewhere-kept accusative
+  negation convention is unchanged). Terse keeps bare hybiš/hybi.
+- **Government lint is senses-driven**: severity comes from
+  preposition_senses (multi-sense pairs need a pair-keyed annotation
+  naming the intended sense — all 11 pairs annotated with crate
+  glosses); the hand-curated SUSPICIOUS set is gone.
+- noun_info now makes fruit gender agreement possible (not yet used).

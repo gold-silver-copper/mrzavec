@@ -7,3 +7,17 @@ s — the {} is a bare digit amount; the case rides on the following ⟨n:zlåtn
 iz — "soka iz {}" receives lang::decl_guess(fruit, Case::Gen, Singular); material_of() likewise renders "iz <Gen>"
 o — {loc_pl} is built with lang::decl(.., Case::Loc, Plural) at the discoveries call site
 na — "stųpaješ na {name_acc}": placeholder is inventory_name_case(.., Case::Acc); na+Acc is the motion reading
+# Pair-keyed annotations (interslavic 0.12.0 senses-driven policy): each
+# multi-sense preposition+case pairing used in templates, with its
+# intended sense (gloss from preposition_senses).
+v+acc — "into" (motion): padati v obmråk/pasť, udarjati v ramę/glåvų, došli v Temnice
+v+loc — "in, within" (location): v vȯzduhu, v oblačku dyma, v paralelnom světu, v želųdku, v šiji, v torbě, v koristanju
+na+acc — "onto" (motion): stųpaješ na X, padaješ na zemjų, na pŕst, na glåvų
+na+loc — "on" (location): na každoj rųkě, na tom stųpenju, na podu, na koncu
+po+loc — "throughout, all over": po vsem tělu, po tvojej brȯnji
+o+loc — "about, concerning": o temnicě, o {loc_pl}
+o+acc — "against" (impact): pri udaru o zemjų
+s+ins — "with" (accompaniment): s Vsemirom, s tym, gold_with amounts
+za+acc — "for (the purpose of)": za vzęťje, effect names za + gerund
+nad+ins — "above": nad zemjejų
+pri+loc — "at, during": pri udaru

@@ -479,10 +479,9 @@ fn main() {
                 println!("{}\n\n{table}", tombstone_text(&game));
             } else {
                 println!(
-                    "Smŕť od {}, s {} {}\n\n{table}",
+                    "Smŕť od {}, s {}\n\n{table}",
                     death_cause_gen(&game),
-                    score::amount(&game),
-                    speak("⟨n:zlåtnik:ins:pl⟩")
+                    gold_with(score::amount(&game) as u64)
                 );
             }
             return;
@@ -697,16 +696,14 @@ fn finalize_end(mut state: ResMut<State>) {
             table
         ),
         mrzavec::game::EndState::Dead => format!(
-            "Smŕť od {}, s {} {}\n\n{}",
+            "Smŕť od {}, s {}\n\n{}",
             death_cause_gen(&state.game),
-            score::amount(&state.game),
-            speak("⟨n:zlåtnik:ins:pl⟩"),
+            gold_with(score::amount(&state.game) as u64),
             table
         ),
         mrzavec::game::EndState::Quit => format!(
-            "Izhod s {} {}\n\n{}",
-            state.game.player.gold,
-            speak("⟨n:zlåtnik:ins:pl⟩"),
+            "Izhod s {}\n\n{}",
+            gold_with(state.game.player.gold as u64),
             table
         ),
         mrzavec::game::EndState::Playing => unreachable!(),
@@ -767,6 +764,23 @@ fn tombstone_text(game: &Game) -> String {
 /// Death cause for display after "od". Causes are stored as complete
 /// genitive strings (game.rs `die()`); only the internal "signal" key —
 /// which score.rs compares literally — still needs a genitive rendering.
+/// "N zlåtnikom/zlåtnikami" — instrumental counted phrase for "s {gold}"
+/// (interslavic::quantified handles the n==1 singular the old fixed
+/// ins:pl marker got wrong).
+fn gold_with(amount: u64) -> String {
+    format!(
+        "{} {}",
+        amount,
+        interslavic::quantified(
+            amount,
+            mrzavec::lang::GOLD_COIN.lemma,
+            interslavic::Case::Ins,
+            mrzavec::lang::GOLD_COIN.gender,
+            mrzavec::lang::GOLD_COIN.animacy,
+        )
+    )
+}
+
 fn death_cause_gen(game: &Game) -> String {
     match game.death_cause.as_deref() {
         Some("signal") => speak("⟨n:signal:gen⟩"),
