@@ -3872,9 +3872,9 @@ impl Game {
         }
         self.player.stats.experience += u64::from(monster.experience);
         self.message(if self.options.terse {
-            format!("⟨v2:ubiti⟩ {defeated}")
+            format!("⟨v2:ubivati⟩ {defeated}")
         } else {
-            format!("⟨v2:ubiti⟩ {defeated}")
+            format!("⟨v2:ubivati⟩ {defeated}")
         });
         self.drop_monster_inventory(monster);
         self.check_experience();
@@ -9158,9 +9158,9 @@ mod tests {
                 .messages
                 .iter()
                 .rev()
-                .find(|message| message.contains("ubiješ"))
+                .find(|message| message.contains("ubivaješ"))
                 .unwrap(),
-            "ubiješ něčto"
+            "ubivaješ něčto"
         );
 
         let mut hallucinating = Game::new(2125);
@@ -9185,9 +9185,9 @@ mod tests {
                 .messages
                 .iter()
                 .rev()
-                .find(|message| message.contains("ubiješ"))
+                .find(|message| message.contains("ubivaješ"))
                 .unwrap(),
-            "ubiješ netopyŕa"
+            "ubivaješ netopyŕa"
         );
     }
 
