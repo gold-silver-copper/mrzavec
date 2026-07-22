@@ -8,8 +8,9 @@
 //! `regenerate_project_lexicon` test.
 
 use interslavic::{
-    adj, comparative, l_participle, superlative as isv_superlative, noun_with, passive_participle, personal_pronoun, pronoun,
-    verb, verb_forms, Animacy, Case, Gender, Number, Person, PronounStyle, Tense,
+    Animacy, Case, Gender, Number, Person, PronounStyle, Tense, adj, comparative, l_participle,
+    noun_with, passive_participle, personal_pronoun, pronoun, superlative as isv_superlative, verb,
+    verb_forms,
 };
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -34,10 +35,20 @@ pub struct Phrase {
 }
 
 pub const fn lex(lemma: &'static str, gender: Gender, animacy: Animacy) -> Lex {
-    Lex { lemma, gender, animacy, indecl: false }
+    Lex {
+        lemma,
+        gender,
+        animacy,
+        indecl: false,
+    }
 }
 pub const fn lex_indecl(lemma: &'static str, gender: Gender, animacy: Animacy) -> Lex {
-    Lex { lemma, gender, animacy, indecl: true }
+    Lex {
+        lemma,
+        gender,
+        animacy,
+        indecl: true,
+    }
 }
 pub const fn ph(adj: Option<&'static str>, head: Lex) -> Phrase {
     Phrase { adj, head }
@@ -71,7 +82,11 @@ pub fn adj_for(a: &str, l: &Lex, case: Case, number: Number) -> String {
 /// Decline a full phrase (agreeing adjective + head noun).
 pub fn phrase(p: &Phrase, case: Case, number: Number) -> String {
     match p.adj {
-        Some(a) => format!("{} {}", adj_for(a, &p.head, case, number), decl(&p.head, case, number)),
+        Some(a) => format!(
+            "{} {}",
+            adj_for(a, &p.head, case, number),
+            decl(&p.head, case, number)
+        ),
         None => decl(&p.head, case, number),
     }
 }
@@ -84,9 +99,7 @@ pub fn counted_in(n: u64, p: &Phrase, case: Case) -> String {
     if p.head.indecl {
         return p.head.lemma.to_string();
     }
-    let parts = interslavic::quantified_parts(
-        n, p.head.lemma, case, p.head.gender, p.head.animacy,
-    );
+    let parts = interslavic::quantified_parts(n, p.head.lemma, case, p.head.gender, p.head.animacy);
     let noun = first_variant(parts.noun);
     match p.adj {
         Some(a) => format!("{} {}", adj_for(a, &p.head, parts.case, parts.number), noun),
@@ -109,7 +122,13 @@ pub fn gerund_nom(infinitive: &str) -> String {
 
 pub fn gerund_gen(infinitive: &str) -> String {
     let g = first_variant(verb_forms(infinitive).gerund);
-    first_variant(noun_with(&g, Case::Gen, Number::Singular, Neuter, Inanimate))
+    first_variant(noun_with(
+        &g,
+        Case::Gen,
+        Number::Singular,
+        Neuter,
+        Inanimate,
+    ))
 }
 
 fn gen_sg(l: &Lex) -> String {
@@ -119,23 +138,22 @@ fn gen_pl(l: &Lex) -> String {
     decl(l, Case::Gen, Number::Plural)
 }
 
-
 // ---------------------------------------------------------------------------
 // Speech helpers: the only source of inflected word forms in game text.
 // Every form is produced by the `interslavic` crate at call time and
 // memoized process-wide (message rendering never recomputes hot cells).
 // ---------------------------------------------------------------------------
 
-fn cache() -> &'static Mutex<HashMap<(u8, String, u8), String>> {
-    static CACHE: OnceLock<Mutex<HashMap<(u8, String, u8), String>>> = OnceLock::new();
+type FormCache = Mutex<HashMap<(u8, String, u8), String>>;
+
+fn cache() -> &'static FormCache {
+    static CACHE: OnceLock<FormCache> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn memo(kind: u8, lemma: &str, cell: u8, produce: impl FnOnce() -> String) -> String {
     let key = (kind, lemma.to_string(), cell);
-    let lock = |m: &'static Mutex<HashMap<(u8, String, u8), String>>| {
-        m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-    };
+    let lock = |m: &'static FormCache| m.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(hit) = lock(cache()).get(&key) {
         return hit.clone();
     }
@@ -147,28 +165,52 @@ fn memo(kind: u8, lemma: &str, cell: u8, produce: impl FnOnce() -> String) -> St
 /// 2nd-person-singular present ("udarjaješ") — the narration voice.
 pub fn v2(inf: &str) -> String {
     memo(1, inf, 0, || {
-        first_variant(verb(inf, Person::Second, Number::Singular, Gender::Masculine, Tense::Present))
+        first_variant(verb(
+            inf,
+            Person::Second,
+            Number::Singular,
+            Gender::Masculine,
+            Tense::Present,
+        ))
     })
 }
 
 /// 3rd-person-singular present ("udarjaje").
 pub fn v3(inf: &str) -> String {
     memo(1, inf, 1, || {
-        first_variant(verb(inf, Person::Third, Number::Singular, Gender::Masculine, Tense::Present))
+        first_variant(verb(
+            inf,
+            Person::Third,
+            Number::Singular,
+            Gender::Masculine,
+            Tense::Present,
+        ))
     })
 }
 
 /// 3rd-person-plural present ("udarjajųt").
 pub fn v3pl(inf: &str) -> String {
     memo(1, inf, 2, || {
-        first_variant(verb(inf, Person::Third, Number::Plural, Gender::Masculine, Tense::Present))
+        first_variant(verb(
+            inf,
+            Person::Third,
+            Number::Plural,
+            Gender::Masculine,
+            Tense::Present,
+        ))
     })
 }
 
 /// 1st-person-singular present (wizard-mode voice).
 pub fn v1(inf: &str) -> String {
     memo(1, inf, 3, || {
-        first_variant(verb(inf, Person::First, Number::Singular, Gender::Masculine, Tense::Present))
+        first_variant(verb(
+            inf,
+            Person::First,
+            Number::Singular,
+            Gender::Masculine,
+            Tense::Present,
+        ))
     })
 }
 
@@ -188,7 +230,9 @@ pub fn vimp(inf: &str) -> String {
 /// Bare l-participle for fixed-gender past subjects ("strěla tę ubila").
 pub fn lpart(inf: &str, gender: Gender, number: Number) -> String {
     let cell = 10 + gender as u8 * 2 + number as u8;
-    memo(2, inf, cell, || first_variant(l_participle(inf, gender, number)))
+    memo(2, inf, cell, || {
+        first_variant(l_participle(inf, gender, number))
+    })
 }
 
 /// Past passive participle agreeing with a lexicon noun ("osvětljena").
@@ -203,7 +247,13 @@ pub fn ppart(inf: &str, l: &Lex, case: Case, number: Number) -> String {
 }
 
 /// Personal pronoun; panics on unattested cells so a template bug is loud.
-pub fn pers(person: Person, number: Number, gender: Gender, case: Case, style: PronounStyle) -> String {
+pub fn pers(
+    person: Person,
+    number: Number,
+    gender: Gender,
+    case: Case,
+    style: PronounStyle,
+) -> String {
     personal_pronoun(person, number, gender, case, style)
         .expect("template requests an unattested personal-pronoun cell")
 }
@@ -250,32 +300,32 @@ pub const DEFAULT_FRUIT: &str = "sliva";
 // ---------------------------------------------------------------------------
 
 pub const MONSTER_LEX: [Phrase; 26] = [
-    ph(None, lex("akvator", Masculine, Animate)),            // A aquator (coined)
-    ph(None, lex("netopyŕ", Masculine, Animate)),            // B bat
-    ph(None, lex("kitovras", Masculine, Animate)),           // C centaur (generated)
-    ph(None, lex("drakon", Masculine, Animate)),             // D dragon
-    ph(None, lex_indecl("emu", Masculine, Animate)),         // E emu (indeclinable)
-    ph(None, lex("muholovka", Feminine, Inanimate)),         // F venus flytrap
-    ph(None, lex("inog", Masculine, Animate)),               // G griffin (generated)
-    ph(None, lex("goblin", Masculine, Animate)),             // H hobgoblin (generated)
+    ph(None, lex("akvator", Masculine, Animate)), // A aquator (coined)
+    ph(None, lex("netopyŕ", Masculine, Animate)), // B bat
+    ph(None, lex("kitovras", Masculine, Animate)), // C centaur (generated)
+    ph(None, lex("drakon", Masculine, Animate)),  // D dragon
+    ph(None, lex_indecl("emu", Masculine, Animate)), // E emu (indeclinable)
+    ph(None, lex("muholovka", Feminine, Inanimate)), // F venus flytrap
+    ph(None, lex("inog", Masculine, Animate)),    // G griffin (generated)
+    ph(None, lex("goblin", Masculine, Animate)),  // H hobgoblin (generated)
     ph(Some("ledeny"), lex("čudovišče", Neuter, Inanimate)), // I ice monster
-    ph(None, lex("žabervok", Masculine, Animate)),           // J jabberwock (coined)
-    ph(None, lex("sokol", Masculine, Animate)),              // K kestrel (subst.: falcon)
-    ph(None, lex("leprekon", Masculine, Animate)),           // L leprechaun (generated)
-    ph(None, lex("meduza", Feminine, Animate)),              // M medusa (generated)
-    ph(None, lex("nimfa", Feminine, Animate)),               // N nymph
-    ph(None, lex("ork", Masculine, Animate)),                // O orc (coined)
-    ph(None, lex("fantom", Masculine, Animate)),             // P phantom
-    ph(None, lex("kvaga", Feminine, Animate)),               // Q quagga (coined)
-    ph(Some("gremųći"), lex("zmija", Feminine, Animate)),    // R rattlesnake
-    ph(None, lex("zmija", Feminine, Animate)),               // S snake
-    ph(None, lex("trolj", Masculine, Animate)),              // T troll
-    ph(Some("črny"), lex("jednorog", Masculine, Animate)),   // U black unicorn
-    ph(None, lex("vampir", Masculine, Animate)),             // V vampire
-    ph(None, lex("prizrak", Masculine, Animate)),            // W wraith
-    ph(None, lex("kserok", Masculine, Animate)),             // X xeroc (coined)
-    ph(None, lex("jetij", Masculine, Animate)),               // Y yeti (coined)
-    ph(None, lex_indecl("zombi", Masculine, Animate)),       // Z zombie (indeclinable)
+    ph(None, lex("žabervok", Masculine, Animate)), // J jabberwock (coined)
+    ph(None, lex("sokol", Masculine, Animate)),   // K kestrel (subst.: falcon)
+    ph(None, lex("leprekon", Masculine, Animate)), // L leprechaun (generated)
+    ph(None, lex("meduza", Feminine, Animate)),   // M medusa (generated)
+    ph(None, lex("nimfa", Feminine, Animate)),    // N nymph
+    ph(None, lex("ork", Masculine, Animate)),     // O orc (coined)
+    ph(None, lex("fantom", Masculine, Animate)),  // P phantom
+    ph(None, lex("kvaga", Feminine, Animate)),    // Q quagga (coined)
+    ph(Some("gremųći"), lex("zmija", Feminine, Animate)), // R rattlesnake
+    ph(None, lex("zmija", Feminine, Animate)),    // S snake
+    ph(None, lex("trolj", Masculine, Animate)),   // T troll
+    ph(Some("črny"), lex("jednorog", Masculine, Animate)), // U black unicorn
+    ph(None, lex("vampir", Masculine, Animate)),  // V vampire
+    ph(None, lex("prizrak", Masculine, Animate)), // W wraith
+    ph(None, lex("kserok", Masculine, Animate)),  // X xeroc (coined)
+    ph(None, lex("jetij", Masculine, Animate)),   // Y yeti (coined)
+    ph(None, lex_indecl("zombi", Masculine, Animate)), // Z zombie (indeclinable)
 ];
 
 // ---------------------------------------------------------------------------
@@ -283,26 +333,26 @@ pub const MONSTER_LEX: [Phrase; 26] = [
 // ---------------------------------------------------------------------------
 
 pub const WEAPON_LEX: [Phrase; 9] = [
-    ph(None, lex("bulava", Feminine, Inanimate)),             // mace (project)
-    ph(Some("dȯlgy"), lex("meč", Masculine, Inanimate)),      // long sword
-    ph(Some("kråtky"), lex("lųk", Masculine, Inanimate)),     // short bow
-    ph(None, lex("strěla", Feminine, Inanimate)),             // arrow
-    ph(None, lex("kinžal", Masculine, Inanimate)),            // dagger (generated)
-    ph(Some("dvorųčny"), lex("meč", Masculine, Inanimate)),   // two handed sword
-    ph(None, lex("drotik", Masculine, Inanimate)),            // dart (generated)
-    ph(None, lex("šuriken", Masculine, Inanimate)),           // shuriken (coined)
-    ph(None, lex("kopje", Neuter, Inanimate)),                // spear
+    ph(None, lex("bulava", Feminine, Inanimate)), // mace (project)
+    ph(Some("dȯlgy"), lex("meč", Masculine, Inanimate)), // long sword
+    ph(Some("kråtky"), lex("lųk", Masculine, Inanimate)), // short bow
+    ph(None, lex("strěla", Feminine, Inanimate)), // arrow
+    ph(None, lex("kinžal", Masculine, Inanimate)), // dagger (generated)
+    ph(Some("dvorųčny"), lex("meč", Masculine, Inanimate)), // two handed sword
+    ph(None, lex("drotik", Masculine, Inanimate)), // dart (generated)
+    ph(None, lex("šuriken", Masculine, Inanimate)), // shuriken (coined)
+    ph(None, lex("kopje", Neuter, Inanimate)),    // spear
 ];
 
 pub const ARMOR_LEX: [Phrase; 8] = [
-    ph(Some("kožany"), lex("brȯnja", Feminine, Inanimate)),   // leather armor
-    ph(Some("koljčny"), lex("brȯnja", Feminine, Inanimate)),  // ring mail
-    ph(Some("okovany"), lex("brȯnja", Feminine, Inanimate)),  // studded leather armor
-    ph(Some("luskovy"), lex("brȯnja", Feminine, Inanimate)),  // scale mail
-    ph(None, lex("koljčuga", Feminine, Inanimate)),           // chain mail
-    ph(Some("šinovy"), lex("brȯnja", Feminine, Inanimate)),   // splint mail
-    ph(Some("pasovy"), lex("brȯnja", Feminine, Inanimate)),   // banded mail
-    ph(None, lex("pancyŕ", Masculine, Inanimate)),            // plate mail
+    ph(Some("kožany"), lex("brȯnja", Feminine, Inanimate)), // leather armor
+    ph(Some("koljčny"), lex("brȯnja", Feminine, Inanimate)), // ring mail
+    ph(Some("okovany"), lex("brȯnja", Feminine, Inanimate)), // studded leather armor
+    ph(Some("luskovy"), lex("brȯnja", Feminine, Inanimate)), // scale mail
+    ph(None, lex("koljčuga", Feminine, Inanimate)),         // chain mail
+    ph(Some("šinovy"), lex("brȯnja", Feminine, Inanimate)), // splint mail
+    ph(Some("pasovy"), lex("brȯnja", Feminine, Inanimate)), // banded mail
+    ph(None, lex("pancyŕ", Masculine, Inanimate)),          // plate mail
 ];
 
 // ---------------------------------------------------------------------------
@@ -310,14 +360,14 @@ pub const ARMOR_LEX: [Phrase; 8] = [
 // ---------------------------------------------------------------------------
 
 pub const TRAP_LEX: [Phrase; 8] = [
-    ph(None, lex("laz", Masculine, Inanimate)),               // trapdoor (generated)
-    ph(Some("strělny"), lex("pasť", Feminine, Inanimate)),    // arrow trap
-    ph(Some("sȯnny"), lex("pasť", Feminine, Inanimate)),      // sleeping gas trap
-    ph(Some("medvěďji"), lex("pasť", Feminine, Inanimate)),   // bear trap
+    ph(None, lex("laz", Masculine, Inanimate)), // trapdoor (generated)
+    ph(Some("strělny"), lex("pasť", Feminine, Inanimate)), // arrow trap
+    ph(Some("sȯnny"), lex("pasť", Feminine, Inanimate)), // sleeping gas trap
+    ph(Some("medvěďji"), lex("pasť", Feminine, Inanimate)), // bear trap
     ph(Some("teleportny"), lex("pasť", Feminine, Inanimate)), // teleport trap
-    ph(Some("jadny"), lex("pasť", Feminine, Inanimate)),      // poison dart trap
-    ph(Some("rđavy"), lex("pasť", Feminine, Inanimate)),      // rust trap
-    ph(Some("tajemny"), lex("pasť", Feminine, Inanimate)),    // mysterious trap
+    ph(Some("jadny"), lex("pasť", Feminine, Inanimate)), // poison dart trap
+    ph(Some("rđavy"), lex("pasť", Feminine, Inanimate)), // rust trap
+    ph(Some("tajemny"), lex("pasť", Feminine, Inanimate)), // mysterious trap
 ];
 
 // ---------------------------------------------------------------------------
@@ -326,10 +376,33 @@ pub const TRAP_LEX: [Phrase; 8] = [
 // ---------------------------------------------------------------------------
 
 pub const COLOR_ADJ: [&str; 27] = [
-    "běly", "črny", "črveny", "modry", "sinji", "zeleny", "žȯlty", "oranževy",
-    "koričnevy", "sěry", "rozovy", "fioletovy", "zlåty", "srěbrny", "medovy",
-    "jasny", "turkysovy", "višnjevy", "bagrovy", "akvamarinovy", "smaragdovy",
-    "rubinovy", "lazurny", "mlěčny", "pepelny", "temny", "světly",
+    "běly",
+    "črny",
+    "črveny",
+    "modry",
+    "sinji",
+    "zeleny",
+    "žȯlty",
+    "oranževy",
+    "koričnevy",
+    "sěry",
+    "rozovy",
+    "fioletovy",
+    "zlåty",
+    "srěbrny",
+    "medovy",
+    "jasny",
+    "turkysovy",
+    "višnjevy",
+    "bagrovy",
+    "akvamarinovy",
+    "smaragdovy",
+    "rubinovy",
+    "lazurny",
+    "mlěčny",
+    "pepelny",
+    "temny",
+    "světly",
 ];
 
 pub const STONE_LEX: [Lex; 26] = [
@@ -429,7 +502,11 @@ pub fn material_of(l: &Lex) -> String {
 
 /// Stick material: wood for staves, metal for wands.
 pub fn stick_material_lex(is_staff: bool, index: usize) -> Lex {
-    if is_staff { WOOD_LEX[index] } else { METAL_LEX[index] }
+    if is_staff {
+        WOOD_LEX[index]
+    } else {
+        METAL_LEX[index]
+    }
 }
 
 /// Decline a word we hold no metadata for (the user-editable fruit name):
@@ -445,17 +522,35 @@ pub fn food_gen() -> String {
 
 /// Adverbial/predicative color ("glows red"): neuter Nom sg form.
 pub fn color_adv(color: &str) -> String {
-    first_variant(adj(color, Case::Nom, Number::Singular, Gender::Neuter, Animacy::Inanimate))
+    first_variant(adj(
+        color,
+        Case::Nom,
+        Number::Singular,
+        Gender::Neuter,
+        Animacy::Inanimate,
+    ))
 }
 
 /// Masculine Nom color agreeing with "ščit".
 pub fn color_masc_nom(color: &str) -> String {
-    first_variant(adj(color, Case::Nom, Number::Singular, Gender::Masculine, Animacy::Inanimate))
+    first_variant(adj(
+        color,
+        Case::Nom,
+        Number::Singular,
+        Gender::Masculine,
+        Animacy::Inanimate,
+    ))
 }
 
 /// Instrumental neuter color agreeing with "světlom".
 pub fn color_ins_n(color: &str) -> String {
-    first_variant(adj(color, Case::Ins, Number::Singular, Gender::Neuter, Animacy::Inanimate))
+    first_variant(adj(
+        color,
+        Case::Ins,
+        Number::Singular,
+        Gender::Neuter,
+        Animacy::Inanimate,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -469,91 +564,146 @@ const ORUZJE: Lex = lex("orųžje", Neuter, Inanimate);
 
 pub fn potion_effect_gen(which: usize) -> String {
     match which {
-        0 => gen_sg(&lex("smęteńje", Neuter, Inanimate)),             // confusion
-        1 => gen_sg(&lex("halucinacija", Feminine, Inanimate)),          // hallucination
-        2 => gen_sg(&lex("jad", Masculine, Inanimate)),                  // poison
-        3 => gen_sg(&SILA),                                              // gain strength
-        4 => format!("{} nevidimogo", gerund_gen("viděti")),          // see invisible
-        5 => gerund_gen("lěčiti"),                                    // healing
-        6 => format!("{} {}", gen_sg(&lex("čuťje", Neuter, Inanimate)), gen_pl(&MONSTER)), // monster detection
-        7 => format!("{} {}", gen_sg(&lex("čuťje", Neuter, Inanimate)), gen_pl(&lex("čar", Masculine, Inanimate))), // magic detection
-        8 => gen_sg(&lex("povyšeńje", Neuter, Inanimate)),               // raise level (project)
-        9 => format!("velikogo {}", gerund_gen("lěčiti")),            // extra healing
-        10 => gen_sg(&lex("pospěh", Masculine, Inanimate)),              // haste self
-        11 => format!("{} {}", gen_sg(&lex("obnovjeńje", Neuter, Inanimate)), gen_sg(&SILA)), // restore strength
-        12 => gen_sg(&lex("slěpota", Feminine, Inanimate)),              // blindness (project)
-        _ => gen_sg(&lex("levitacija", Feminine, Inanimate)),            // levitation (generated)
+        0 => gen_sg(&lex("smęteńje", Neuter, Inanimate)), // confusion
+        1 => gen_sg(&lex("halucinacija", Feminine, Inanimate)), // hallucination
+        2 => gen_sg(&lex("jad", Masculine, Inanimate)),   // poison
+        3 => gen_sg(&SILA),                               // gain strength
+        4 => format!("{} nevidimogo", gerund_gen("viděti")), // see invisible
+        5 => gerund_gen("lěčiti"),                        // healing
+        6 => format!(
+            "{} {}",
+            gen_sg(&lex("čuťje", Neuter, Inanimate)),
+            gen_pl(&MONSTER)
+        ), // monster detection
+        7 => format!(
+            "{} {}",
+            gen_sg(&lex("čuťje", Neuter, Inanimate)),
+            gen_pl(&lex("čar", Masculine, Inanimate))
+        ), // magic detection
+        8 => gen_sg(&lex("povyšeńje", Neuter, Inanimate)), // raise level (project)
+        9 => format!("velikogo {}", gerund_gen("lěčiti")), // extra healing
+        10 => gen_sg(&lex("pospěh", Masculine, Inanimate)), // haste self
+        11 => format!(
+            "{} {}",
+            gen_sg(&lex("obnovjeńje", Neuter, Inanimate)),
+            gen_sg(&SILA)
+        ), // restore strength
+        12 => gen_sg(&lex("slěpota", Feminine, Inanimate)), // blindness (project)
+        _ => gen_sg(&lex("levitacija", Feminine, Inanimate)), // levitation (generated)
     }
 }
 
 pub fn scroll_effect_gen(which: usize) -> String {
     match which {
-        0 => format!("{} {}", gen_sg(&lex("smęteńje", Neuter, Inanimate)), gen_pl(&MONSTER)), // monster confusion
+        0 => format!(
+            "{} {}",
+            gen_sg(&lex("smęteńje", Neuter, Inanimate)),
+            gen_pl(&MONSTER)
+        ), // monster confusion
         1 => format!("čarovnoj {}", gen_sg(&lex("karta", Feminine, Inanimate))), // magic mapping
-        2 => format!("za {} {}", gerund_nom("dŕžati"), gen_sg(&MONSTER)),  // hold monster
-        3 => gen_sg(&lex("sȯn", Masculine, Inanimate)),                      // sleep
-        4 => format!("za {} {}", gerund_nom("očarovati"), gen_sg(&BRONJA)), // enchant armor
-        5 => format!("za {} {}", gerund_nom("opoznati"), gen_pl(&POTION)),  // identify potion
-        6 => format!("za {} {}", gerund_nom("opoznati"), gen_pl(&SCROLL)),  // identify scroll
-        7 => format!("za {} {}", gerund_nom("opoznati"), gen_sg(&ORUZJE)),  // identify weapon
-        8 => format!("za {} {}", gerund_nom("opoznati"), gen_sg(&BRONJA)),  // identify armor
+        2 => format!("za {} {}", gerund_nom("dŕžati"), gen_sg(&MONSTER)),        // hold monster
+        3 => gen_sg(&lex("sȯn", Masculine, Inanimate)),                          // sleep
+        4 => format!("za {} {}", gerund_nom("očarovati"), gen_sg(&BRONJA)),      // enchant armor
+        5 => format!("za {} {}", gerund_nom("opoznati"), gen_pl(&POTION)),       // identify potion
+        6 => format!("za {} {}", gerund_nom("opoznati"), gen_pl(&SCROLL)),       // identify scroll
+        7 => format!("za {} {}", gerund_nom("opoznati"), gen_sg(&ORUZJE)),       // identify weapon
+        8 => format!("za {} {}", gerund_nom("opoznati"), gen_sg(&BRONJA)),       // identify armor
         9 => format!(
             "za {} {}, {} ili {}",
-            gerund_nom("opoznati"), gen_sg(&RING), gen_sg(&WAND), gen_sg(&STAFF)
-        ),                                                                // identify ring, wand or staff
-        10 => format!("za {} {}", gerund_nom("strašiti"), gen_pl(&MONSTER)), // scare monster
-        11 => format!("{} {}", gen_sg(&lex("čuťje", Neuter, Inanimate)), gen_sg(&FOOD_OF)), // food detection
-        12 => gen_sg(&lex("teleportacija", Feminine, Inanimate)),            // teleportation
-        13 => format!("za {} {}", gerund_nom("očarovati"), gen_sg(&ORUZJE)), // enchant weapon
-        14 => format!("za {} {}", gerund_nom("sȯzdati"), gen_sg(&MONSTER)),     // create monster
-        15 => "protiv proklęťju".to_string(),                               // remove curse
-        16 => format!("za {} {}", gerund_nom("gněvati"), gen_pl(&MONSTER)),  // aggravate monsters
-        _ => format!("{} {}", gen_sg(&lex("ohråna", Feminine, Inanimate)), gen_sg(&BRONJA)), // protect armor
+            gerund_nom("opoznati"),
+            gen_sg(&RING),
+            gen_sg(&WAND),
+            gen_sg(&STAFF)
+        ), // identify ring, wand or staff
+        10 => format!("za {} {}", gerund_nom("strašiti"), gen_pl(&MONSTER)),     // scare monster
+        11 => format!(
+            "{} {}",
+            gen_sg(&lex("čuťje", Neuter, Inanimate)),
+            gen_sg(&FOOD_OF)
+        ), // food detection
+        12 => gen_sg(&lex("teleportacija", Feminine, Inanimate)),                // teleportation
+        13 => format!("za {} {}", gerund_nom("očarovati"), gen_sg(&ORUZJE)),     // enchant weapon
+        14 => format!("za {} {}", gerund_nom("sȯzdati"), gen_sg(&MONSTER)),      // create monster
+        15 => "protiv proklęťju".to_string(),                                    // remove curse
+        16 => format!("za {} {}", gerund_nom("gněvati"), gen_pl(&MONSTER)), // aggravate monsters
+        _ => format!(
+            "{} {}",
+            gen_sg(&lex("ohråna", Feminine, Inanimate)),
+            gen_sg(&BRONJA)
+        ), // protect armor
     }
 }
 
 pub fn ring_effect_gen(which: usize) -> String {
     match which {
-        0 => gen_sg(&lex("ohråna", Feminine, Inanimate)),                    // protection
-        1 => gen_sg(&SILA),                                                  // add strength
-        2 => format!("za {} {}", gerund_nom("poddŕžati"), gen_sg(&SILA)),       // sustain strength
-        3 => gen_sg(&lex("iskańje", Neuter, Inanimate)),                     // searching
-        4 => format!("{} nevidimogo", gerund_gen("viděti")),              // see invisible
-        5 => gen_sg(&lex("ukrašeńje", Neuter, Inanimate)),                   // adornment
-        6 => format!("za {} {}", gerund_nom("gněvati"), gen_pl(&MONSTER)),   // aggravate monster
-        7 => gen_sg(&lex("lovkosť", Feminine, Inanimate)),                   // dexterity (generated)
-        8 => format!("{} {}", gen_sg(&SILA), gen_sg(&lex("udar", Masculine, Inanimate))), // increase damage
-        9 => gen_sg(&lex("regeneracija", Feminine, Inanimate)),              // regeneration (generated)
+        0 => gen_sg(&lex("ohråna", Feminine, Inanimate)), // protection
+        1 => gen_sg(&SILA),                               // add strength
+        2 => format!("za {} {}", gerund_nom("poddŕžati"), gen_sg(&SILA)), // sustain strength
+        3 => gen_sg(&lex("iskańje", Neuter, Inanimate)),  // searching
+        4 => format!("{} nevidimogo", gerund_gen("viděti")), // see invisible
+        5 => gen_sg(&lex("ukrašeńje", Neuter, Inanimate)), // adornment
+        6 => format!("za {} {}", gerund_nom("gněvati"), gen_pl(&MONSTER)), // aggravate monster
+        7 => gen_sg(&lex("lovkosť", Feminine, Inanimate)), // dexterity (generated)
+        8 => format!(
+            "{} {}",
+            gen_sg(&SILA),
+            gen_sg(&lex("udar", Masculine, Inanimate))
+        ), // increase damage
+        9 => gen_sg(&lex("regeneracija", Feminine, Inanimate)), // regeneration (generated)
         10 => format!("pomalogo {}", gen_sg(&lex("travjeńje", Neuter, Inanimate))), // slow digestion
-        11 => gen_sg(&lex("teleportacija", Feminine, Inanimate)),            // teleportation
-        12 => gen_sg(&lex("tišina", Feminine, Inanimate)),                   // stealth
-        _ => format!("{} {}", gen_sg(&lex("ohråna", Feminine, Inanimate)), gen_sg(&BRONJA)), // maintain armor
+        11 => gen_sg(&lex("teleportacija", Feminine, Inanimate)),                   // teleportation
+        12 => gen_sg(&lex("tišina", Feminine, Inanimate)),                          // stealth
+        _ => format!(
+            "{} {}",
+            gen_sg(&lex("ohråna", Feminine, Inanimate)),
+            gen_sg(&BRONJA)
+        ), // maintain armor
     }
 }
 
 pub fn stick_effect_gen(which: usize) -> String {
     match which {
-        0 => gen_sg(&lex("světlo", Neuter, Inanimate)),                      // light
-        1 => gen_sg(&lex("nevidimosť", Feminine, Inanimate)),                // invisibility (derived)
-        2 => gen_sg(&lex("mȯlnja", Feminine, Inanimate)),                    // lightning
-        3 => gen_sg(&lex("ogȯnj", Masculine, Inanimate)),                    // fire
-        4 => gen_sg(&lex("hlåd", Masculine, Inanimate)),                     // cold
-        5 => gen_sg(&lex("prěobražeńje", Neuter, Inanimate)),                // polymorph
+        0 => gen_sg(&lex("světlo", Neuter, Inanimate)), // light
+        1 => gen_sg(&lex("nevidimosť", Feminine, Inanimate)), // invisibility (derived)
+        2 => gen_sg(&lex("mȯlnja", Feminine, Inanimate)), // lightning
+        3 => gen_sg(&lex("ogȯnj", Masculine, Inanimate)), // fire
+        4 => gen_sg(&lex("hlåd", Masculine, Inanimate)), // cold
+        5 => gen_sg(&lex("prěobražeńje", Neuter, Inanimate)), // polymorph
         6 => format!("čarovnoj {}", gen_sg(&lex("strěla", Feminine, Inanimate))), // magic missile
-        7 => format!("{} {}", gen_sg(&lex("uskorjeńje", Neuter, Inanimate)), gen_sg(&MONSTER)), // haste monster
-        8 => format!("{} {}", gen_sg(&lex("zamedljeńje", Neuter, Inanimate)), gen_sg(&MONSTER)), // slow monster
-        9 => format!("za {} {}", gerund_nom("odbirati"), gen_sg(&lex("žiťje", Neuter, Inanimate))), // drain life
-        10 => "ničego".to_string(),                                       // nothing (pronoun gen)
-        11 => format!("{} prȯč", gen_sg(&lex("teleportacija", Feminine, Inanimate))), // teleport away
+        7 => format!(
+            "{} {}",
+            gen_sg(&lex("uskorjeńje", Neuter, Inanimate)),
+            gen_sg(&MONSTER)
+        ), // haste monster
+        8 => format!(
+            "{} {}",
+            gen_sg(&lex("zamedljeńje", Neuter, Inanimate)),
+            gen_sg(&MONSTER)
+        ), // slow monster
+        9 => format!(
+            "za {} {}",
+            gerund_nom("odbirati"),
+            gen_sg(&lex("žiťje", Neuter, Inanimate))
+        ), // drain life
+        10 => "ničego".to_string(),                     // nothing (pronoun gen)
+        11 => format!(
+            "{} prȯč",
+            gen_sg(&lex("teleportacija", Feminine, Inanimate))
+        ), // teleport away
         12 => format!(
             "{} k {}",
             gen_sg(&lex("teleportacija", Feminine, Inanimate)),
-            pers(Person::Second, Number::Singular, Gender::Masculine, Case::Dat, PronounStyle::Full)
-        ),                                                                // teleport to (toward you)
-        _ => gen_sg(&lex("anulacija", Feminine, Inanimate)),                 // cancellation
+            pers(
+                Person::Second,
+                Number::Singular,
+                Gender::Masculine,
+                Case::Dat,
+                PronounStyle::Full
+            )
+        ), // teleport to (toward you)
+        _ => gen_sg(&lex("anulacija", Feminine, Inanimate)), // cancellation
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // speak(): the template-marker interpreter. Message literals carry only
@@ -578,15 +728,36 @@ fn reg(lemma: &str) -> Option<Lex> {
         let mut put = |l: Lex| {
             m.insert(l.lemma, l);
         };
-        for p in MONSTER_LEX.iter().chain(WEAPON_LEX.iter()).chain(ARMOR_LEX.iter()).chain(TRAP_LEX.iter()) {
+        for p in MONSTER_LEX
+            .iter()
+            .chain(WEAPON_LEX.iter())
+            .chain(ARMOR_LEX.iter())
+            .chain(TRAP_LEX.iter())
+        {
             put(p.head);
         }
-        for l in STONE_LEX.iter().chain(WOOD_LEX.iter()).chain(METAL_LEX.iter()) {
+        for l in STONE_LEX
+            .iter()
+            .chain(WOOD_LEX.iter())
+            .chain(METAL_LEX.iter())
+        {
             put(*l);
         }
         for l in [
-            POTION, SCROLL, RING, WAND, STAFF, AMULET, FOOD_PORTION, FOOD_OF, GOLD_COIN,
-            MONSTER, TRAP, SILA, BRONJA, ORUZJE,
+            POTION,
+            SCROLL,
+            RING,
+            WAND,
+            STAFF,
+            AMULET,
+            FOOD_PORTION,
+            FOOD_OF,
+            GOLD_COIN,
+            MONSTER,
+            TRAP,
+            SILA,
+            BRONJA,
+            ORUZJE,
         ] {
             put(l);
         }
@@ -732,7 +903,13 @@ fn parse_gender(code: &str) -> Option<Gender> {
 
 fn render_marker(body: &str) -> Option<String> {
     let parts: Vec<&str> = body.split(':').collect();
-    let num = |p: &[&str]| if p.contains(&"pl") { Number::Plural } else { Number::Singular };
+    let num = |p: &[&str]| {
+        if p.contains(&"pl") {
+            Number::Plural
+        } else {
+            Number::Singular
+        }
+    };
     let arg = |i: usize| parts.get(i).copied();
     Some(match *parts.first()? {
         "v1" => v1(arg(1)?),
@@ -747,36 +924,66 @@ fn render_marker(body: &str) -> Option<String> {
         "ap" => {
             let noun = reg(arg(2)?)?;
             first_variant(interslavic::active_participle(
-                arg(1)?, parse_case(arg(3)?)?, num(&parts[4..]), noun.gender, noun.animacy,
+                arg(1)?,
+                parse_case(arg(3)?)?,
+                num(&parts[4..]),
+                noun.gender,
+                noun.animacy,
             )?)
         }
         // 3sg perfect, auxiliary-less (the standard drops the 3rd-person
         // auxiliary): structured accessor from interslavic 0.11.0.
         "vpf3" => {
-            interslavic::perfect_parts(arg(1)?, Person::Third, Number::Singular, parse_gender(arg(2)?)?)
-                .participle
+            interslavic::perfect_parts(
+                arg(1)?,
+                Person::Third,
+                Number::Singular,
+                parse_gender(arg(2)?)?,
+            )
+            .participle
         }
         // 3sg present with an explicit dictionary present-stem hint
         // ("stajati (staje)") for lemmas where blind conjugation misfires
         "v3h" => first_variant(interslavic::verb_with_present_hint(
-            arg(1)?, &format!("({})", arg(2)?),
-            Person::Third, Number::Singular, Gender::Masculine, Tense::Present,
+            arg(1)?,
+            &format!("({})", arg(2)?),
+            Person::Third,
+            Number::Singular,
+            Gender::Masculine,
+            Tense::Present,
         )),
         // declined comparative agreeing with a registry noun
         "cmp" => {
             let base = comparative(arg(1)?).map(|(a, _)| a)?;
             let noun = reg(arg(2)?)?;
-            first_variant(adj(&base, parse_case(arg(3)?)?, num(&parts[4..]), noun.gender, noun.animacy))
+            first_variant(adj(
+                &base,
+                parse_case(arg(3)?)?,
+                num(&parts[4..]),
+                noun.gender,
+                noun.animacy,
+            ))
         }
         // declined superlative agreeing with a registry noun
         "sup" => {
             let base = isv_superlative(arg(1)?).map(|(a, _)| a)?;
             let noun = reg(arg(2)?)?;
-            first_variant(adj(&base, parse_case(arg(3)?)?, num(&parts[4..]), noun.gender, noun.animacy))
+            first_variant(adj(
+                &base,
+                parse_case(arg(3)?)?,
+                num(&parts[4..]),
+                noun.gender,
+                noun.animacy,
+            ))
         }
         "lp" => lpart(arg(1)?, parse_gender(arg(2)?)?, num(&parts[3..])),
         "pp" => {
-            let l = Lex { lemma: "", gender: parse_gender(arg(2)?)?, animacy: Inanimate, indecl: false };
+            let l = Lex {
+                lemma: "",
+                gender: parse_gender(arg(2)?)?,
+                animacy: Inanimate,
+                indecl: false,
+            };
             let case = match parts.get(3).filter(|c| **c != "pl") {
                 Some(c) => parse_case(c)?,
                 None => Case::Nom,
@@ -825,7 +1032,11 @@ fn render_marker(body: &str) -> Option<String> {
             interslavic::pronoun(parts[0], case, n, gender, animacy).map(first_variant)?
         }
         "ničto" | "čto" | "kto" | "nikto" => interslavic::pronoun(
-            parts[0], parse_case(arg(1)?)?, Number::Singular, Masculine, Animacy::Animate,
+            parts[0],
+            parse_case(arg(1)?)?,
+            Number::Singular,
+            Masculine,
+            Animacy::Animate,
         )
         .map(first_variant)?,
         _ => return None,
@@ -919,17 +1130,37 @@ mod tests {
         assert_eq!(vimp("počivati"), "počivaj");
         assert_eq!(lpart("ubiti", Gender::Feminine, Number::Singular), "ubila");
         assert_eq!(
-            pers(Person::Second, Number::Singular, Gender::Masculine, Case::Acc, PronounStyle::Clitic),
+            pers(
+                Person::Second,
+                Number::Singular,
+                Gender::Masculine,
+                Case::Acc,
+                PronounStyle::Clitic
+            ),
             "tę"
         );
         assert_eq!(
-            pers(Person::Third, Number::Singular, Gender::Masculine, Case::Gen, PronounStyle::AfterPreposition),
+            pers(
+                Person::Third,
+                Number::Singular,
+                Gender::Masculine,
+                Case::Gen,
+                PronounStyle::AfterPreposition
+            ),
             "njego"
         );
         let torba = lex("torba", Feminine, Inanimate);
         assert_eq!(poss("tvoj", &torba, Case::Loc, Number::Singular), "tvojej");
         assert_eq!(comp_adv("bystry"), "bystrěje");
-        assert_eq!(ppart("opoznati", &lex("žezlo", Neuter, Inanimate), Case::Nom, Number::Singular), "opoznano");
+        assert_eq!(
+            ppart(
+                "opoznati",
+                &lex("žezlo", Neuter, Inanimate),
+                Case::Nom,
+                Number::Singular
+            ),
+            "opoznano"
+        );
     }
 
     /// Release-only: player-reachable text must never panic the renderer
@@ -945,7 +1176,10 @@ mod tests {
     #[test]
     fn speak_renders_markers() {
         assert_eq!(speak("⟨v2:čuti⟩ sę ⟨cav:silny⟩"), "čuješ sę silněje");
-        assert_eq!(speak("⟨n:strěla:nom⟩ ⟨ty:acc⟩ ⟨lp:ubiti:f⟩"), "strěla tę ubila");
+        assert_eq!(
+            speak("⟨n:strěla:nom⟩ ⟨ty:acc⟩ ⟨lp:ubiti:f⟩"),
+            "strěla tę ubila"
+        );
         assert_eq!(
             speak("v ⟨a:tvoj:torba:loc⟩ ⟨n:torba:loc⟩ ne jest ⟨n:město:gen⟩"),
             "v tvojej torbě ne jest města"
@@ -1004,10 +1238,32 @@ mod tests {
         }
         let mut rows: Vec<String> = Vec::new();
         for (p, gl) in MONSTER_LEX.iter().zip([
-            "aquator", "bat", "centaur", "dragon", "emu", "venus flytrap", "griffin",
-            "hobgoblin", "ice monster", "jabberwock", "kestrel", "leprechaun", "medusa",
-            "nymph", "orc", "phantom", "quagga", "rattlesnake", "snake", "troll",
-            "black unicorn", "vampire", "wraith", "xeroc", "yeti", "zombie",
+            "aquator",
+            "bat",
+            "centaur",
+            "dragon",
+            "emu",
+            "venus flytrap",
+            "griffin",
+            "hobgoblin",
+            "ice monster",
+            "jabberwock",
+            "kestrel",
+            "leprechaun",
+            "medusa",
+            "nymph",
+            "orc",
+            "phantom",
+            "quagga",
+            "rattlesnake",
+            "snake",
+            "troll",
+            "black unicorn",
+            "vampire",
+            "wraith",
+            "xeroc",
+            "yeti",
+            "zombie",
         ]) {
             noun_into(&mut rows, &p.head, gl);
             if let Some(a) = p.adj {
@@ -1015,8 +1271,15 @@ mod tests {
             }
         }
         for (p, gl) in WEAPON_LEX.iter().zip([
-            "mace", "long sword", "short bow", "arrow", "dagger", "two handed sword",
-            "dart", "shuriken", "spear",
+            "mace",
+            "long sword",
+            "short bow",
+            "arrow",
+            "dagger",
+            "two handed sword",
+            "dart",
+            "shuriken",
+            "spear",
         ]) {
             noun_into(&mut rows, &p.head, gl);
             if let Some(a) = p.adj {
@@ -1024,8 +1287,14 @@ mod tests {
             }
         }
         for (p, gl) in ARMOR_LEX.iter().zip([
-            "leather armor", "ringmail", "studded armor", "scalemail",
-            "chainmail", "splintmail", "bandedmail", "platemail",
+            "leather armor",
+            "ringmail",
+            "studded armor",
+            "scalemail",
+            "chainmail",
+            "splintmail",
+            "bandedmail",
+            "platemail",
         ]) {
             noun_into(&mut rows, &p.head, gl);
             if let Some(a) = p.adj {
@@ -1033,8 +1302,14 @@ mod tests {
             }
         }
         for (p, gl) in TRAP_LEX.iter().zip([
-            "trapdoor", "arrow trap", "sleeping gas trap", "bear trap", "teleport trap",
-            "poison dart trap", "rust trap", "mysterious trap",
+            "trapdoor",
+            "arrow trap",
+            "sleeping gas trap",
+            "bear trap",
+            "teleport trap",
+            "poison dart trap",
+            "rust trap",
+            "mysterious trap",
         ]) {
             noun_into(&mut rows, &p.head, gl);
             if let Some(a) = p.adj {
@@ -1054,22 +1329,49 @@ mod tests {
             noun_into(&mut rows, l, "metal");
         }
         for (l, gl) in [
-            (&POTION, "potion"), (&SCROLL, "scroll"), (&RING, "ring"), (&WAND, "wand"),
-            (&STAFF, "staff"), (&AMULET, "amulet"), (&FOOD_PORTION, "portion"),
-            (&FOOD_OF, "food"), (&GOLD_COIN, "gold piece"), (&MONSTER, "monster"),
+            (&POTION, "potion"),
+            (&SCROLL, "scroll"),
+            (&RING, "ring"),
+            (&WAND, "wand"),
+            (&STAFF, "staff"),
+            (&AMULET, "amulet"),
+            (&FOOD_PORTION, "portion"),
+            (&FOOD_OF, "food"),
+            (&GOLD_COIN, "gold piece"),
+            (&MONSTER, "monster"),
             (&TRAP, "trap"),
         ] {
             noun_into(&mut rows, l, gl);
         }
         noun_into(&mut rows, &lex(DEFAULT_FRUIT, Feminine, Inanimate), "fruit");
         // effect nouns that are project-grade (not verified official)
-        noun_into(&mut rows, &lex("povyšeńje", Neuter, Inanimate), "raise level");
+        noun_into(
+            &mut rows,
+            &lex("povyšeńje", Neuter, Inanimate),
+            "raise level",
+        );
         noun_into(&mut rows, &lex("slěpota", Feminine, Inanimate), "blindness");
-        noun_into(&mut rows, &lex("levitacija", Feminine, Inanimate), "levitation");
-        noun_into(&mut rows, &lex("teleportacija", Feminine, Inanimate), "teleportation");
+        noun_into(
+            &mut rows,
+            &lex("levitacija", Feminine, Inanimate),
+            "levitation",
+        );
+        noun_into(
+            &mut rows,
+            &lex("teleportacija", Feminine, Inanimate),
+            "teleportation",
+        );
         noun_into(&mut rows, &lex("lovkosť", Feminine, Inanimate), "dexterity");
-        noun_into(&mut rows, &lex("regeneracija", Feminine, Inanimate), "regeneration");
-        noun_into(&mut rows, &lex("nevidimosť", Feminine, Inanimate), "invisibility");
+        noun_into(
+            &mut rows,
+            &lex("regeneracija", Feminine, Inanimate),
+            "regeneration",
+        );
+        noun_into(
+            &mut rows,
+            &lex("nevidimosť", Feminine, Inanimate),
+            "invisibility",
+        );
         noun_into(&mut rows, &lex("pohibel", Feminine, Inanimate), "doom");
         noun_into(&mut rows, &lex("Jendor", Masculine, Inanimate), "Yendor");
         noun_into(&mut rows, &lex("obmråk", Masculine, Inanimate), "swoon");
@@ -1134,7 +1436,11 @@ mod corpus {
             }
             out.push('\n');
         }
-        for p in WEAPON_LEX.iter().chain(ARMOR_LEX.iter()).chain(TRAP_LEX.iter()) {
+        for p in WEAPON_LEX
+            .iter()
+            .chain(ARMOR_LEX.iter())
+            .chain(TRAP_LEX.iter())
+        {
             for case in [Nom, Acc, Gen] {
                 out.push_str(&phrase(p, case, Singular));
                 out.push(' ');
@@ -1160,10 +1466,19 @@ mod corpus {
                 "{} napitȯk, {} světlo, {} iskry.\n",
                 adj_for(c, &POTION, Nom, Singular),
                 color_adv(c),
-                adj_for(c, &lex("iskra", Gender::Feminine, Animacy::Inanimate), Nom, Plural)
+                adj_for(
+                    c,
+                    &lex("iskra", Gender::Feminine, Animacy::Inanimate),
+                    Nom,
+                    Plural
+                )
             ));
         }
-        for l in STONE_LEX.iter().chain(WOOD_LEX.iter()).chain(METAL_LEX.iter()) {
+        for l in STONE_LEX
+            .iter()
+            .chain(WOOD_LEX.iter())
+            .chain(METAL_LEX.iter())
+        {
             out.push_str(&format!("pŕstenj {}. ", material_of(l)));
         }
         out.push('\n');

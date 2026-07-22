@@ -90,18 +90,17 @@ impl Appearances {
         // Slavic-flavored gibberish syllables for scroll titles (magic
         // language, deliberately not lexicon words).
         const SYLLABLES: &[&str] = &[
-            "a", "ba", "bez", "blě", "bo", "brě", "bry", "bųd", "va", "vel", "vih", "vlk",
-            "vod", "voz", "vy", "gla", "glų", "gně", "go", "gord", "grom", "gų", "da", "dvo",
-            "dob", "dol", "drě", "dug", "dy", "đu", "e", "ě", "ęz", "ža", "žel", "živ", "žu",
-            "za", "zvě", "zim", "zlo", "zna", "zra", "i", "iz", "ju", "jed", "jęt", "ka",
-            "kam", "kli", "kně", "ko", "kra", "krů", "kry", "ku", "kva", "ky", "la", "lěs",
-            "li", "lo", "lų", "ly", "ma", "mě", "mir", "mlå", "mo", "mų", "my", "na", "ne",
-            "něg", "ni", "no", "nų", "o", "ob", "ogn", "od", "op", "ora", "ost", "pa", "per",
-            "pě", "pi", "plå", "po", "pra", "prě", "prų", "pŕst", "pu", "ra", "rěč", "ri",
-            "ro", "rů", "ry", "sa", "svě", "se", "sě", "si", "skri", "sla", "slo", "sně",
-            "so", "sta", "stra", "su", "sų", "sy", "ta", "tvo", "te", "tě", "ti", "tma",
-            "to", "tri", "tu", "ty", "u", "us", "hlå", "ho", "hra", "cvě", "ce", "ci", "ča",
-            "če", "či", "čud", "ša", "še", "ši", "šum", "yr", "ųt",
+            "a", "ba", "bez", "blě", "bo", "brě", "bry", "bųd", "va", "vel", "vih", "vlk", "vod",
+            "voz", "vy", "gla", "glų", "gně", "go", "gord", "grom", "gų", "da", "dvo", "dob",
+            "dol", "drě", "dug", "dy", "đu", "e", "ě", "ęz", "ža", "žel", "živ", "žu", "za", "zvě",
+            "zim", "zlo", "zna", "zra", "i", "iz", "ju", "jed", "jęt", "ka", "kam", "kli", "kně",
+            "ko", "kra", "krů", "kry", "ku", "kva", "ky", "la", "lěs", "li", "lo", "lų", "ly",
+            "ma", "mě", "mir", "mlå", "mo", "mų", "my", "na", "ne", "něg", "ni", "no", "nų", "o",
+            "ob", "ogn", "od", "op", "ora", "ost", "pa", "per", "pě", "pi", "plå", "po", "pra",
+            "prě", "prų", "pŕst", "pu", "ra", "rěč", "ri", "ro", "rů", "ry", "sa", "svě", "se",
+            "sě", "si", "skri", "sla", "slo", "sně", "so", "sta", "stra", "su", "sų", "sy", "ta",
+            "tvo", "te", "tě", "ti", "tma", "to", "tri", "tu", "ty", "u", "us", "hlå", "ho", "hra",
+            "cvě", "ce", "ci", "ča", "če", "či", "čud", "ša", "še", "ši", "šum", "yr", "ųt",
         ];
         // Startup calls `init_names`, `init_colors`, `init_stones`, then
         // `init_materials`; preserve that RNG ordering as well as each table's
@@ -124,7 +123,10 @@ impl Appearances {
             200, 50, 60, 70, 300, 80,
         ];
         let ring_stones = choose_unique_indices(rng, crate::lang::STONE_LEX.len(), 14);
-        let ring_stone_values = ring_stones.iter().map(|&index| STONE_VALUES[index]).collect();
+        let ring_stone_values = ring_stones
+            .iter()
+            .map(|&index| STONE_VALUES[index])
+            .collect();
         let mut used_wood = Vec::new();
         let mut used_metal = Vec::new();
         let mut stick_is_staff = Vec::new();
@@ -413,9 +415,12 @@ impl Game {
             player: Player::new(Pos::new(0, 0)),
             monsters: vec![],
             floor_items: vec![],
-            messages: vec!["dobro ⟨lp:dojdti:m:pl⟩ v ⟨n:temnica:acc:pl:U⟩ ⟨n:pohibel:gen:U⟩".into()],
+            messages: vec![
+                "dobro ⟨lp:dojdti:m:pl⟩ v ⟨n:temnica:acc:pl:U⟩ ⟨n:pohibel:gen:U⟩".into(),
+            ],
             message_serial: 1,
-            recall_message: "dobro ⟨lp:dojdti:m:pl⟩ v ⟨n:temnica:acc:pl:U⟩ ⟨n:pohibel:gen:U⟩".into(),
+            recall_message: "dobro ⟨lp:dojdti:m:pl⟩ v ⟨n:temnica:acc:pl:U⟩ ⟨n:pohibel:gen:U⟩"
+                .into(),
             turn: 0,
             end: EndState::Playing,
             death_cause: None,
@@ -865,7 +870,10 @@ impl Game {
             }
             Command::Save | Command::Cancel => CommandResult::FREE,
             Command::Unknown(ch) => {
-                self.message_without_recall(format!("⟨a:nepraviľny:komanda:nom⟩ ⟨n:komanda:nom⟩ '{}'", command_label(ch)));
+                self.message_without_recall(format!(
+                    "⟨a:nepraviľny:komanda:nom⟩ ⟨n:komanda:nom⟩ '{}'",
+                    command_label(ch)
+                ));
                 CommandResult::FREE
             }
         };
@@ -913,11 +921,9 @@ impl Game {
             self.message(format!("mmm, {}... kako ⟨adv:vkusny⟩!", self.options.fruit));
         } else if self.rng.rnd(100) > 70 {
             self.player.stats.experience += 1;
-            self.message(if self.player.conditions.hallucinating {
-                "fuj, ⟨toj:nom:f⟩ ⟨n:jeda:nom⟩ ⟨v3:imati⟩ ⟨a:užasny:vkus:acc⟩ ⟨n:vkus:acc⟩"
-            } else {
-                "fuj, ⟨toj:nom:f⟩ ⟨n:jeda:nom⟩ ⟨v3:imati⟩ ⟨a:užasny:vkus:acc⟩ ⟨n:vkus:acc⟩"
-            });
+            self.message(
+                "fuj, ⟨toj:nom:f⟩ ⟨n:jeda:nom⟩ ⟨v3:imati⟩ ⟨a:užasny:vkus:acc⟩ ⟨n:vkus:acc⟩",
+            );
             self.check_experience();
         } else {
             self.message(if self.player.conditions.hallucinating {
@@ -1002,7 +1008,11 @@ impl Game {
                     .add_or_lengthen(Effect::SeeInvisible, self.rng.spread(850));
                 self.message(format!(
                     "⟨toj:nom⟩ napitȯk ⟨v3:imati⟩ ⟨n:vkus:acc⟩ ⟨n:sok:gen⟩ iz {}",
-                    crate::lang::decl_guess(&self.options.fruit, Case::Gen, interslavic::Number::Singular)
+                    crate::lang::decl_guess(
+                        &self.options.fruit,
+                        Case::Gen,
+                        interslavic::Number::Singular
+                    )
                 ));
                 if was_blind {
                     self.message(if self.player.conditions.hallucinating {
@@ -1211,7 +1221,10 @@ impl Game {
             0 => {
                 self.player.conditions.can_confuse_monster = true;
                 let color = self.pick_color("črveny");
-                self.message(format!("⟨a:tvoj:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩ ⟨v3p:načinati⟩ světiti sę {}", crate::lang::color_adv(color)))
+                self.message(format!(
+                    "⟨a:tvoj:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩ ⟨v3p:načinati⟩ světiti sę {}",
+                    crate::lang::color_adv(color)
+                ))
             }
             1 => {
                 identified = true;
@@ -1282,7 +1295,10 @@ impl Game {
                     a.armor_class = a.armor_class.map(|v| v - 1);
                     a.cursed = false;
                     let color = self.pick_color("srěbrny");
-                    self.message(format!("⟨a:tvoj:brȯnja:nom⟩ ⟨n:brȯnja:nom⟩ na moment ⟨v3:světiti⟩ sę {}", crate::lang::color_adv(color)))
+                    self.message(format!(
+                        "⟨a:tvoj:brȯnja:nom⟩ ⟨n:brȯnja:nom⟩ na moment ⟨v3:světiti⟩ sę {}",
+                        crate::lang::color_adv(color)
+                    ))
                 }
             }
             5..=9 => {
@@ -1332,7 +1348,10 @@ impl Game {
                         interslavic::Number::Singular,
                     );
                     let color = self.pick_color("modry");
-                    self.message(format!("{name} na moment ⟨v3:světiti⟩ sę {}", crate::lang::color_adv(color)))
+                    self.message(format!(
+                        "{name} na moment ⟨v3:světiti⟩ sę {}",
+                        crate::lang::color_adv(color)
+                    ))
                 } else {
                     self.message("⟨v2:imati⟩ ⟨a:divny:čuťje:acc⟩ ⟨n:čuťje:acc⟩ ⟨n:utrata:gen⟩")
                 }
@@ -1367,7 +1386,9 @@ impl Game {
                     let monster = self.make_monster(kind, pos, self.depth, false, false);
                     self.monsters.insert(0, monster);
                 } else {
-                    self.message("⟨v2:slyšati⟩ daleko ⟨a:slaby:krik:acc⟩ ⟨n:krik:acc⟩ ⟨n:bolj:gen⟩");
+                    self.message(
+                        "⟨v2:slyšati⟩ daleko ⟨a:slaby:krik:acc⟩ ⟨n:krik:acc⟩ ⟨n:bolj:gen⟩",
+                    );
                 }
             }
             15 => {
@@ -1494,17 +1515,16 @@ impl Game {
         self.message(if self.options.terse {
             format!("⟨v2:nositi⟩ sejčas: {}", self.inventory_name(armor, true))
         } else {
-            format!("⟨v2:naděvati⟩ {}", self.inventory_name_case(armor, true, Case::Acc))
+            format!(
+                "⟨v2:naděvati⟩ {}",
+                self.inventory_name_case(armor, true, Case::Acc)
+            )
         });
         CommandResult::TURN
     }
     pub fn take_off(&mut self) -> CommandResult {
         let Some(id) = self.player.armor else {
-            self.message(if self.options.terse {
-                "ne ⟨v2:nositi⟩ ⟨n:brȯnja:gen⟩"
-            } else {
-                "ne ⟨v2:nositi⟩ ⟨n:brȯnja:gen⟩"
-            });
+            self.message("ne ⟨v2:nositi⟩ ⟨n:brȯnja:gen⟩");
             return CommandResult::FREE;
         };
         let item = self
@@ -1849,8 +1869,13 @@ impl Game {
                 if self.knowledge.potions[item.which as usize] {
                     format!("{head} {}", lang::potion_effect_gen(item.which as usize))
                 } else {
-                    let color = lang::COLOR_ADJ[self.appearances.potion_colors[item.which as usize]];
-                    format!("{} {head}{}", adj_for(color, &lang::POTION, case, Singular), called())
+                    let color =
+                        lang::COLOR_ADJ[self.appearances.potion_colors[item.which as usize]];
+                    format!(
+                        "{} {head}{}",
+                        adj_for(color, &lang::POTION, case, Singular),
+                        called()
+                    )
                 }
             }
             ItemKind::Scroll => {
@@ -1873,7 +1898,11 @@ impl Game {
                     } else {
                         String::new()
                     };
-                    format!("{head} {}{}", lang::ring_effect_gen(item.which as usize), bonus)
+                    format!(
+                        "{head} {}{}",
+                        lang::ring_effect_gen(item.which as usize),
+                        bonus
+                    )
                 } else {
                     let stone = &lang::STONE_LEX[self.appearances.ring_stones[item.which as usize]];
                     format!("{head} {}{}", material_of(stone), called())
@@ -1889,7 +1918,11 @@ impl Game {
                     } else {
                         String::new()
                     };
-                    format!("{head} {}{}", lang::stick_effect_gen(item.which as usize), charges)
+                    format!(
+                        "{head} {}{}",
+                        lang::stick_effect_gen(item.which as usize),
+                        charges
+                    )
                 } else {
                     let material = &lang::stick_material_lex(
                         is_staff,
@@ -1911,7 +1944,9 @@ impl Game {
                 10 - item.armor_class.unwrap_or(10)
             ),
             ItemKind::Armor => phrase(&lang::ARMOR_LEX[item.which as usize], case, Singular),
-            ItemKind::Food if item.which == 1 => lang::decl_guess(&self.options.fruit, case, Singular),
+            ItemKind::Food if item.which == 1 => {
+                lang::decl_guess(&self.options.fruit, case, Singular)
+            }
             ItemKind::Food => format!(
                 "{} {}",
                 decl(&lang::FOOD_PORTION, case, Singular),
@@ -1920,7 +1955,11 @@ impl Game {
             ItemKind::Amulet => format!("{} ⟨n:Jendor:gen⟩", decl(&lang::AMULET, case, Singular)),
             ItemKind::Gold => decl(&lang::GOLD_COIN, case, interslavic::Number::Plural),
             ItemKind::Bizarre(glyph) => {
-                format!("něčto {} {}", crate::lang::color_adv("divny"), command_label(glyph))
+                format!(
+                    "něčto {} {}",
+                    crate::lang::color_adv("divny"),
+                    command_label(glyph)
+                )
             }
         }
     }
@@ -1932,15 +1971,18 @@ impl Game {
     /// Count-aware pack name declined for the sentence slot it fills.
     /// Numeral government still overrides for 5+ (genitive plural).
     pub fn inventory_name_case(&self, item: &Item, drop: bool, case: Case) -> String {
-        use crate::lang::{self, adj_for, decl, material_of, phrase, Phrase};
+        use crate::lang::{self, Phrase, adj_for, decl, material_of, phrase};
         use interslavic::Number::{Plural, Singular};
         let count = item.count;
         // Numeral government: 1 → case sg, 2–4 → case pl, 5+ → Gen pl.
-        let counted_num = |n: u32| -> interslavic::Number {
-            if n == 1 { Singular } else { Plural }
-        };
+        let counted_num =
+            |n: u32| -> interslavic::Number { if n == 1 { Singular } else { Plural } };
         let counted_case = |n: u32| -> Case {
-            if (2..=4).contains(&n) || n == 1 { case } else { Case::Gen }
+            if (2..=4).contains(&n) || n == 1 {
+                case
+            } else {
+                Case::Gen
+            }
         };
         let head_of = |n: u32, l: &lang::Lex| -> String {
             let form = decl(l, counted_case(n), counted_num(n));
@@ -1959,17 +2001,29 @@ impl Game {
                 if known || guess.is_some() {
                     let head = head_of(count, &lang::POTION);
                     if known {
-                        format!("{head} {}({color})", lang::potion_effect_gen(item.which as usize))
+                        format!(
+                            "{head} {}({color})",
+                            lang::potion_effect_gen(item.which as usize)
+                        )
                     } else {
                         format!("{head} «{}»({color})", guess.unwrap())
                     }
                 } else {
                     let form = format!(
                         "{} {}",
-                        adj_for(color, &lang::POTION, counted_case(count), counted_num(count)),
+                        adj_for(
+                            color,
+                            &lang::POTION,
+                            counted_case(count),
+                            counted_num(count)
+                        ),
                         decl(&lang::POTION, counted_case(count), counted_num(count))
                     );
-                    if count == 1 { form } else { format!("{count} {form}") }
+                    if count == 1 {
+                        form
+                    } else {
+                        format!("{count} {form}")
+                    }
                 }
             }
             ItemKind::Scroll => {
@@ -2041,18 +2095,27 @@ impl Game {
                 }
             }
             ItemKind::Food if item.which == 1 => {
-                let form = lang::decl_guess(
-                    &self.options.fruit,
-                    counted_case(count),
-                    counted_num(count),
-                );
-                if count == 1 { form } else { format!("{count} {form}") }
+                let form =
+                    lang::decl_guess(&self.options.fruit, counted_case(count), counted_num(count));
+                if count == 1 {
+                    form
+                } else {
+                    format!("{count} {form}")
+                }
             }
             ItemKind::Food if count == 1 => {
-                format!("{} {}", decl(&lang::FOOD_PORTION, case, Singular), lang::food_gen())
+                format!(
+                    "{} {}",
+                    decl(&lang::FOOD_PORTION, case, Singular),
+                    lang::food_gen()
+                )
             }
             ItemKind::Food => {
-                format!("{} {}", head_of(count, &lang::FOOD_PORTION), lang::food_gen())
+                format!(
+                    "{} {}",
+                    head_of(count, &lang::FOOD_PORTION),
+                    lang::food_gen()
+                )
             }
             ItemKind::Weapon => {
                 let weapon = &lang::WEAPON_LEX[item.which as usize];
@@ -2093,7 +2156,10 @@ impl Game {
                     format!("{}{called}", phrase(armor, case, Singular))
                 }
             }
-            ItemKind::Amulet => format!("{} ⟨n:Jendor:gen⟩", decl(&lang::AMULET, Case::Nom, Singular)),
+            ItemKind::Amulet => format!(
+                "{} ⟨n:Jendor:gen⟩",
+                decl(&lang::AMULET, Case::Nom, Singular)
+            ),
             ItemKind::Gold => format!(
                 "{} {}",
                 item.gold_value,
@@ -2106,7 +2172,11 @@ impl Game {
                 )
             ),
             ItemKind::Bizarre(glyph) => {
-                format!("něčto {} {}", crate::lang::color_adv("divny"), command_label(glyph))
+                format!(
+                    "něčto {} {}",
+                    crate::lang::color_adv("divny"),
+                    command_label(glyph)
+                )
             }
         };
         if drop && let Some(first) = name.get_mut(0..1) {
@@ -2205,7 +2275,9 @@ impl Game {
             } else {
                 "prědmet".to_string()
             };
-            self.message(format!("{name} ⟨v3:izčezati⟩ pri ⟨n:udar:loc⟩ o ⟨n:zemja:acc⟩"));
+            self.message(format!(
+                "{name} ⟨v3:izčezati⟩ pri ⟨n:udar:loc⟩ o ⟨n:zemja:acc⟩"
+            ));
         }
     }
 
@@ -2281,7 +2353,10 @@ impl Game {
             self.player.conditions.can_confuse_monster = false;
             self.monsters[index].flags |= monster::CONFUSED;
             let color = self.pick_color("črveny");
-            self.message(format!("⟨a:tvoj:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩ ⟨v3p:prěstavati⟩ světiti sę {}", crate::lang::color_adv(color)));
+            self.message(format!(
+                "⟨a:tvoj:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩ ⟨v3p:prěstavati⟩ světiti sę {}",
+                crate::lang::color_adv(color)
+            ));
         }
         if self.monsters[index].hp <= 0 {
             self.kill_monster(index)
@@ -2412,7 +2487,10 @@ impl Game {
                         self.player.conditions.can_confuse_monster = false;
                         self.monsters[i].flags |= monster::CONFUSED;
                         let color = self.pick_color("črveny");
-                        self.message(format!("⟨a:tvoj:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩ ⟨v3p:prěstavati⟩ světiti sę {}", crate::lang::color_adv(color)));
+                        self.message(format!(
+                            "⟨a:tvoj:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩ ⟨v3p:prěstavati⟩ světiti sę {}",
+                            crate::lang::color_adv(color)
+                        ));
                         if !self.player.conditions.blind {
                             let confused_name = self.monster_message_name(i, Case::Nom);
                             self.message(format!("{confused_name} ⟨v3:izględati⟩ ⟨pp:smųtiti:n⟩"));
@@ -2629,11 +2707,7 @@ impl Game {
                         }
                         break;
                     }
-                    self.message(if self.options.terse {
-                        format!("{name} ⟨v3:udarjati⟩ ⟨ty:acc⟩")
-                    } else {
-                        format!("{name} ⟨v3:udarjati⟩ ⟨ty:acc⟩")
-                    });
+                    self.message(format!("{name} ⟨v3:udarjati⟩ ⟨ty:acc⟩"));
                     break;
                 }
                 self.message(format!("{name} ⟨v3:letěti⟩ mimo ⟨ty:gen:f⟩"));
@@ -2765,7 +2839,11 @@ impl Game {
             && let Some(trap) = cell.trap
         {
             let shown = if self.player.conditions.hallucinating {
-                crate::lang::phrase(&crate::lang::TRAP_LEX[self.rng.rnd(8) as usize], Case::Nom, interslavic::Number::Singular)
+                crate::lang::phrase(
+                    &crate::lang::TRAP_LEX[self.rng.rnd(8) as usize],
+                    Case::Nom,
+                    interslavic::Number::Singular,
+                )
             } else {
                 trap_name(trap)
             };
@@ -3172,7 +3250,9 @@ impl Game {
                     if !self.wears_ring(2) && !self.player_saves(0) {
                         self.player.stats.strength = (self.player.stats.strength - 1).max(3)
                     }
-                    self.message("⟨a:maly:drotik:nom⟩ ⟨n:drotik:nom⟩ ⟨v3:udarjati⟩ ⟨ty:acc⟩ v ⟨n:ramę:acc⟩")
+                    self.message(
+                        "⟨a:maly:drotik:nom⟩ ⟨n:drotik:nom⟩ ⟨v3:udarjati⟩ ⟨ty:acc⟩ v ⟨n:ramę:acc⟩",
+                    )
                 } else {
                     self.message("⟨a:maly:drotik:nom⟩ ⟨n:drotik:nom⟩ ⟨v3:letěti⟩ mimo ⟨a:tvoj:uho:gen⟩ ⟨n:uho:gen⟩ i ⟨v3:izčezati⟩")
                 }
@@ -3732,7 +3812,10 @@ impl Game {
             self.player.conditions.can_confuse_monster = false;
             self.monsters[index].flags |= monster::CONFUSED;
             let color = self.pick_color("črveny");
-            self.message(format!("⟨a:tvoj:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩ ⟨v3p:prěstavati⟩ světiti sę {}", crate::lang::color_adv(color)));
+            self.message(format!(
+                "⟨a:tvoj:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩ ⟨v3p:prěstavati⟩ světiti sę {}",
+                crate::lang::color_adv(color)
+            ));
         }
         if self.monsters[index].hp <= 0 {
             self.kill_monster(index);
@@ -3871,11 +3954,7 @@ impl Game {
             self.flytrap_hits = 0;
         }
         self.player.stats.experience += u64::from(monster.experience);
-        self.message(if self.options.terse {
-            format!("⟨v2:ubivati⟩ {defeated}")
-        } else {
-            format!("⟨v2:ubivati⟩ {defeated}")
-        });
+        self.message(format!("⟨v2:ubivati⟩ {defeated}"));
         self.drop_monster_inventory(monster);
         self.check_experience();
     }
@@ -4514,7 +4593,9 @@ impl Game {
                 self.player.gold = self.player.gold.saturating_sub(amount as i32);
                 self.monsters.remove(index);
                 if self.player.gold != old_gold {
-                    self.message("⟨a:tvoj:torba:nom⟩ ⟨n:torba:nom⟩ ⟨v3h:stajati:staje⟩ sę ⟨cav:legky⟩");
+                    self.message(
+                        "⟨a:tvoj:torba:nom⟩ ⟨n:torba:nom⟩ ⟨v3h:stajati:staje⟩ sę ⟨cav:legky⟩",
+                    );
                 }
             }
             13 => self.nymph_steal(index),
@@ -4695,11 +4776,7 @@ impl Game {
         } else if self.player.food_left < 300 && old_food >= 300 {
             self.hungry_state = 1;
             self.message(if self.player.conditions.hallucinating {
-                if self.options.terse {
-                    "⟨v2:imati⟩ ⟨a:veliky:apetit:acc⟩ ⟨n:apetit:acc⟩"
-                } else {
-                    "⟨v2:imati⟩ ⟨a:veliky:apetit:acc⟩ ⟨n:apetit:acc⟩"
-                }
+                "⟨v2:imati⟩ ⟨a:veliky:apetit:acc⟩ ⟨n:apetit:acc⟩"
             } else if self.options.terse {
                 "⟨v2:čuti⟩ ⟨n:glad:acc⟩"
             } else {
@@ -4962,8 +5039,7 @@ impl Game {
     /// The intended color lemma, or a random one while hallucinating.
     fn pick_color(&mut self, ordinary: &'static str) -> &'static str {
         if self.player.conditions.hallucinating {
-            crate::lang::COLOR_ADJ
-                [self.rng.rnd(crate::lang::COLOR_ADJ.len() as u32) as usize]
+            crate::lang::COLOR_ADJ[self.rng.rnd(crate::lang::COLOR_ADJ.len() as u32) as usize]
         } else {
             ordinary
         }
@@ -5034,7 +5110,10 @@ impl Game {
             }
             WizardCommand::Map => {}
             WizardCommand::Teleport => self.random_teleport(),
-            WizardCommand::Food => self.message(format!("⟨n:jeda:gen⟩ ⟨lp:ostati:n⟩: {}", self.player.food_left)),
+            WizardCommand::Food => self.message(format!(
+                "⟨n:jeda:gen⟩ ⟨lp:ostati:n⟩: {}",
+                self.player.food_left
+            )),
             WizardCommand::AddPassages => {
                 let positions: Vec<Pos> = self.dungeon.map.iter().map(|(pos, _)| pos).collect();
                 for pos in positions {
@@ -5303,7 +5382,9 @@ mod tests {
         for y in 0..crate::DISPLAY_HEIGHT as i32 {
             for x in 0..crate::DISPLAY_WIDTH as i32 {
                 let door = Pos::new(x, y);
-                let Some(cell) = g.dungeon.map.get(door) else { continue };
+                let Some(cell) = g.dungeon.map.get(door) else {
+                    continue;
+                };
                 if cell.terrain != Terrain::Door {
                     continue;
                 }
@@ -5312,9 +5393,10 @@ mod tests {
                 let Some(inside) = (0..crate::DISPLAY_HEIGHT as i32)
                     .flat_map(|iy| (0..crate::DISPLAY_WIDTH as i32).map(move |ix| Pos::new(ix, iy)))
                     .find(|p| {
-                        g.dungeon.map.get(*p).is_some_and(|c| {
-                            c.room == Some(room) && c.terrain == Terrain::Floor
-                        })
+                        g.dungeon
+                            .map
+                            .get(*p)
+                            .is_some_and(|c| c.room == Some(room) && c.terrain == Terrain::Floor)
                     })
                 else {
                     continue;
@@ -5354,7 +5436,10 @@ mod tests {
             })
             .max_by_key(|p| p.distance2(g.player.pos))
             .expect("room has floor");
-        assert!(corner.distance2(g.player.pos) > 2, "corner must be non-adjacent");
+        assert!(
+            corner.distance2(g.player.pos) > 2,
+            "corner must be non-adjacent"
+        );
         let id = g.id();
         let mut monster = monster::create(id, 20, corner, g.depth, &mut g.rng); // troll: MEAN
         monster.awake = false;
@@ -5580,10 +5665,7 @@ mod tests {
 
         g.messages.clear();
         drink(&mut g, 12);
-        assert_eq!(
-            g.messages.last().unwrap(),
-            "o ne!  Vse jest temno!  Pomoć!"
-        );
+        assert_eq!(g.messages.last().unwrap(), "o ne!  Vse jest temno!  Pomoć!");
 
         g.messages.clear();
         drink(&mut g, 9);
@@ -5601,16 +5683,16 @@ mod tests {
         drink(&mut g, 2);
         assert_eq!(
             g.messages,
-            ["sejčas jest ti mnogo nedobro", "vse sejčas izględaje TAKO nudno."]
+            [
+                "sejčas jest ti mnogo nedobro",
+                "vse sejčas izględaje TAKO nudno."
+            ]
         );
 
         g.player.conditions.hallucinating = true;
         g.messages.clear();
         drink(&mut g, 13);
-        assert_eq!(
-            g.messages.last().unwrap(),
-            "o, hura!  Letiš v vȯzduhu!"
-        );
+        assert_eq!(g.messages.last().unwrap(), "o, hura!  Letiš v vȯzduhu!");
     }
 
     #[test]
@@ -5626,7 +5708,10 @@ mod tests {
         assert_eq!(g.player.stats.level, 2);
         assert_eq!(
             g.messages[g.messages.len() - 2..],
-            ["naglo vse dělaješ mnogo bolje umělo", "dostigaješ stųpene 2"]
+            [
+                "naglo vse dělaješ mnogo bolje umělo",
+                "dostigaješ stųpene 2"
+            ]
         );
         assert_eq!(
             g.player.stats.experience,
@@ -5680,15 +5765,15 @@ mod tests {
         read(&mut g, 0);
         assert!(crate::lang::COLOR_ADJ.iter().any(|color| {
             g.messages.last().unwrap()
-                == &format!("tvoje rųky načinajųt světiti sę {}", crate::lang::color_adv(color))
+                == &format!(
+                    "tvoje rųky načinajųt světiti sę {}",
+                    crate::lang::color_adv(color)
+                )
         }));
 
         g.messages.clear();
         read(&mut g, 15);
-        assert_eq!(
-            g.messages.last().unwrap(),
-            "čuješ jedinstvo s Vsemirom"
-        );
+        assert_eq!(g.messages.last().unwrap(), "čuješ jedinstvo s Vsemirom");
 
         g.messages.clear();
         read(&mut g, 5);
@@ -5758,12 +5843,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(g.wield(weapon), CommandResult::TURN);
-        assert!(
-            g.messages
-                .last()
-                .unwrap()
-                .starts_with("sejčas dŕžiš ")
-        );
+        assert!(g.messages.last().unwrap().starts_with("sejčas dŕžiš "));
         assert!(g.messages.last().unwrap().ends_with(&format!("({letter})")));
     }
 
@@ -6973,11 +7053,11 @@ mod tests {
         g.options.terse = true;
         assert_eq!(g.attack_hit_message(None, Some("the bat")), "udarjaješ");
         assert_eq!(g.attack_miss_message(None, Some("the bat")), "hybiš");
-        assert_eq!(g.attack_hit_message(Some("the bat"), None), "The bat udarjaje");
         assert_eq!(
-            g.attack_miss_message(Some("the bat"), None),
-            "The bat hybi"
+            g.attack_hit_message(Some("the bat"), None),
+            "The bat udarjaje"
         );
+        assert_eq!(g.attack_miss_message(Some("the bat"), None), "The bat hybi");
     }
 
     #[test]
@@ -8055,10 +8135,7 @@ mod tests {
         assert!(!g.monsters[0].awake);
         assert_ne!(g.monsters[0].flags & monster::HELD, 0);
         assert_eq!(g.monsters[0].destination, Some(g.dungeon.stairs));
-        assert_eq!(
-            g.messages.last().unwrap(),
-            "strěla izčezaje v oblačku dyma"
-        );
+        assert_eq!(g.messages.last().unwrap(), "strěla izčezaje v oblačku dyma");
     }
 
     #[test]
@@ -8364,10 +8441,7 @@ mod tests {
         assert!(!result.consumed_turn);
         assert!(g.player.inventory.iter().any(|item| item.id == food));
         assert!(g.floor_items.is_empty());
-        assert_eq!(
-            g.messages.last().unwrap(),
-            "tamo uže něčto jest"
-        );
+        assert_eq!(g.messages.last().unwrap(), "tamo uže něčto jest");
     }
 
     #[test]
@@ -8941,10 +9015,7 @@ mod tests {
         assert_eq!(g.player.stats.hp, hp);
         assert!(g.player.conditions.asleep_turns >= 2);
         assert!(!g.player_is_running);
-        assert_eq!(
-            g.messages.last().unwrap(),
-            "ledeno čudovišče tę zamråžaje"
-        );
+        assert_eq!(g.messages.last().unwrap(), "ledeno čudovišče tę zamråžaje");
     }
 
     #[test]
@@ -9673,7 +9744,12 @@ mod tests {
             g.inventory_name(&potion, false),
             format!(
                 "2 {} {}",
-                crate::lang::adj_for(color, &crate::lang::POTION, Case::Nom, interslavic::Number::Plural),
+                crate::lang::adj_for(
+                    color,
+                    &crate::lang::POTION,
+                    Case::Nom,
+                    interslavic::Number::Plural
+                ),
                 crate::lang::decl(&crate::lang::POTION, Case::Nom, interslavic::Number::Plural)
             )
         );
@@ -9681,7 +9757,11 @@ mod tests {
         g.knowledge.potions[0] = true;
         assert_eq!(
             g.inventory_name(&potion, false),
-            format!("2 {} {}({color})", crate::lang::decl(&crate::lang::POTION, Case::Nom, interslavic::Number::Plural), crate::lang::potion_effect_gen(0))
+            format!(
+                "2 {} {}({color})",
+                crate::lang::decl(&crate::lang::POTION, Case::Nom, interslavic::Number::Plural),
+                crate::lang::potion_effect_gen(0)
+            )
         );
 
         let mut weapon = Item::basic(g.id(), ItemKind::Weapon, 3);
@@ -9768,20 +9848,14 @@ mod tests {
         hungry.player.food_left = 300;
         hungry.digest();
         assert_eq!(hungry.hungry_state, 1);
-        assert_eq!(
-            hungry.messages.last().unwrap(),
-            "imaješ veliky apetit"
-        );
+        assert_eq!(hungry.messages.last().unwrap(), "imaješ veliky apetit");
 
         let mut landing = Game::new(221);
         landing.player.conditions.hallucinating = true;
         landing.player.conditions.levitating = true;
         landing.scheduler.add_or_lengthen(Effect::Levitation, 1);
         landing.tick_effects();
-        assert_eq!(
-            landing.messages.last().unwrap(),
-            "buh!  Padaješ na zemjų"
-        );
+        assert_eq!(landing.messages.last().unwrap(), "buh!  Padaješ na zemjų");
     }
 
     #[test]
@@ -9924,10 +9998,7 @@ mod tests {
 
         g.identify_trap(Direction::Right);
 
-        assert_eq!(
-            g.messages.last().unwrap(),
-            "Nahodiš: jadna pasť"
-        );
+        assert_eq!(g.messages.last().unwrap(), "Nahodiš: jadna pasť");
         assert!(g.dungeon.map.get(pos).unwrap().trap_revealed);
     }
 
@@ -10324,10 +10395,7 @@ mod tests {
         gold_game.dungeon.rooms[room as usize].gold_value = 123;
 
         assert_eq!(gold_game.pickup(), CommandResult::TURN);
-        assert_eq!(
-            gold_game.messages.last().unwrap(),
-            "nahodiš 123 zlåtnikov"
-        );
+        assert_eq!(gold_game.messages.last().unwrap(), "nahodiš 123 zlåtnikov");
         assert_eq!(gold_game.dungeon.rooms[room as usize].gold_value, 0);
 
         gold_game.options.terse = true;
@@ -10579,10 +10647,7 @@ mod tests {
         miss.messages.clear();
 
         assert!(!miss.thrown_attack(0, &dagger));
-        assert_eq!(
-            miss.messages.last().unwrap(),
-            "kinžal leti mimo zombi"
-        );
+        assert_eq!(miss.messages.last().unwrap(), "kinžal leti mimo zombi");
     }
 
     #[test]
