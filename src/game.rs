@@ -3523,7 +3523,7 @@ impl Game {
                     if self.rng.rnd((5 + penalty) as u32) == 0 {
                         let c = self.dungeon.map.get_mut(p).unwrap();
                         c.terrain = Terrain::Door;
-                        self.message("⟨a:tajny:dveri:nom:pl⟩ ⟨n:dveri:nom:pl⟩");
+                        self.message("⟨a:tajny:dvėri:nom:pl⟩ ⟨n:dvėri:nom:pl⟩");
                     }
                 } else if cell.terrain == Terrain::SecretPassage {
                     if self.rng.rnd((3 + penalty) as u32) == 0 {

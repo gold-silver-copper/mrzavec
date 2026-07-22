@@ -357,11 +357,12 @@ Dissents / notes:
 - goal → **cělj** (top hit "gol" is the sport sense); genre → **kategorija**
   ("žanr" unattested, "fantastika" wrong sense); win → phrase built on
   **poběda** to match score.rs's "pȯlna poběda".
-- **dvėri, not dvere**: the in-game help renders ⟨n:dveri:nom:pl⟩ as
-  "dvere", which slovowiki does not know (official lemma is dvėri). The
-  page uses official "dvėri". Follow-up for the game: the help templates
-  are not covered by the gate corpus, and the dveri lemma diverges from
-  the dictionary — worth adding help_text() to the corpus and re-checking.
+- **dvėri, not dvere**: the in-game help rendered ⟨n:dveri:nom:pl⟩ as
+  "dvere", which slovowiki does not know (official lemma is dvėri).
+  Fixed game-side (2026-07-22): the lang.rs lemma and every template now
+  use dvėri, so game and page agree on the dictionary form. Remaining
+  follow-up: help_text() templates are still not covered by the gate
+  corpus — worth adding so future help edits are checked too.
 - **prišėl** (prijdti) replaced pristųpiti: the dictionary lemma is the
   phrase "pristųpiti do", so its participle is absent from the forms index.
 - Proper names (Mrzavec, Rogue, roguelike, Toy, Wichman, Arnold, Santa,

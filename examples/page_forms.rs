@@ -11,7 +11,7 @@ use mrzavec::lang::speak;
 fn main() {
     println!("== help renderings (verbatim HELP_ENTRIES templates) ==");
     for (key, template) in [
-        ("s", "iskati pasť/⟨a:tajny:dveri:nom:pl⟩ ⟨n:dveri:nom:pl⟩"),
+        ("s", "iskati pasť/⟨a:tajny:dvėri:nom:pl⟩ ⟨n:dvėri:nom:pl⟩"),
         ("i", "pokazati ⟨n:torba:acc⟩"),
         ("e", "jesti ⟨n:jeda:acc⟩"),
         ("W", "nositi ⟨n:brȯnja:acc⟩"),
