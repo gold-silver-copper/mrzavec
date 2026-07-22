@@ -255,3 +255,45 @@ its two semantic errors reach players (browser-restore message, CLI
 stderr), so both are now marker templates ("nepodpirana verzija
 sȯhranjeńja", "ne možno obnoviti dokončenų ili mrtvų igrų") and the CLI
 restore eprintln speaks.
+
+## Literal-translation pass (STYLE_PASS_3, 2026-07-21)
+
+Owner directive: translate the ACTION ("podbiraješ žȯlty napitȯk", not
+"sejčas imaješ…"). Audit of message pairs against the English originals
+in the rogue-rs legacy repo. Upgrades applied (English → old → new):
+
+| English | was | now |
+|---|---|---|
+| you now have X (pickup ×2) | sejčas imaješ X | **podbiraješ X** |
+| you moved onto X (×2) | tu leži X | **stųpaješ na X-acc** |
+| you suddenly feel very thirsty | naglo hoćeš piti | **naglo čuješ velikų žęđų** |
+| What bulging muscles! | Kaka moć! | **Kake myšce!** |
+| wrenching sensation in your gut | čuješ bolj po vsem tělu | **čuješ silny bolj v želųdku** |
+| much more skillful | vse dělaješ mnogo lěpje | **vse dělaješ mnogo bolje umělo** (analytic comparative, steen-sourced; umělo allowlisted — adverb of official uměti) |
+| You faint (×3) | padaješ bez sil | **padaješ v obmråk** (obmråk: slovowiki-generated "swoon", project row, flagged) |
+| tingling feeling | koža tę svŕbi | **koža tę mråvi** (mråviti: generated, pan-Slavic ant-crawl idiom, project verb row, flagged) |
+| a gush of water hits you on the head | voda lije sę ti na glåvų | **struja vody udarjaje tę v glåvų** |
+| your way is magically blocked | čarovna sila ne pušćaje tę dalje | **tvoj pųť jest čarovno zablokovany** |
+| vanishes as it hits the ground | padaje i izčezaje | **izčezaje pri udaru o zemjų** |
+| a cloak of darkness falls around you | tma okrųžaje tę | **plašč tmy padaje okolo tebe** |
+| the veil of darkness lifts | tma izčezaje | **zavěsa tmy izčezaje** |
+
+KEEP (documented, research done): munchies-overpower drug humor
+(prěmagaje + Panika! stays — no register-faithful rendering without
+inventing words); "faint" verb family absent from dictionary (obmråk
+noun construction chosen instead); sick/feel-verbs stay impersonal per
+the gender-neutral convention; "welcome to level N" → "dostigaješ
+stųpenja N" (the literal greeting takes a gendered participle);
+original first-person narrator lines ("I see no way down") →
+second-person ("ne vidiš pųť dolu") — deliberate perspective
+normalization, the game addresses the player as "ty" throughout.
+Sweep status, honestly stated: the remaining pairs were verified
+LITERAL across the cumulative review passes (grammar pass, style
+passes 1–2, this pass's targeted audit), not in one fresh itemized
+sitting — anything found later belongs in this table, not a new pass.
+
+Valence addition: mråviti — Acc experiencer ("koža tę mråvi"), by
+analogy with svŕběti; frame unattestable (generated word), accepted
+by decision.
+New registry nouns: žęđa, myšca, želųdȯk, struja, obmråk*, plašč,
+zavěsa (*project-flagged). scripts/bless.py added (escape-safe blessing).

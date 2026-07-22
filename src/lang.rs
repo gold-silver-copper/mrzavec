@@ -665,6 +665,13 @@ fn reg(lemma: &str) -> Option<Lex> {
             lex("blizkosť", Feminine, Inanimate),
             lex("čuťje", Neuter, Inanimate),
             lex("sȯn", Masculine, Inanimate),
+            lex("žęđa", Feminine, Inanimate),
+            lex("myšca", Feminine, Inanimate),
+            lex("želųdȯk", Masculine, Inanimate),
+            lex("struja", Feminine, Inanimate),
+            lex("obmråk", Masculine, Inanimate),
+            lex("plašč", Masculine, Inanimate),
+            lex("zavěsa", Feminine, Inanimate),
             lex("apetit", Masculine, Inanimate),
             lex("jad", Masculine, Inanimate),
             lex("rđa", Feminine, Inanimate),
@@ -1052,6 +1059,8 @@ mod tests {
         noun_into(&mut rows, &lex("nevidimosť", Feminine, Inanimate), "invisibility");
         noun_into(&mut rows, &lex("pohibel", Feminine, Inanimate), "doom");
         noun_into(&mut rows, &lex("Jendor", Masculine, Inanimate), "Yendor");
+        noun_into(&mut rows, &lex("obmråk", Masculine, Inanimate), "swoon");
+        rows.push("mråviti\tverb\t\t\ttingle".to_string());
         // Merge duplicate lemmas (shared head nouns like brȯnja), joining
         // glosses — the check-text loader rejects duplicate rows.
         let mut merged: std::collections::BTreeMap<String, (String, Vec<String>)> =
