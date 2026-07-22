@@ -38,6 +38,8 @@ jobs:
           cargo install wasm-bindgen-cli --version "$version" --locked
       - name: Build web bundle
         run: ./scripts/build-wasm.sh
+      - name: Stamp the build version into cache-busting URLs
+        run: sed -i "s/__BUILD__/${GITHUB_SHA}/g" web/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

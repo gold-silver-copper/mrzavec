@@ -56,7 +56,11 @@
       <p id="status">Loading the game…</p>
     </main>
     <script type="module">
-      import init from "./pkg/mrzavec.js";
+      // __BUILD__ is replaced with the commit SHA at deploy time so a
+      // cached copy of one file can never pair with a newer copy of the
+      // other (grift.rs caches these for 4 hours).
+      const build = "__BUILD__";
+      const { default: init } = await import(`./pkg/mrzavec.js?v=${build}`);
 
       const canvas = document.querySelector("#mrzavec");
       const status = document.querySelector("#status");
@@ -64,7 +68,7 @@
       canvas.focus();
 
       try {
-        await init();
+        await init({ module_or_path: `./pkg/mrzavec_bg.wasm?v=${build}` });
         canvas.focus();
         status.textContent =
           "Use Rogue keyboard commands. Click the game if it loses focus.";
