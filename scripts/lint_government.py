@@ -26,7 +26,10 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from lint_inflection import REPO, extract_literals, production_source  # noqa: E402
 
-SUSPICIOUS = {("s", "gen")}  # in-set but almost always a "with"-meaning bug
+# Severity policy (interslavic 0.12.0, preposition_senses): a marker case
+# that matches one sense of a MULTI-sense preposition is ambiguous — it
+# needs a one-line (prep+case) annotation in government-notes.txt naming
+# the intended sense. Single-sense prepositions pass silently.
 AGREEING = ("a:", "cmp:", "sup:", "ap:")
 CASE_FIELD = {  # marker kind -> index of the case field in the split body
     "n": 2, "a": 3, "cmp": 3, "sup": 3, "ap": 3, "pp": 3,
@@ -53,8 +56,12 @@ def prep_table(tokens):
     )
     table = {}
     for line in helper.stdout.splitlines():
-        tok, _, cases = line.partition("\t")
-        table[tok] = set(cases.split(","))
+        tok, _, senses = line.partition("\t")
+        table[tok] = {
+            part.split(":", 1)[0]: part.split(":", 1)[1]
+            for part in senses.split("|")
+            if ":" in part
+        }
     return table
 
 
@@ -91,8 +98,8 @@ def scan(literals):
                     continue  # verb/adverb marker: government window closed
                 if case not in governed:
                     yield ("FAIL", low, f"⟨…:{case}⟩ not in {{{','.join(sorted(governed))}}}", lit)
-                elif (low, case) in SUSPICIOUS:
-                    yield ("WARN", low, f"suspicious {low}+{case}", lit)
+                elif len(governed) > 1:
+                    yield ("WARN", f"{low}+{case}", f"ambiguous: {low}+{case} = \"{governed[case]}\"", lit)
             elif nxt.startswith("{") or nxt.isdigit():
                 yield ("WARN", low, "government crosses a placeholder/digit", lit)
 
@@ -126,11 +133,11 @@ def main() -> int:
         if kind == "FAIL":
             fails.append((prep, detail, lit))
         else:
-            key = f"{prep} …"
-            if lit[:38] not in notes and prep not in [
+            keys = [
                 line.split()[0] for line in notes.splitlines()
                 if line.strip() and not line.startswith("#")
-            ]:
+            ]
+            if prep not in keys and prep.split("+")[0] not in keys:
                 unnoted.append((prep, detail, lit))
     if fails or unnoted:
         for prep, detail, lit in fails:

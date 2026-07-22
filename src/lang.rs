@@ -76,14 +76,41 @@ pub fn phrase(p: &Phrase, case: Case, number: Number) -> String {
     }
 }
 
-/// Slavic numeral government: 1 → Nom sg, 2–4 → Nom pl, 5+ → Gen pl.
-/// Returns just the correctly-numbered noun phrase (caller prepends the digit).
-pub fn counted(n: u32, p: &Phrase) -> String {
-    match n {
-        1 => phrase(p, Case::Nom, Number::Singular),
-        2..=4 => phrase(p, Case::Nom, Number::Plural),
-        _ => phrase(p, Case::Gen, Number::Plural),
+/// Numeral government for a counted phrase in a syntactic slot. The head
+/// noun comes from `interslavic::quantified` (0.12.0 — the crate owns the
+/// government rules incl. compounds and oblique slots); the adjective
+/// mirrors the crate's documented policy locally, guarded by the
+/// `adjective_agreement_matches_quantified` consistency test.
+pub fn counted_in(n: u64, p: &Phrase, case: Case) -> String {
+    let noun = if p.head.indecl {
+        p.head.lemma.to_string()
+    } else {
+        first_variant(interslavic::quantified(
+            n, p.head.lemma, case, p.head.gender, p.head.animacy,
+        ))
+    };
+    match p.adj {
+        Some(a) => format!("{} {}", adj_for(a, &p.head, quantified_case(n, case), quantified_number(n)), noun),
+        None => noun,
     }
+}
+
+/// The (case, number) `quantified`'s documented policy selects — needed for
+/// adjective agreement, which the crate API does not expose.
+fn quantified_case(n: u64, case: Case) -> Case {
+    if n >= 5 && matches!(case, Case::Nom | Case::Acc) {
+        Case::Gen
+    } else {
+        case
+    }
+}
+fn quantified_number(n: u64) -> Number {
+    if n == 1 { Number::Singular } else { Number::Plural }
+}
+
+/// Legacy nominative counting (kept for the corpus and existing callers).
+pub fn counted(n: u32, p: &Phrase) -> String {
+    counted_in(n as u64, p, Case::Nom)
 }
 
 /// Genitive singular of a verb's gerund ("lěčiti" → "lěčenja") — the
@@ -887,6 +914,26 @@ mod tests {
         assert_eq!(phrase(rs, Case::Acc, Number::Singular), "gremųćų zmijų");
         // indeclinables never change
         assert_eq!(phrase(&MONSTER_LEX[4], Case::Ins, Number::Plural), "emu");
+    }
+
+    #[test]
+    fn adjective_agreement_matches_quantified() {
+        // The crate owns count government; our adjective agreement infers
+        // the same (case, number). If the crate policy ever changes, this
+        // breaks loudly instead of desynchronizing adjectives from nouns.
+        for n in 1..=30u64 {
+            for case in [Case::Nom, Case::Acc, Case::Ins, Case::Gen] {
+                let expected = first_variant(interslavic::quantified(
+                    n, "zlåtnik", case, Gender::Masculine, Animacy::Inanimate,
+                ));
+                let local = decl(
+                    &lex("zlåtnik", Masculine, Inanimate),
+                    quantified_case(n, case),
+                    quantified_number(n),
+                );
+                assert_eq!(local, expected, "n={n} case={case:?}");
+            }
+        }
     }
 
     #[test]
