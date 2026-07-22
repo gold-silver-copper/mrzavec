@@ -151,8 +151,11 @@ def main() -> int:
     if result.returncode not in (0, 1) or not result.stdout.strip():
         print(result.stderr, file=sys.stderr)
         return 2
+    # Newer slovowiki builds print a "lexicon: N rows" header line before
+    # the JSON array even in --json mode; parse from the array itself.
+    payload = result.stdout[result.stdout.index("[") :]
     analyses = {}
-    for entry in json.loads(result.stdout):
+    for entry in json.loads(payload):
         if isinstance(entry, dict) and entry.get("token"):
             analyses.setdefault(entry["token"], entry)
 

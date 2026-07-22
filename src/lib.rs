@@ -3,6 +3,7 @@ pub mod command;
 pub mod effects;
 pub mod game;
 pub mod generation;
+pub mod help;
 pub mod item;
 pub mod lang;
 pub mod map;

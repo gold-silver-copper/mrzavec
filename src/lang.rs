@@ -870,7 +870,6 @@ fn reg(lemma: &str) -> Option<Lex> {
             lex("shrånjeńje", Neuter, Inanimate),
             // gerund nominalizations (systematic neuter -ńje, not separate
             // dictionary headwords; declined like any -je neuter)
-            lex("vzęťje", Neuter, Inanimate),
             lex("opoznańje", Neuter, Inanimate),
         ] {
             put(l);
@@ -1375,6 +1374,20 @@ mod tests {
         noun_into(&mut rows, &lex("pohibel", Feminine, Inanimate), "doom");
         noun_into(&mut rows, &lex("Jendor", Masculine, Inanimate), "Yendor");
         noun_into(&mut rows, &lex("obmråk", Masculine, Inanimate), "swoon");
+        // Help-screen vocabulary (the corpus renders HELP_ENTRIES): two
+        // deliberate technical loans. (The vzęti gerund was reworded away:
+        // its oblique cases are absent from the official forms index and the
+        // loader rejects a project row shadowing an official form.)
+        noun_into(
+            &mut rows,
+            &lex("escape", Masculine, Inanimate),
+            "the Escape key",
+        );
+        noun_into(
+            &mut rows,
+            &lex("shell", Masculine, Inanimate),
+            "command shell",
+        );
         rows.push("mråviti\tverb\t\t\ttingle".to_string());
         // Merge duplicate lemmas (shared head nouns like brȯnja), joining
         // glosses — the check-text loader rejects duplicate rows.
@@ -1482,6 +1495,20 @@ mod corpus {
             out.push_str(&format!("pŕstenj {}. ", material_of(l)));
         }
         out.push('\n');
+        // The `?` help screen: every entry template, rendered like the game
+        // does, minus key labels and the non-language placeholders.
+        for (_, description, _) in crate::help::HELP_ENTRIES {
+            let mut line = speak(description);
+            for skip in ["<dir>", "<SHIFT>", "<CTRL>", "^["] {
+                line = line.replace(skip, " ");
+            }
+            let line = line.replace(['\t', ':'], " ");
+            let line = line.trim();
+            if !line.is_empty() {
+                out.push_str(line);
+                out.push_str(".\n");
+            }
+        }
         std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/target")).ok();
         std::fs::write(
             concat!(env!("CARGO_MANIFEST_DIR"), "/target/lang-corpus.txt"),
