@@ -833,7 +833,7 @@ fn reg(lemma: &str) -> Option<Lex> {
             lex("prěškoda", Feminine, Inanimate),
             lex("sȯhranjeńje", Neuter, Inanimate),
             lex("čestitańje", Neuter, Inanimate),
-            lex("dveri", Feminine, Inanimate),
+            lex("dvėri", Feminine, Inanimate),
             lex("stěna", Feminine, Inanimate),
             lex("poběda", Feminine, Inanimate),
             lex("ime", Neuter, Inanimate),

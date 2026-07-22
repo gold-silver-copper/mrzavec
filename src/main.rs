@@ -3504,7 +3504,7 @@ const HELP_ENTRIES: &[(char, &str, bool)] = &[
     ('^', "<dir>\topoznati vid pasti", true),
     (
         's',
-        "\tiskati pasť/⟨a:tajny:dveri:nom:pl⟩ ⟨n:dveri:nom:pl⟩",
+        "\tiskati pasť/⟨a:tajny:dvėri:nom:pl⟩ ⟨n:dvėri:nom:pl⟩",
         true,
     ),
     ('>', "\titi dolu", true),
@@ -3607,7 +3607,7 @@ fn identify_glyph_text(ch: char) -> String {
             '|' | '-' => "stěna ⟨n:komnata:gen⟩",
             '*' => "zlåto",
             '%' => "stųpenišče",
-            '+' => "dveri",
+            '+' => "dvėri",
             '.' => "tlo ⟨n:komnata:gen⟩",
             '@' => "ty",
             '#' => "prohod",
