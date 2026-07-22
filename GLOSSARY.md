@@ -443,8 +443,9 @@ frame (ru следовать кому/чему), used in the passgo option label
 
 **Known crate/dictionary divergence** (reported, not changed): the
 crate declines official pancyŕ as "panciŕ" in every cell including
-Nom; rendered text is self-consistent, upstream issue filed against
-interslavic-rs alongside the earlier ukrasla report.
+Nom; rendered text is self-consistent; filed as
+https://github.com/gold-silver-copper/interslavic/issues/33 (companion
+to the earlier ukrasla report).
 
 **Deliberate keeps**: "skoro do smŕti" (official 'almost' sense,
 in-game help wording); pokušeńje; poniž; sjęti; pohibel; the page's
