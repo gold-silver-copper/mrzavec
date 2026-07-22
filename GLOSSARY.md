@@ -326,3 +326,9 @@ perfective present, same pattern as usneš) — replacing poběđaješ
 Kill message aspect (2026-07-22, owner request): ubivati (imperfective)
 over ubiti — "ubivaješ {acc}", plain present narration consistent with
 udarjaješ/raniš, replacing the perfective-present "ubiješ".
+
+interslavic 0.13.0 adopted (2026-07-22): quantified_parts supplies both
+the governed noun form and the agreement (case, number) — the local
+quantified_case/quantified_number inference and its consistency test
+are deleted. Adjectives can no longer desynchronize from nouns by
+construction; the last duplicated grammar logic in the game is gone.
