@@ -265,8 +265,9 @@ pub fn read(path: &Path) -> io::Result<Vec<ScoreEntry>> {
 }
 pub fn format(scores: &[ScoreEntry]) -> String {
     let mut out = format!(
-        "{} 10 rogueistov:\nRezultat Ime\n",
-        crate::lang::speak("⟨sup:dobry:čarovnik:gen:pl:U⟩")
+        "{} 10 {}:\nRezultat Imę\n",
+        crate::lang::speak("⟨sup:dobry:čarovnik:gen:pl:U⟩"),
+        crate::lang::speak("⟨n:mŕzavec:gen:pl⟩")
     );
     // "na" + locative; the noun is inflected at runtime (player names and
     // death causes are inserted verbatim, never routed through speak()).
@@ -293,7 +294,7 @@ fn reason_text(reason: Reason) -> String {
     match reason {
         Reason::Killed => "smŕť".into(),
         Reason::Quit => "izhod".into(),
-        Reason::Winner => crate::lang::speak("⟨a:pȯlny:poběda:nom:U⟩ ⟨n:poběda:nom⟩"),
+        Reason::Winner => crate::lang::speak("⟨a:pȯlny:poběda:nom⟩ ⟨n:poběda:nom⟩"),
         Reason::KilledWithAmulet => crate::lang::speak("smŕť s ⟨n:amulet:ins:U⟩"),
     }
 }
