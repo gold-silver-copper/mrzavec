@@ -297,3 +297,8 @@ analogy with svŕběti; frame unattestable (generated word), accepted
 by decision.
 New registry nouns: žęđa, myšca, želųdȯk, struja, obmråk*, plašč,
 zavěsa (*project-flagged). scripts/bless.py added (escape-safe blessing).
+
+Kill message (2026-07-22, owner request): "you have defeated X" now
+renders with the kill verb — ⟨v2:ubiti⟩ "ubiješ {acc}" (narrative
+perfective present, same pattern as usneš) — replacing poběđaješ
+(defeat), which read as sports-victory register.

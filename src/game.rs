@@ -3857,9 +3857,9 @@ impl Game {
         }
         self.player.stats.experience += u64::from(monster.experience);
         self.message(if self.options.terse {
-            format!("⟨v2:poběđati⟩ {defeated}")
+            format!("⟨v2:ubiti⟩ {defeated}")
         } else {
-            format!("⟨v2:poběđati⟩ {defeated}")
+            format!("⟨v2:ubiti⟩ {defeated}")
         });
         self.drop_monster_inventory(monster);
         self.check_experience();
