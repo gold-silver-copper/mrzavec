@@ -217,6 +217,25 @@ enum ModalPresentation {
     FullScreen,
 }
 
+impl ModalPresentation {
+    fn control_row(self) -> usize {
+        match self {
+            Self::InlinePrompt | Self::Overlay(OverlayControls::EventArea) => EVENT_ROWS - 1,
+            Self::Overlay(OverlayControls::AboveStatus) => STATUS_ROW - 1,
+            Self::FullScreen => MODAL_MORE_ROW,
+        }
+    }
+}
+
+fn overlay_content_rows(controls: OverlayControls) -> impl DoubleEndedIterator<Item = usize> {
+    let control_row = ModalPresentation::Overlay(controls).control_row();
+    (0..STATUS_ROW).filter(move |row| *row != control_row)
+}
+
+fn overlay_content_capacity(controls: OverlayControls) -> usize {
+    overlay_content_rows(controls).count()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Modal {
     text: String,
@@ -234,10 +253,24 @@ impl Modal {
     }
 
     fn overlay(text: impl Into<String>, controls: OverlayControls) -> Self {
+        let text = text.into();
+        debug_assert!(
+            text.lines().count() <= overlay_content_capacity(controls),
+            "overlay content must leave its pointer-control row free"
+        );
         Self {
-            text: text.into(),
+            text,
             presentation: ModalPresentation::Overlay(controls),
             offset: 0,
+        }
+    }
+
+    fn event_overlay_or_full_screen(text: impl Into<String>) -> Self {
+        let text = text.into();
+        if text.lines().count() <= overlay_content_capacity(OverlayControls::EventArea) {
+            Self::overlay(text, OverlayControls::EventArea)
+        } else {
+            Self::full_screen(text)
         }
     }
 
@@ -1120,12 +1153,7 @@ fn pointer_controls(state: &State) -> (usize, Vec<PointerControl>) {
     let Some(modal) = &state.modal else {
         return (EVENT_ROWS - 1, Vec::new());
     };
-    let row = match modal.presentation {
-        ModalPresentation::InlinePrompt => EVENT_ROWS - 1,
-        ModalPresentation::Overlay(OverlayControls::EventArea) => EVENT_ROWS - 1,
-        ModalPresentation::Overlay(OverlayControls::AboveStatus) => STATUS_ROW - 1,
-        ModalPresentation::FullScreen => MODAL_MORE_ROW,
-    };
+    let row = modal.presentation.control_row();
     let mut commands: Vec<char> = match state.pending {
         Some(Pending::SaveConfirm | Pending::SaveOverwrite | Pending::QuitConfirm) => {
             vec!['y', 'n']
@@ -3086,10 +3114,8 @@ fn ground_inventory_modal(state: &mut State) -> Option<Modal> {
         out.push('\n');
     }
     out.push_str(" --Dalje--");
-    if state.game.options.inventory_style == mrzavec::game::InventoryStyle::Overwrite
-        && out.lines().count() <= STATUS_ROW
-    {
-        Some(Modal::overlay(out, OverlayControls::EventArea))
+    if state.game.options.inventory_style == mrzavec::game::InventoryStyle::Overwrite {
+        Some(Modal::event_overlay_or_full_screen(out))
     } else {
         Some(Modal::full_screen(out))
     }
@@ -3552,7 +3578,14 @@ fn display(state: &State) -> Vec<char> {
         text.push_str(prompt.text.trim());
     }
     if let Some(text) = event_text {
-        write_event_text(&mut out, &text);
+        let reserved_control_row = state
+            .modal
+            .as_ref()
+            .map(|modal| modal.presentation.control_row());
+        let content_rows: Vec<usize> = (0..EVENT_ROWS)
+            .filter(|row| Some(*row) != reserved_control_row)
+            .collect();
+        write_event_text(&mut out, &text, &content_rows);
     }
     for screen_y in DUNGEON_FIRST_ROW..STATUS_ROW {
         let dungeon_y = screen_y - DUNGEON_FIRST_ROW + 1;
@@ -3567,9 +3600,10 @@ fn display(state: &State) -> Vec<char> {
         write_terminal_text(&mut out, KEYBINDING_FIRST_ROW + row, 0, text, DISPLAY_WIDTH);
     }
     if let Some(modal) = &state.modal
-        && matches!(modal.presentation, ModalPresentation::Overlay(_))
+        && let ModalPresentation::Overlay(controls) = modal.presentation
     {
-        let lines: Vec<&str> = modal.text.lines().take(STATUS_ROW).collect();
+        let content_rows: Vec<usize> = overlay_content_rows(controls).collect();
+        let lines: Vec<&str> = modal.text.lines().take(content_rows.len()).collect();
         let width = lines
             .iter()
             .map(|line| line.chars().count())
@@ -3577,7 +3611,7 @@ fn display(state: &State) -> Vec<char> {
             .unwrap_or(0)
             .min(DISPLAY_WIDTH - 2);
         let start_x = (DISPLAY_WIDTH - 1).saturating_sub(width);
-        for (y, line) in lines.into_iter().enumerate() {
+        for (y, line) in content_rows.into_iter().zip(lines) {
             for x in start_x.saturating_sub(1)..DISPLAY_WIDTH {
                 out[y * DISPLAY_WIDTH + x] = ' ';
             }
@@ -3695,10 +3729,10 @@ fn terminal_text_width(text: &str) -> usize {
     )
 }
 
-fn write_event_text(out: &mut [char], text: &str) {
+fn write_event_text(out: &mut [char], text: &str, content_rows: &[usize]) {
     let lines = wrap_terminal_text(text, DISPLAY_WIDTH);
-    let start = lines.len().saturating_sub(EVENT_ROWS);
-    for (row, line) in lines[start..].iter().enumerate() {
+    let start = lines.len().saturating_sub(content_rows.len());
+    for (&row, line) in content_rows.iter().zip(&lines[start..]) {
         write_terminal_text(out, row, 0, line, DISPLAY_WIDTH);
     }
 }
@@ -3781,11 +3815,7 @@ fn inventory_modal(state: &mut State) -> Option<Modal> {
         mrzavec::game::InventoryStyle::Overwrite => {
             let text = inventory_text(&state.game);
             state.pending = Some(Pending::More);
-            if text.lines().count() <= STATUS_ROW {
-                Some(Modal::overlay(text, OverlayControls::EventArea))
-            } else {
-                Some(Modal::full_screen(text))
-            }
+            Some(Modal::event_overlay_or_full_screen(text))
         }
         mrzavec::game::InventoryStyle::Clear => {
             state.pending = Some(Pending::More);
@@ -3999,10 +4029,8 @@ fn start_discoveries(state: &mut State, kind: char) {
             text.push_str("\n --Dalje--");
             state.pending = Some(Pending::DiscoveryMore);
             state.modal = Some(
-                if state.game.options.inventory_style == mrzavec::game::InventoryStyle::Overwrite
-                    && lines.len() <= STATUS_ROW
-                {
-                    Modal::overlay(text, OverlayControls::EventArea)
+                if state.game.options.inventory_style == mrzavec::game::InventoryStyle::Overwrite {
+                    Modal::event_overlay_or_full_screen(text)
                 } else {
                     Modal::full_screen(text)
                 },
@@ -4854,6 +4882,49 @@ mod tests {
             assert_eq!(modal.presentation, presentation);
             assert_eq!(modal.offset, 0);
         }
+
+        let capacity = overlay_content_capacity(OverlayControls::EventArea);
+        let fitting = (0..capacity)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            Modal::event_overlay_or_full_screen(fitting).presentation,
+            ModalPresentation::Overlay(OverlayControls::EventArea)
+        );
+        let oversized = (0..=capacity)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            Modal::event_overlay_or_full_screen(oversized).presentation,
+            ModalPresentation::FullScreen
+        );
+    }
+
+    #[test]
+    fn modal_controls_reserve_rows_instead_of_overwriting_content() {
+        let marker = "PROMPT-END-MUST-REMAIN";
+        let mut inline = state(90_015);
+        inline.visible_message = Some("x".repeat(205));
+        inline.pending = Some(Pending::QuitConfirm);
+        inline.modal = Some(Modal::inline_prompt(marker));
+
+        let inline_buffer = display(&inline);
+        assert!(display_row(&inline_buffer, EVENT_ROWS - 2).contains(marker));
+        assert!(display_row(&inline_buffer, EVENT_ROWS - 1).contains("Escape"));
+
+        let overlay_marker = "THIRD-CONTENT-LINE-MUST-REMAIN";
+        let mut overlay = state(90_016);
+        overlay.pending = Some(Pending::More);
+        overlay.modal = Some(Modal::overlay(
+            format!("first\nsecond\n{overlay_marker}"),
+            OverlayControls::EventArea,
+        ));
+
+        let overlay_buffer = display(&overlay);
+        assert!(display_row(&overlay_buffer, EVENT_ROWS - 1).contains("Escape"));
+        assert!(display_row(&overlay_buffer, EVENT_ROWS).contains(overlay_marker));
     }
 
     #[test]
@@ -5691,6 +5762,34 @@ mod tests {
             ModalPresentation::InlinePrompt
         );
         assert!(slow.modal.as_deref().unwrap().ends_with("  --Dalje--"));
+    }
+
+    #[test]
+    fn overwrite_discovery_capacity_includes_the_continuation_line_and_controls() {
+        let mut state = state(204);
+        state.game.options.inventory_style = mrzavec::game::InventoryStyle::Overwrite;
+        state.game.knowledge.potions.fill(false);
+        state.game.knowledge.scrolls.fill(false);
+        state.game.knowledge.rings.fill(false);
+        state.game.knowledge.sticks.fill(false);
+        state.game.knowledge.potions[..5].fill(true);
+        state.game.knowledge.scrolls[..5].fill(true);
+        state.game.knowledge.rings[..5].fill(true);
+        state.game.knowledge.sticks[..7].fill(true);
+
+        let mut line_count_game = state.game.clone();
+        assert_eq!(
+            discovery_lines(&mut line_count_game, Some('*')).len(),
+            STATUS_ROW
+        );
+
+        start_discoveries(&mut state, '*');
+
+        let modal = state.modal.as_ref().unwrap();
+        assert_eq!(modal.text.lines().count(), STATUS_ROW + 1);
+        assert_eq!(modal.presentation, ModalPresentation::FullScreen);
+        let buffer = display(&state);
+        assert!(display_row(&buffer, MODAL_MORE_ROW).starts_with(" --Dalje--"));
     }
 
     #[test]
