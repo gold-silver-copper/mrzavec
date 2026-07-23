@@ -160,10 +160,10 @@ fn recall_last_message(game: &mut Game) {
     game.message(message);
 }
 
-fn remembered_prompt(state: &mut State, text: impl Into<String>) -> String {
+fn remembered_inline_prompt(state: &mut State, text: impl Into<String>) -> Modal {
     let text = text.into();
     state.game.remember_message(&text);
-    message_display_text(&text)
+    Modal::inline_prompt(message_display_text(&text))
 }
 
 /// Apply `io.c::endmsg`'s presentation rule without changing the raw text
@@ -204,12 +204,64 @@ fn call_prompt(game: &Game) -> String {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverlayControls {
+    EventArea,
+    AboveStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModalPresentation {
+    InlinePrompt,
+    Overlay(OverlayControls),
+    FullScreen,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Modal {
+    text: String,
+    presentation: ModalPresentation,
+    offset: usize,
+}
+
+impl Modal {
+    fn inline_prompt(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            presentation: ModalPresentation::InlinePrompt,
+            offset: 0,
+        }
+    }
+
+    fn overlay(text: impl Into<String>, controls: OverlayControls) -> Self {
+        Self {
+            text: text.into(),
+            presentation: ModalPresentation::Overlay(controls),
+            offset: 0,
+        }
+    }
+
+    fn full_screen(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            presentation: ModalPresentation::FullScreen,
+            offset: 0,
+        }
+    }
+}
+
+impl std::ops::Deref for Modal {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.text
+    }
+}
+
 #[derive(Resource)]
 struct State {
     game: Game,
-    modal: Option<String>,
-    modal_overlay: bool,
-    modal_offset: usize,
+    modal: Option<Modal>,
     preserve_message_case: bool,
     slow_discovery_lines: Vec<String>,
     message_serial_seen: u64,
@@ -695,9 +747,8 @@ fn game_app(game: Game, wizard_prompt: bool) -> App {
         .insert_resource(PointerUi::default())
         .insert_resource(State {
             game,
-            modal: wizard_prompt.then(|| password_prompt(Pending::StartupPassword)),
-            modal_overlay: false,
-            modal_offset: 0,
+            modal: wizard_prompt
+                .then(|| Modal::inline_prompt(password_prompt(Pending::StartupPassword))),
             preserve_message_case: false,
             slow_discovery_lines: Vec::new(),
             message_serial_seen,
@@ -791,11 +842,15 @@ fn finalize_end(mut state: ResMut<State>) {
         ),
     };
     if state.game.end == mrzavec::game::EndState::Dead && state.game.options.tombstone {
-        state.modal = Some(format!("{}\n\n{}", tombstone_text(&state.game), table));
+        state.modal = Some(Modal::full_screen(format!(
+            "{}\n\n{}",
+            tombstone_text(&state.game),
+            table
+        )));
         state.score_recorded = true;
         return;
     }
-    state.modal = Some(match state.game.end {
+    state.modal = Some(Modal::full_screen(match state.game.end {
         mrzavec::game::EndState::Won => format!(
             "{}\n\n{}\nKonečny rezultat: {}\n\n{}",
             speak(
@@ -817,7 +872,7 @@ fn finalize_end(mut state: ResMut<State>) {
             table
         ),
         mrzavec::game::EndState::Playing => unreachable!(),
-    });
+    }));
     state.score_recorded = true;
 }
 
@@ -1046,8 +1101,10 @@ fn pointer_cell(position: Vec2, window_size: Vec2) -> Option<PointerCell> {
 }
 
 fn command_at_cell(state: &State, cell: PointerCell) -> Option<char> {
-    let footer_visible =
-        state.modal.is_none() || state.modal_overlay || has_inline_event_prompt(state);
+    let footer_visible = state
+        .modal
+        .as_ref()
+        .is_none_or(|modal| modal.presentation != ModalPresentation::FullScreen);
     if !footer_visible || cell.row < KEYBINDING_FIRST_ROW {
         return None;
     }
@@ -1060,16 +1117,14 @@ fn command_at_cell(state: &State, cell: PointerCell) -> Option<char> {
 }
 
 fn pointer_controls(state: &State) -> (usize, Vec<PointerControl>) {
-    if state.modal.is_none() {
+    let Some(modal) = &state.modal else {
         return (EVENT_ROWS - 1, Vec::new());
-    }
-    let full_screen = !state.modal_overlay && !has_inline_event_prompt(state);
-    let row = if state.pending.is_some_and(direction_pending) && state.modal_overlay {
-        STATUS_ROW - 1
-    } else if full_screen {
-        MODAL_MORE_ROW
-    } else {
-        EVENT_ROWS - 1
+    };
+    let row = match modal.presentation {
+        ModalPresentation::InlinePrompt => EVENT_ROWS - 1,
+        ModalPresentation::Overlay(OverlayControls::EventArea) => EVENT_ROWS - 1,
+        ModalPresentation::Overlay(OverlayControls::AboveStatus) => STATUS_ROW - 1,
+        ModalPresentation::FullScreen => MODAL_MORE_ROW,
     };
     let mut commands: Vec<char> = match state.pending {
         Some(Pending::SaveConfirm | Pending::SaveOverwrite | Pending::QuitConfirm) => {
@@ -1200,7 +1255,7 @@ fn pointer_action_at_cell(state: &State, cell: PointerCell) -> Option<PointerAct
     if let Some(pending) = state.pending {
         if direction_pending(pending) {
             if let Some(modal) = &state.modal {
-                let start_x = overlay_start_x(modal);
+                let start_x = overlay_start_x(&modal.text);
                 if cell.column >= start_x && (1..=8).contains(&cell.row) {
                     return direction_menu_entries()
                         .nth(cell.row - 1)
@@ -1238,7 +1293,7 @@ fn pointer_action_at_cell(state: &State, cell: PointerCell) -> Option<PointerAct
             let leading_rows = state.modal.as_deref().map_or(0, |modal| {
                 modal.lines().count().saturating_sub(letters.len())
             });
-            let absolute_row = state.modal_offset + cell.row;
+            let absolute_row = state.modal.as_ref().map_or(0, |modal| modal.offset) + cell.row;
             if let Some(index) = absolute_row.checked_sub(leading_rows)
                 && let Some(letter) = letters.get(index)
             {
@@ -1277,7 +1332,12 @@ fn apply_option_pointer(state: &mut State, index: usize) {
                 _ => unreachable!(),
             };
             set_boolean_option(&mut state.game, index, !current);
-            state.modal = Some(options_text(&state.game, Some(index), None, None));
+            state.modal = Some(Modal::full_screen(options_text(
+                &state.game,
+                Some(index),
+                None,
+                None,
+            )));
         }
         6 => {
             state.game.options.inventory_style = match state.game.options.inventory_style {
@@ -1285,7 +1345,12 @@ fn apply_option_pointer(state: &mut State, index: usize) {
                 mrzavec::game::InventoryStyle::Slow => mrzavec::game::InventoryStyle::Clear,
                 mrzavec::game::InventoryStyle::Clear => mrzavec::game::InventoryStyle::Overwrite,
             };
-            state.modal = Some(options_text(&state.game, Some(index), None, None));
+            state.modal = Some(Modal::full_screen(options_text(
+                &state.game,
+                Some(index),
+                None,
+                None,
+            )));
         }
         7..OPTION_COUNT => {}
         _ => unreachable!("pointer option row is bounded by OPTION_COUNT"),
@@ -1430,43 +1495,27 @@ fn keyboard(
         if escape_pressed {
             state.pending = None;
             state.modal = None;
-            state.modal_offset = 0;
-        } else if space_pressed
-            && state
-                .modal
-                .as_deref()
-                .is_some_and(|modal| modal_has_next_page(modal, state.modal_offset))
-        {
-            state.modal_offset += MODAL_PAGE_ROWS;
+        } else if space_pressed && state.modal.as_ref().is_some_and(modal_has_next_page) {
+            state.modal.as_mut().unwrap().offset += MODAL_PAGE_ROWS;
         }
         return;
     }
     if let Some(pending) = state.pending.filter(|pending| is_item_selection(*pending))
         && space_pressed
     {
-        if state
-            .modal
-            .as_deref()
-            .is_some_and(|modal| modal_has_next_page(modal, state.modal_offset))
-        {
-            state.modal_offset += MODAL_PAGE_ROWS;
+        if state.modal.as_ref().is_some_and(modal_has_next_page) {
+            state.modal.as_mut().unwrap().offset += MODAL_PAGE_ROWS;
         } else {
             retry_invalid_item(&mut state, pending, ' ');
         }
         return;
     }
     if state.pending == Some(Pending::DiscoveryMore) && space_pressed {
-        if state
-            .modal
-            .as_deref()
-            .is_some_and(|modal| modal_has_next_page(modal, state.modal_offset))
-        {
-            state.modal_offset += MODAL_PAGE_ROWS;
+        if state.modal.as_ref().is_some_and(modal_has_next_page) {
+            state.modal.as_mut().unwrap().offset += MODAL_PAGE_ROWS;
         } else {
             state.pending = None;
             state.modal = None;
-            state.modal_offset = 0;
-            state.modal_overlay = false;
             state.game.message_without_recall("");
         }
         return;
@@ -1485,7 +1534,10 @@ fn keyboard(
             let line = state.slow_discovery_lines[next].clone();
             state.game.remember_message(&line);
             state.pending = Some(Pending::SlowDiscovery(next));
-            state.modal = Some(format!("{}  --Dalje--", message_display_text(&line)));
+            state.modal = Some(Modal::full_screen(format!(
+                "{}  --Dalje--",
+                message_display_text(&line)
+            )));
         } else {
             if let Some(last) = state.slow_discovery_lines.last().cloned() {
                 state.game.remember_message(last);
@@ -1499,19 +1551,18 @@ fn keyboard(
     }
     if space_pressed
         && let Some(modal) = &state.modal
-        && !state.modal_overlay
+        && modal.presentation == ModalPresentation::FullScreen
     {
-        if modal_has_next_page(modal, state.modal_offset) {
-            state.modal_offset += MODAL_PAGE_ROWS;
+        if modal_has_next_page(modal) {
+            state.modal.as_mut().unwrap().offset += MODAL_PAGE_ROWS;
             return;
         }
-        if state.modal_offset > 0 || state.game.end != mrzavec::game::EndState::Playing {
+        if modal.offset > 0 || state.game.end != mrzavec::game::EndState::Playing {
             if state.game.end != mrzavec::game::EndState::Playing {
                 app_exit.write(AppExit::Success);
             } else {
                 state.modal = None;
                 state.pending = None;
-                state.modal_offset = 0;
             }
             return;
         }
@@ -1523,8 +1574,6 @@ fn keyboard(
         if space_pressed || escape_pressed {
             state.pending = None;
             state.modal = None;
-            state.modal_offset = 0;
-            state.modal_overlay = false;
         }
         return;
     }
@@ -1584,8 +1633,6 @@ fn keyboard(
         }
         let continue_count = state.counted_command.is_some() && state.pending.is_some();
         state.modal = None;
-        state.modal_overlay = false;
-        state.modal_offset = 0;
         state.pending = None;
         if continue_count {
             continue_counted_command(&mut state);
@@ -1607,7 +1654,7 @@ fn keyboard(
             .count();
         if next + 1 < pack_len {
             state.pending = Some(Pending::SlowInventory(next));
-            state.modal = Some(slow_inventory_line(&state.game, next));
+            state.modal = Some(Modal::full_screen(slow_inventory_line(&state.game, next)));
         } else if next < pack_len {
             let line = inventory_line(&state.game, next);
             state.game.message(line);
@@ -1631,19 +1678,24 @@ fn keyboard(
         if keys.just_pressed(KeyCode::Backspace) {
             if index >= 7 {
                 state.input_buffer.pop();
-                state.modal = Some(options_text(
+                state.modal = Some(Modal::full_screen(options_text(
                     &state.game,
                     Some(index),
                     Some(&state.input_buffer),
                     None,
-                ));
+                )));
             } else {
                 let error = if index == 6 {
                     "(O, S ili C)"
                 } else {
                     "(T ili F)"
                 };
-                state.modal = Some(options_text(&state.game, Some(index), None, Some(error)));
+                state.modal = Some(Modal::full_screen(options_text(
+                    &state.game,
+                    Some(index),
+                    None,
+                    Some(error),
+                )));
             }
             return;
         }
@@ -1682,13 +1734,14 @@ fn keyboard(
                 }
                 Pending::SaveFileText => {
                     if input.is_empty() {
-                        state.modal = Some(remembered_prompt(&mut state, "imę ⟨n:fajl:gen⟩: "));
+                        state.modal =
+                            Some(remembered_inline_prompt(&mut state, "imę ⟨n:fajl:gen⟩: "));
                         return;
                     }
                     state.game.options.save_file = mrzavec::game::normalize_option_string(&input);
                     if save_exists(&state.game).unwrap_or(false) {
                         state.pending = Some(Pending::SaveOverwrite);
-                        state.modal = Some(remembered_prompt(
+                        state.modal = Some(remembered_inline_prompt(
                             &mut state,
                             "Fajl uže jest.  ⟨v2:hotěti:U⟩ li prěpisati jego?",
                         ));
@@ -1711,7 +1764,7 @@ fn keyboard(
         }
         if keys.just_pressed(KeyCode::Backspace) {
             state.input_buffer.pop();
-            state.modal = Some(match pending {
+            state.modal = Some(Modal::inline_prompt(match pending {
                 Pending::Password | Pending::StartupPassword => password_prompt(pending),
                 Pending::CallText(_) | Pending::AutoCall => {
                     format!("{}{}", call_prompt(&state.game), state.input_buffer)
@@ -1721,7 +1774,7 @@ fn keyboard(
                 }
                 Pending::WizardCreateGold => format!("koliko?{}", state.input_buffer),
                 _ => unreachable!(),
-            });
+            }));
             return;
         }
     }
@@ -1858,12 +1911,12 @@ fn keyboard(
                 (Pending::SaveConfirm, 'n') => {
                     state.input_buffer.clear();
                     state.pending = Some(Pending::SaveFileText);
-                    state.modal = Some(remembered_prompt(&mut state, "imę ⟨n:fajl:gen⟩: "));
+                    state.modal = Some(remembered_inline_prompt(&mut state, "imę ⟨n:fajl:gen⟩: "));
                 }
                 (Pending::SaveOverwrite, 'n') => {
                     state.pending = Some(Pending::SaveConfirm);
                     let prompt = save_confirmation(&state.game);
-                    state.modal = Some(remembered_prompt(&mut state, prompt));
+                    state.modal = Some(remembered_inline_prompt(&mut state, prompt));
                 }
                 _ => {
                     let error = if pending == Pending::SaveConfirm {
@@ -1878,7 +1931,7 @@ fn keyboard(
                         "Fajl uže jest.  ⟨v2:hotěti:U⟩ li prěpisati jego?".into()
                     };
                     state.game.remember_message(&prompt);
-                    state.modal = Some(message_display_text(&prompt));
+                    state.modal = Some(Modal::inline_prompt(message_display_text(&prompt)));
                 }
             }
             return;
@@ -1940,7 +1993,7 @@ fn keyboard(
                 state.game.message(error);
                 let prompt = discoveries_prompt(&state.game);
                 state.game.remember_message(&prompt);
-                state.modal = Some(message_display_text(&prompt));
+                state.modal = Some(Modal::inline_prompt(message_display_text(&prompt)));
             }
             return;
         }
@@ -1961,7 +2014,7 @@ fn keyboard(
         }
         if pending == Pending::WizardListType {
             state.game.remember_message("");
-            state.modal = wizard_probability_text(ch);
+            state.modal = wizard_probability_text(ch).map(Modal::full_screen);
             state.pending = state.modal.is_some().then_some(Pending::More);
             return;
         }
@@ -1981,7 +2034,7 @@ fn keyboard(
                 if kind == ItemKind::Gold {
                     state.input_buffer.clear();
                     state.pending = Some(Pending::WizardCreateGold);
-                    state.modal = Some(remembered_prompt(&mut state, "koliko?"));
+                    state.modal = Some(remembered_inline_prompt(&mut state, "koliko?"));
                 } else if matches!(kind, ItemKind::Food | ItemKind::Amulet) {
                     state.game.wizard_create(kind, 0);
                     state.pending = None;
@@ -1990,7 +2043,7 @@ fn keyboard(
                 } else {
                     state.pending = Some(Pending::WizardCreateWhich(kind));
                     let prompt = wizard_which_prompt(kind);
-                    state.modal = Some(remembered_prompt(&mut state, prompt));
+                    state.modal = Some(remembered_inline_prompt(&mut state, prompt));
                 }
             } else {
                 state.game.wizard_create_bizarre(ch);
@@ -2032,12 +2085,12 @@ fn keyboard(
                         return;
                     }
                     _ => {
-                        state.modal = Some(options_text(
+                        state.modal = Some(Modal::full_screen(options_text(
                             &state.game,
                             Some(index),
                             None,
                             Some("(T ili F)"),
-                        ));
+                        )));
                         return;
                     }
                 }
@@ -2054,12 +2107,12 @@ fn keyboard(
                         return;
                     }
                     _ => {
-                        state.modal = Some(options_text(
+                        state.modal = Some(Modal::full_screen(options_text(
                             &state.game,
                             Some(index),
                             None,
                             Some("(O, S ili C)"),
-                        ));
+                        )));
                         return;
                     }
                 };
@@ -2084,12 +2137,12 @@ fn keyboard(
             if state.input_buffer.len() > 50 {
                 state.input_buffer.truncate(50);
             }
-            state.modal = Some(options_text(
+            state.modal = Some(Modal::full_screen(options_text(
                 &state.game,
                 Some(index),
                 Some(&state.input_buffer),
                 None,
-            ));
+            )));
             return;
         }
         if matches!(
@@ -2103,7 +2156,7 @@ fn keyboard(
         ) {
             if !ch.is_control() && state.input_buffer.len() < 50 {
                 state.input_buffer.push(ch);
-                state.modal = Some(match pending {
+                state.modal = Some(Modal::inline_prompt(match pending {
                     Pending::StartupPassword => password_prompt(pending),
                     Pending::Password => message_display_text(&password_prompt(pending)),
                     Pending::CallText(_) | Pending::AutoCall => {
@@ -2118,7 +2171,7 @@ fn keyboard(
                     }
                     Pending::WizardCreateGold => format!("Koliko?{}", state.input_buffer),
                     _ => unreachable!(),
-                });
+                }));
             }
             return;
         }
@@ -2218,7 +2271,8 @@ fn keyboard(
                                     state.pending = Some(Pending::PutRingHand(id));
                                     let prompt = ring_hand_prompt(&state.game);
                                     state.game.remember_message(&prompt);
-                                    state.modal = Some(message_display_text(&prompt));
+                                    state.modal =
+                                        Some(Modal::inline_prompt(message_display_text(&prompt)));
                                     return;
                                 }
                                 let hand = usize::from(left.is_some());
@@ -2282,12 +2336,12 @@ fn keyboard(
                 state.game.finish_action(result);
                 if magic_detection && !state.game.magic_positions().is_empty() {
                     state.pending = Some(Pending::MagicDetection);
-                    state.modal = Some(magic_detection_text(&state.game));
+                    state.modal = Some(Modal::full_screen(magic_detection_text(&state.game)));
                     return;
                 }
                 if food_detection && !state.game.food_positions().is_empty() {
                     state.pending = Some(Pending::FoodDetection);
-                    state.modal = Some(food_detection_text(&state.game));
+                    state.modal = Some(Modal::full_screen(food_detection_text(&state.game)));
                     return;
                 }
                 if state.game.pending_identification.is_some()
@@ -2323,7 +2377,6 @@ fn keyboard(
         1
     };
     state.count_prefix.clear();
-    state.modal_overlay = false;
     let parsed = parse(ch);
     let repeated = parsed == Command::Repeat;
     let command = if repeated {
@@ -2383,22 +2436,29 @@ fn keyboard(
         Command::PickyInventory => picky_inventory_prompt(&mut state),
         Command::IdentifyObject => {
             state.pending = Some(Pending::IdentifyGlyph);
-            Some(remembered_prompt(&mut state, "čto ⟨v2:hotěti⟩ opoznati? "))
+            Some(remembered_inline_prompt(
+                &mut state,
+                "čto ⟨v2:hotěti⟩ opoznati? ",
+            ))
         }
         Command::Help => {
             state.game.remember_message("");
             state.pending = Some(Pending::Help);
-            state.modal_offset = 0;
-            Some(help_text())
+            Some(Modal::full_screen(help_text()))
         }
         Command::Discoveries => {
             state.pending = Some(Pending::Discoveries);
             let prompt = discoveries_prompt(&state.game);
-            Some(remembered_prompt(&mut state, prompt))
+            Some(remembered_inline_prompt(&mut state, prompt))
         }
         Command::Options => {
             state.pending = Some(Pending::Options(0));
-            Some(options_text(&state.game, Some(0), None, None))
+            Some(Modal::full_screen(options_text(
+                &state.game,
+                Some(0),
+                None,
+                None,
+            )))
         }
         Command::Recall => {
             recall_last_message(&mut state.game);
@@ -2433,12 +2493,15 @@ fn keyboard(
         }
         Command::Quit => {
             state.pending = Some(Pending::QuitConfirm);
-            Some(remembered_prompt(&mut state, "istinno li ⟨v2:izhoditi⟩?"))
+            Some(remembered_inline_prompt(
+                &mut state,
+                "istinno li ⟨v2:izhoditi⟩?",
+            ))
         }
         Command::Save => {
             state.pending = Some(Pending::SaveConfirm);
             let prompt = save_confirmation(&state.game);
-            Some(remembered_prompt(&mut state, prompt))
+            Some(remembered_inline_prompt(&mut state, prompt))
         }
         Command::Quaff => select_action_menu(&mut state, Pending::Quaff, true),
         Command::Read => select_action_menu(&mut state, Pending::Read, true),
@@ -2482,7 +2545,10 @@ fn keyboard(
             } else {
                 state.input_buffer.clear();
                 state.pending = Some(Pending::Password);
-                Some(remembered_prompt(&mut state, "parola ⟨n:čarovnik:gen:U⟩: "))
+                Some(remembered_inline_prompt(
+                    &mut state,
+                    "parola ⟨n:čarovnik:gen:U⟩: ",
+                ))
             }
         }
         Command::RemoveRing => match state.game.player.rings {
@@ -2502,7 +2568,7 @@ fn keyboard(
                 state.pending = Some(Pending::RemoveRingHand);
                 let prompt = ring_hand_prompt(&state.game);
                 state.game.remember_message(&prompt);
-                Some(message_display_text(&prompt))
+                Some(Modal::inline_prompt(message_display_text(&prompt)))
             }
             [Some(_), None] => {
                 let result = state.game.remove_ring(0);
@@ -2565,11 +2631,11 @@ fn keyboard(
         Command::Wizard(WizardCommand::List) if state.game.wizard => {
             state.pending = Some(Pending::WizardListType);
             let prompt = wizard_list_prompt(&state.game);
-            Some(remembered_prompt(&mut state, prompt))
+            Some(remembered_inline_prompt(&mut state, prompt))
         }
         Command::Wizard(WizardCommand::Map) if state.game.wizard => {
             state.pending = Some(Pending::More);
-            Some(wizard_map_text(&state.game))
+            Some(Modal::full_screen(wizard_map_text(&state.game)))
         }
         Command::Wizard(WizardCommand::Identify) if state.game.wizard => {
             wizard_identify_prompt(&mut state)
@@ -2579,7 +2645,10 @@ fn keyboard(
         }
         Command::Wizard(WizardCommand::Create) if state.game.wizard => {
             state.pending = Some(Pending::WizardCreateType);
-            Some(remembered_prompt(&mut state, "vid ⟨n:prědmet:gen⟩: "))
+            Some(remembered_inline_prompt(
+                &mut state,
+                "vid ⟨n:prědmet:gen⟩: ",
+            ))
         }
         _ => None,
     };
@@ -2753,7 +2822,7 @@ fn save_and_exit(state: &mut State, app_exit: &mut MessageWriter<AppExit>) {
                 .message(format!("shrånjeńje ne udalo sę: {error}"));
             state.pending = Some(Pending::SaveFileText);
             state.input_buffer.clear();
-            state.modal = Some(remembered_prompt(state, "imę ⟨n:fajl:gen⟩: "));
+            state.modal = Some(remembered_inline_prompt(state, "imę ⟨n:fajl:gen⟩: "));
         }
     }
 }
@@ -2838,7 +2907,7 @@ fn repeat_selected_command(state: &mut State, command: Command) -> bool {
         state.game.finish_action(result);
         if food_detection && !state.game.food_positions().is_empty() {
             state.pending = Some(Pending::FoodDetection);
-            state.modal = Some(food_detection_text(&state.game));
+            state.modal = Some(Modal::full_screen(food_detection_text(&state.game)));
         } else if show_pending_identification(state) {
             return true;
         } else {
@@ -2908,11 +2977,11 @@ fn begin_manual_call(state: &mut State, id: u64) {
     state.pending = Some(Pending::CallText(id));
     let prompt = call_prompt(&state.game);
     state.game.remember_message(&prompt);
-    state.modal = Some(format!(
+    state.modal = Some(Modal::inline_prompt(format!(
         "{}{}",
         message_display_text(&prompt),
         state.input_buffer
-    ));
+    )));
 }
 
 fn show_pending_call(state: &mut State) -> bool {
@@ -2923,7 +2992,7 @@ fn show_pending_call(state: &mut State) -> bool {
     state.pending = Some(Pending::AutoCall);
     let prompt = call_prompt(&state.game);
     state.game.remember_message(&prompt);
-    state.modal = Some(message_display_text(&prompt));
+    state.modal = Some(Modal::inline_prompt(message_display_text(&prompt)));
     true
 }
 
@@ -2991,7 +3060,7 @@ fn continue_counted_command(state: &mut State) {
         Command::PickyInventory => picky_inventory_prompt(state),
         Command::Wizard(WizardCommand::Create) if state.game.wizard => {
             state.pending = Some(Pending::WizardCreateType);
-            Some(remembered_prompt(state, "vid ⟨n:prědmet:gen⟩: "))
+            Some(remembered_inline_prompt(state, "vid ⟨n:prědmet:gen⟩: "))
         }
         _ => {
             state.counted_command = None;
@@ -3002,7 +3071,7 @@ fn continue_counted_command(state: &mut State) {
         continue_counted_command(state);
     }
 }
-fn ground_inventory_modal(state: &mut State) -> Option<String> {
+fn ground_inventory_modal(state: &mut State) -> Option<Modal> {
     if state.game.floor_items.is_empty() {
         state.game.message(if state.game.options.terse {
             "⟨a:pråzdny:rųka:nom:pl⟩ ⟨n:rųka:nom:pl⟩"
@@ -3017,10 +3086,13 @@ fn ground_inventory_modal(state: &mut State) -> Option<String> {
         out.push('\n');
     }
     out.push_str(" --Dalje--");
-    state.modal_overlay = state.game.options.inventory_style
-        == mrzavec::game::InventoryStyle::Overwrite
-        && out.lines().count() <= STATUS_ROW;
-    Some(out)
+    if state.game.options.inventory_style == mrzavec::game::InventoryStyle::Overwrite
+        && out.lines().count() <= STATUS_ROW
+    {
+        Some(Modal::overlay(out, OverlayControls::EventArea))
+    } else {
+        Some(Modal::full_screen(out))
+    }
 }
 fn wizard_list_prompt(game: &Game) -> String {
     if game.options.terse {
@@ -3094,12 +3166,12 @@ fn resolve_wizard_which(state: &mut State, kind: ItemKind, which: u8) {
         state.game.message(&error);
         let prompt = wizard_which_prompt(kind);
         state.game.remember_message(&prompt);
-        state.modal = Some(message_display_text(&prompt));
+        state.modal = Some(Modal::inline_prompt(message_display_text(&prompt)));
     } else if matches!(kind, ItemKind::Weapon | ItemKind::Armor)
         || (kind == ItemKind::Ring && matches!(which, 0 | 1 | 7 | 8))
     {
         state.pending = Some(Pending::WizardCreateBlessing(kind, which));
-        state.modal = Some(remembered_prompt(state, "blagoslovjeńje? (+,-,n) "));
+        state.modal = Some(remembered_inline_prompt(state, "blagoslovjeńje? (+,-,n) "));
     } else {
         state.game.wizard_create(kind, which);
         state.pending = None;
@@ -3182,18 +3254,20 @@ fn food_detection_text(game: &Game) -> String {
         .join("\n")
 }
 
-fn direction_prompt(state: &mut State, pending: Pending) -> Option<String> {
+fn direction_prompt(state: &mut State, pending: Pending) -> Option<Modal> {
     let prompt = if state.game.options.terse {
         "strana: "
     } else {
         "v ⟨ktory:acc:f⟩ ⟨n:stråna:acc⟩? "
     };
     state.pending = Some(pending);
-    state.modal_overlay = true;
     state.game.remember_message(prompt);
     let mut lines = vec![message_display_text(prompt)];
     lines.extend(direction_menu_entries().map(|(_, text)| text));
-    Some(lines.join("\n"))
+    Some(Modal::overlay(
+        lines.join("\n"),
+        OverlayControls::AboveStatus,
+    ))
 }
 
 fn direction_menu_entries() -> impl Iterator<Item = (char, String)> {
@@ -3223,7 +3297,7 @@ fn retry_ring_hand(state: &mut State) {
     state.game.message(error);
     let prompt = ring_hand_prompt(&state.game);
     state.game.remember_message(&prompt);
-    state.modal = Some(message_display_text(&prompt));
+    state.modal = Some(Modal::inline_prompt(message_display_text(&prompt)));
 }
 fn is_item_selection(pending: Pending) -> bool {
     matches!(
@@ -3288,7 +3362,7 @@ fn item_menu_text(game: &Game, pending: Pending, feedback: Option<&str>) -> Opti
     }
     Some(lines.join("\n"))
 }
-fn select_item_menu(state: &mut State, pending: Pending) -> Option<String> {
+fn select_item_menu(state: &mut State, pending: Pending) -> Option<Modal> {
     let Some(text) = item_menu_text(&state.game, pending, None) else {
         state.game.message(if state.game.options.terse {
             "⟨ničto:gen⟩ ⟨a:prigodny:město:gen⟩"
@@ -3297,26 +3371,24 @@ fn select_item_menu(state: &mut State, pending: Pending) -> Option<String> {
         });
         state.pending = None;
         state.modal = None;
-        state.modal_offset = 0;
         return None;
     };
     state.pending = Some(pending);
     state.game.remember_message("");
-    state.modal_offset = 0;
-    Some(text)
+    Some(Modal::full_screen(text))
 }
 fn retry_invalid_item(state: &mut State, pending: Pending, ch: char) {
     let error = format!("'{}' ne jest praviľny prědmet", control_label(ch));
     state.game.message(&error);
-    state.modal = item_menu_text(&state.game, pending, Some(&message_display_text(&error)));
+    state.modal = item_menu_text(&state.game, pending, Some(&message_display_text(&error)))
+        .map(Modal::full_screen);
     if state.modal.is_none() {
         // A selection is only pending while eligible items exist; if that ever
         // stops holding, cancel rather than strand a menu-less pending state.
         state.pending = None;
     }
-    state.modal_offset = 0;
 }
-fn wizard_identify_prompt(state: &mut State) -> Option<String> {
+fn wizard_identify_prompt(state: &mut State) -> Option<Modal> {
     if state.game.player.inventory.is_empty() {
         state
             .game
@@ -3327,7 +3399,7 @@ fn wizard_identify_prompt(state: &mut State) -> Option<String> {
         select_item_menu(state, Pending::Identify)
     }
 }
-fn wizard_charge_prompt(state: &mut State) -> Option<String> {
+fn wizard_charge_prompt(state: &mut State) -> Option<Modal> {
     if state.game.player.inventory.is_empty() {
         state.game.message("⟨ničto:gen⟩ ne ⟨v2:nositi⟩");
         None
@@ -3339,7 +3411,7 @@ fn select_action_menu(
     state: &mut State,
     pending: Pending,
     empty_consumes_turn: bool,
-) -> Option<String> {
+) -> Option<Modal> {
     if state.game.player.inventory.is_empty() {
         state.game.message("⟨ničto:gen⟩ ne ⟨v2:nositi⟩");
         if empty_consumes_turn {
@@ -3395,40 +3467,6 @@ fn rings_text(game: &Game) -> String {
     )
 }
 
-/// One-line question prompts whose modal text stays visible in the event area
-/// (appended after the combined events) instead of replacing the display.
-/// Item menus, pagers, and full-screen views are never rendered inline.
-fn pending_is_inline_prompt(pending: Pending) -> bool {
-    matches!(
-        pending,
-        Pending::PutRingHand(_)
-            | Pending::RemoveRingHand
-            | Pending::CallText(_)
-            | Pending::AutoCall
-            | Pending::SaveConfirm
-            | Pending::SaveFileText
-            | Pending::SaveOverwrite
-            | Pending::QuitConfirm
-            | Pending::Password
-            | Pending::StartupPassword
-            | Pending::IdentifyGlyph
-            | Pending::Discoveries
-            | Pending::SlowDiscoveryPrompt
-            | Pending::WizardListType
-            | Pending::WizardCreateType
-            | Pending::WizardCreateWhich(_)
-            | Pending::WizardCreateBlessing(_, _)
-            | Pending::WizardCreateGold
-    )
-}
-
-fn has_inline_event_prompt(state: &State) -> bool {
-    state.modal.is_some()
-        && state.visible_message.is_some()
-        && !state.modal_overlay
-        && state.pending.is_some_and(pending_is_inline_prompt)
-}
-
 fn render(
     state: Res<State>,
     pointer_ui: Res<PointerUi>,
@@ -3439,8 +3477,10 @@ fn render(
         return;
     }
     let buffer = display(&state);
-    let footer_visible =
-        state.modal.is_none() || state.modal_overlay || has_inline_event_prompt(&state);
+    let footer_visible = state
+        .modal
+        .as_ref()
+        .is_none_or(|modal| modal.presentation != ModalPresentation::FullScreen);
     let highlighted = pointer_ui
         .hovered_command
         .or(pointer_ui.last_tapped_command);
@@ -3467,15 +3507,13 @@ fn render(
 }
 fn display(state: &State) -> Vec<char> {
     let mut out = vec![' '; DISPLAY_WIDTH * DISPLAY_HEIGHT];
-    let inline_prompt = has_inline_event_prompt(state);
     if let Some(modal) = &state.modal
-        && !state.modal_overlay
-        && !inline_prompt
+        && modal.presentation == ModalPresentation::FullScreen
     {
-        let all_lines: Vec<&str> = modal.lines().collect();
+        let all_lines: Vec<&str> = modal.text.lines().collect();
         let explicit_more = all_lines.last() == Some(&" --Dalje--");
         let content_count = all_lines.len() - usize::from(explicit_more);
-        let remaining = content_count.saturating_sub(state.modal_offset);
+        let remaining = content_count.saturating_sub(modal.offset);
         let has_next_page = remaining > MODAL_PAGE_ROWS;
         let reserve_more = explicit_more || has_next_page;
         let visible = if reserve_more {
@@ -3485,7 +3523,7 @@ fn display(state: &State) -> Vec<char> {
         };
         for (y, line) in all_lines
             .into_iter()
-            .skip(state.modal_offset)
+            .skip(modal.offset)
             .take(visible.min(remaining))
             .enumerate()
         {
@@ -3504,12 +3542,14 @@ fn display(state: &State) -> Vec<char> {
             .last()
             .and_then(|message| event_sentence(message, state.preserve_message_case))
     });
-    if inline_prompt && let Some(prompt) = &state.modal {
+    if let Some(prompt) = &state.modal
+        && prompt.presentation == ModalPresentation::InlinePrompt
+    {
         let text = event_text.get_or_insert_with(String::new);
         if !text.is_empty() {
             text.push(' ');
         }
-        text.push_str(prompt.trim());
+        text.push_str(prompt.text.trim());
     }
     if let Some(text) = event_text {
         write_event_text(&mut out, &text);
@@ -3527,9 +3567,9 @@ fn display(state: &State) -> Vec<char> {
         write_terminal_text(&mut out, KEYBINDING_FIRST_ROW + row, 0, text, DISPLAY_WIDTH);
     }
     if let Some(modal) = &state.modal
-        && state.modal_overlay
+        && matches!(modal.presentation, ModalPresentation::Overlay(_))
     {
-        let lines: Vec<&str> = modal.lines().take(STATUS_ROW).collect();
+        let lines: Vec<&str> = modal.text.lines().take(STATUS_ROW).collect();
         let width = lines
             .iter()
             .map(|line| line.chars().count())
@@ -3561,11 +3601,11 @@ fn write_pointer_controls(out: &mut [char], state: &State) {
     }
 }
 
-fn modal_has_next_page(modal: &str, offset: usize) -> bool {
-    let mut lines = modal.lines();
+fn modal_has_next_page(modal: &Modal) -> bool {
+    let mut lines = modal.text.lines();
     let count = lines.by_ref().count();
-    let explicit_more = modal.lines().last() == Some(" --Dalje--");
-    count.saturating_sub(usize::from(explicit_more)) > offset + MODAL_PAGE_ROWS
+    let explicit_more = modal.text.lines().last() == Some(" --Dalje--");
+    count.saturating_sub(usize::from(explicit_more)) > modal.offset + MODAL_PAGE_ROWS
 }
 
 fn write_terminal_text(out: &mut [char], row: usize, start_x: usize, text: &str, max_x: usize) {
@@ -3713,7 +3753,7 @@ fn status_text(game: &Game) -> String {
         width = hp_width,
     )
 }
-fn inventory_modal(state: &mut State) -> Option<String> {
+fn inventory_modal(state: &mut State) -> Option<Modal> {
     let pack_len = state
         .game
         .player
@@ -3736,17 +3776,20 @@ fn inventory_modal(state: &mut State) -> Option<String> {
     match state.game.options.inventory_style {
         mrzavec::game::InventoryStyle::Slow => {
             state.pending = Some(Pending::SlowInventory(0));
-            Some(slow_inventory_line(&state.game, 0))
+            Some(Modal::full_screen(slow_inventory_line(&state.game, 0)))
         }
         mrzavec::game::InventoryStyle::Overwrite => {
             let text = inventory_text(&state.game);
-            state.modal_overlay = text.lines().count() <= STATUS_ROW;
             state.pending = Some(Pending::More);
-            Some(text)
+            if text.lines().count() <= STATUS_ROW {
+                Some(Modal::overlay(text, OverlayControls::EventArea))
+            } else {
+                Some(Modal::full_screen(text))
+            }
         }
         mrzavec::game::InventoryStyle::Clear => {
             state.pending = Some(Pending::More);
-            Some(inventory_text(&state.game))
+            Some(Modal::full_screen(inventory_text(&state.game)))
         }
     }
 }
@@ -3773,7 +3816,7 @@ fn slow_inventory_line(game: &Game, index: usize) -> String {
     format!("{}  --Dalje--", inventory_line(game, index))
 }
 
-fn picky_inventory_prompt(state: &mut State) -> Option<String> {
+fn picky_inventory_prompt(state: &mut State) -> Option<Modal> {
     let pack_len = state
         .game
         .player
@@ -3809,7 +3852,10 @@ fn picky_inventory_prompt(state: &mut State) -> Option<String> {
         .map(|index| inventory_line(&state.game, index))
         .collect::<Vec<_>>()
         .join("\n");
-    Some(format!("{}\n{items}", message_display_text(prompt)))
+    Some(Modal::full_screen(format!(
+        "{}\n{items}",
+        message_display_text(prompt)
+    )))
 }
 fn inventory_text(game: &Game) -> String {
     let mut text = String::new();
@@ -3935,7 +3981,10 @@ fn start_discoveries(state: &mut State, kind: char) {
                 lines.into_iter().filter(|line| !line.is_empty()).collect();
             state.pending = Some(Pending::SlowDiscoveryPrompt);
             let prompt = discoveries_prompt(&state.game);
-            state.modal = Some(format!("{}  --Dalje--", message_display_text(&prompt)));
+            state.modal = Some(Modal::inline_prompt(format!(
+                "{}  --Dalje--",
+                message_display_text(&prompt)
+            )));
         }
         mrzavec::game::InventoryStyle::Overwrite | mrzavec::game::InventoryStyle::Clear
             if lines.len() == 1 =>
@@ -3948,12 +3997,16 @@ fn start_discoveries(state: &mut State, kind: char) {
         mrzavec::game::InventoryStyle::Overwrite | mrzavec::game::InventoryStyle::Clear => {
             let mut text = lines.join("\n");
             text.push_str("\n --Dalje--");
-            state.modal_overlay = state.game.options.inventory_style
-                == mrzavec::game::InventoryStyle::Overwrite
-                && lines.len() <= STATUS_ROW;
-            state.modal_offset = 0;
             state.pending = Some(Pending::DiscoveryMore);
-            state.modal = Some(text);
+            state.modal = Some(
+                if state.game.options.inventory_style == mrzavec::game::InventoryStyle::Overwrite
+                    && lines.len() <= STATUS_ROW
+                {
+                    Modal::overlay(text, OverlayControls::EventArea)
+                } else {
+                    Modal::full_screen(text)
+                },
+            );
         }
     }
 }
@@ -4107,7 +4160,12 @@ fn options_text(
 fn show_option(state: &mut State, index: usize) {
     state.input_buffer.clear();
     state.pending = Some(Pending::Options(index));
-    state.modal = Some(options_text(&state.game, Some(index), None, None));
+    state.modal = Some(Modal::full_screen(options_text(
+        &state.game,
+        Some(index),
+        None,
+        None,
+    )));
 }
 fn advance_option(state: &mut State, index: usize) {
     if index + 1 < OPTION_COUNT {
@@ -4119,10 +4177,10 @@ fn advance_option(state: &mut State, index: usize) {
 fn finish_options(state: &mut State) {
     state.input_buffer.clear();
     state.pending = Some(Pending::More);
-    state.modal = Some(format!(
+    state.modal = Some(Modal::full_screen(format!(
         "{} --Dalje--",
         options_text(&state.game, None, None, None)
-    ));
+    )));
 }
 fn set_boolean_option(game: &mut Game, index: usize, value: bool) {
     match index {
@@ -4176,8 +4234,6 @@ mod tests {
         State {
             game,
             modal: None,
-            modal_overlay: false,
-            modal_offset: 0,
             preserve_message_case: false,
             slow_discovery_lines: Vec::new(),
             message_serial_seen,
@@ -4402,6 +4458,91 @@ mod tests {
     }
 
     #[test]
+    fn identify_glyph_is_inline_without_prior_events_and_pointer_selection_closes_it() {
+        let mut initial = state(90_013);
+        initial.game.messages.clear();
+        initial.game.recall_message.clear();
+        assert!(initial.visible_message.is_none());
+        let player = initial.game.player.pos;
+        let player_row = DUNGEON_FIRST_ROW + player.y as usize - 1;
+        let mut app = pointer_keyboard_app(initial);
+
+        press_keys(&mut app, &[KeyCode::Slash]);
+        app.update();
+
+        {
+            let state = app.world().resource::<State>();
+            assert_eq!(state.pending, Some(Pending::IdentifyGlyph));
+            assert_eq!(
+                state.modal.as_ref().unwrap().presentation,
+                ModalPresentation::InlinePrompt
+            );
+            assert!(state.visible_message.is_none());
+            let buffer = display(state);
+            let events = (0..EVENT_ROWS)
+                .map(|row| display_row(&buffer, row))
+                .collect::<String>();
+            assert!(events.contains("Čto hoćeš opoznati?"));
+            assert_eq!(buffer[player_row * DISPLAY_WIDTH + player.x as usize], '@');
+            assert!(display_row(&buffer, STATUS_ROW).starts_with("Stųp:"));
+            assert!(display_row(&buffer, KEYBINDING_FIRST_ROW).starts_with(&command_bar().rows[0]));
+            let (control_row, controls) = pointer_controls(state);
+            assert_eq!(control_row, EVENT_ROWS - 1);
+            assert!(controls.iter().any(|control| control.label == "Escape"));
+        }
+
+        press_keys(&mut app, &[]);
+        click_cell(
+            &mut app,
+            PointerCell {
+                column: player.x as usize,
+                row: player_row,
+            },
+        );
+
+        let state = app.world().resource::<State>();
+        assert!(state.pending.is_none());
+        assert!(state.modal.is_none());
+        assert!(
+            state
+                .game
+                .messages
+                .last()
+                .is_some_and(|message| message.contains("'@': ty"))
+        );
+    }
+
+    #[test]
+    fn confirmation_and_discovery_prompts_are_inline_without_prior_events() {
+        for (keys, pending) in [
+            ([KeyCode::ShiftLeft, KeyCode::KeyQ], Pending::QuitConfirm),
+            ([KeyCode::ShiftLeft, KeyCode::KeyD], Pending::Discoveries),
+        ] {
+            let mut initial = state(90_014);
+            initial.game.messages.clear();
+            initial.game.recall_message.clear();
+            let player = initial.game.player.pos;
+            let player_row = DUNGEON_FIRST_ROW + player.y as usize - 1;
+            let mut app = keyboard_app(initial);
+
+            press_keys(&mut app, &keys);
+            app.update();
+
+            let state = app.world().resource::<State>();
+            assert_eq!(state.pending, Some(pending));
+            assert_eq!(
+                state.modal.as_ref().unwrap().presentation,
+                ModalPresentation::InlinePrompt
+            );
+            assert!(state.visible_message.is_none());
+            let buffer = display(state);
+            assert_eq!(buffer[player_row * DISPLAY_WIDTH + player.x as usize], '@');
+            assert!(display_row(&buffer, STATUS_ROW).starts_with("Stųp:"));
+            assert!(!display_row(&buffer, KEYBINDING_FIRST_ROW).trim().is_empty());
+        }
+    }
+
+    #[test]
     fn pointer_routes_item_rows_directions_map_identification_and_cancel() {
         let mut item_state = state(90_003);
         item_state.game.player.inventory = vec![
@@ -4450,6 +4591,23 @@ mod tests {
 
         let mut direction_state = state(90_004);
         direction_state.modal = direction_prompt(&mut direction_state, Pending::ZapDirection(1));
+        assert_eq!(
+            direction_state.modal.as_ref().unwrap().presentation,
+            ModalPresentation::Overlay(OverlayControls::AboveStatus)
+        );
+        assert_eq!(pointer_controls(&direction_state).0, STATUS_ROW - 1);
+        let direction_buffer = display(&direction_state);
+        let direction_player = direction_state.game.player.pos;
+        let direction_player_row = DUNGEON_FIRST_ROW + direction_player.y as usize - 1;
+        assert_eq!(
+            direction_buffer[direction_player_row * DISPLAY_WIDTH + direction_player.x as usize],
+            '@'
+        );
+        assert!(
+            !display_row(&direction_buffer, KEYBINDING_FIRST_ROW)
+                .trim()
+                .is_empty()
+        );
         let start_x = overlay_start_x(direction_state.modal.as_deref().unwrap());
         assert_eq!(
             pointer_action_at_cell(
@@ -4477,7 +4635,7 @@ mod tests {
 
         let mut identify = state(90_005);
         identify.pending = Some(Pending::IdentifyGlyph);
-        identify.modal = Some("Čto hoćeš opoznati?".into());
+        identify.modal = Some(Modal::inline_prompt("Čto hoćeš opoznati?"));
         let target = identify.game.player.pos;
         assert_eq!(
             pointer_action_at_cell(
@@ -4495,8 +4653,9 @@ mod tests {
     fn pointer_prompt_answers_options_and_more_are_semantic_actions() {
         let mut confirm = state(90_006);
         confirm.pending = Some(Pending::QuitConfirm);
-        confirm.modal = Some("Istinno li izhoditi?".into());
+        confirm.modal = Some(Modal::inline_prompt("Istinno li izhoditi?"));
         let (row, controls) = pointer_controls(&confirm);
+        assert_eq!(row, EVENT_ROWS - 1);
         assert_eq!(
             controls
                 .iter()
@@ -4521,7 +4680,13 @@ mod tests {
 
         let mut options = state(90_007);
         options.pending = Some(Pending::Options(0));
-        options.modal = Some(options_text(&options.game, Some(0), None, None));
+        options.modal = Some(Modal::full_screen(options_text(
+            &options.game,
+            Some(0),
+            None,
+            None,
+        )));
+        assert_eq!(pointer_controls(&options).0, MODAL_MORE_ROW);
         let old = options.game.options.passgo;
         assert_eq!(
             pointer_action_at_cell(&options, PointerCell { column: 40, row: 4 }),
@@ -4534,7 +4699,8 @@ mod tests {
 
         let mut more = state(90_008);
         more.pending = Some(Pending::More);
-        more.modal = Some("Torba\n --Dalje--".into());
+        more.modal = Some(Modal::full_screen("Torba\n --Dalje--"));
+        assert_eq!(pointer_controls(&more).0, MODAL_MORE_ROW);
         assert_eq!(
             pointer_action_at_cell(
                 &more,
@@ -4565,7 +4731,7 @@ mod tests {
         let target = seen_passable_neighbor(&initial.game);
         assert!(initial.game.start_travel(target));
         initial.pending = Some(Pending::Help);
-        initial.modal = Some(help_text());
+        initial.modal = Some(Modal::full_screen(help_text()));
         let mut app = App::new();
         app.insert_resource(initial);
         app.add_systems(Update, advance_pointer_travel);
@@ -4647,17 +4813,47 @@ mod tests {
     fn inventory_styles_select_distinct_presentation_paths() {
         let mut state = state(1);
         state.game.options.inventory_style = mrzavec::game::InventoryStyle::Overwrite;
-        assert!(inventory_modal(&mut state).is_some());
-        assert!(state.modal_overlay);
+        let overwrite = inventory_modal(&mut state).unwrap();
+        assert_eq!(
+            overwrite.presentation,
+            ModalPresentation::Overlay(OverlayControls::EventArea)
+        );
+        state.modal = Some(overwrite);
+        assert_eq!(pointer_controls(&state).0, EVENT_ROWS - 1);
+        state.modal = None;
 
-        state.modal_overlay = false;
         state.game.options.inventory_style = mrzavec::game::InventoryStyle::Clear;
-        assert!(inventory_modal(&mut state).is_some());
-        assert!(!state.modal_overlay);
+        let clear = inventory_modal(&mut state).unwrap();
+        assert_eq!(clear.presentation, ModalPresentation::FullScreen);
 
         state.game.options.inventory_style = mrzavec::game::InventoryStyle::Slow;
-        assert!(inventory_modal(&mut state).is_some());
+        let slow = inventory_modal(&mut state).unwrap();
+        assert_eq!(slow.presentation, ModalPresentation::FullScreen);
         assert_eq!(state.pending, Some(Pending::SlowInventory(0)));
+    }
+
+    #[test]
+    fn modal_constructors_require_an_explicit_presentation_and_own_pagination() {
+        let cases = [
+            (
+                Modal::inline_prompt("prompt"),
+                ModalPresentation::InlinePrompt,
+            ),
+            (
+                Modal::overlay("overlay", OverlayControls::EventArea),
+                ModalPresentation::Overlay(OverlayControls::EventArea),
+            ),
+            (
+                Modal::overlay("direction", OverlayControls::AboveStatus),
+                ModalPresentation::Overlay(OverlayControls::AboveStatus),
+            ),
+            (Modal::full_screen("page"), ModalPresentation::FullScreen),
+        ];
+
+        for (modal, presentation) in cases {
+            assert_eq!(modal.presentation, presentation);
+            assert_eq!(modal.offset, 0);
+        }
     }
 
     #[test]
@@ -4848,17 +5044,17 @@ mod tests {
     #[test]
     fn clear_screen_modal_pages_use_every_row_above_the_command_bar() {
         let mut state = state(103);
-        state.modal = Some(
+        state.modal = Some(Modal::full_screen(
             (0..MODAL_PAGE_ROWS + 5)
                 .map(|line| format!("line {line}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
-        );
+        ));
         let first = display(&state);
         let first_text = display_row(&first, MODAL_MORE_ROW);
         assert!(first_text.starts_with(" --Dalje--"));
 
-        state.modal_offset = MODAL_PAGE_ROWS;
+        state.modal.as_mut().unwrap().offset = MODAL_PAGE_ROWS;
         let second = display(&state);
         let second_text = display_row(&second, 0);
         assert!(second_text.starts_with(&format!("line {MODAL_PAGE_ROWS}")));
@@ -4917,6 +5113,10 @@ mod tests {
 
         let state = app.world().resource::<State>();
         assert_eq!(state.pending, Some(Pending::Help));
+        assert_eq!(
+            state.modal.as_ref().unwrap().presentation,
+            ModalPresentation::FullScreen
+        );
         assert_eq!(state.modal.as_deref(), Some(help_text().as_str()));
         assert!(!state.modal.as_deref().unwrap().contains("help for"));
         assert!(!state.modal.as_deref().unwrap().contains("* for all"));
@@ -4953,7 +5153,7 @@ mod tests {
         app.update();
 
         let state = app.world().resource::<State>();
-        assert_eq!(state.modal_offset, MODAL_PAGE_ROWS);
+        assert_eq!(state.modal.as_ref().unwrap().offset, MODAL_PAGE_ROWS);
         assert_eq!(state.pending, Some(Pending::Help));
         let second = display(state);
         assert_eq!(
@@ -4969,7 +5169,7 @@ mod tests {
         press_keys(&mut app, &[KeyCode::Space]);
         app.update();
         let state = app.world().resource::<State>();
-        assert_eq!(state.modal_offset, MODAL_PAGE_ROWS);
+        assert_eq!(state.modal.as_ref().unwrap().offset, MODAL_PAGE_ROWS);
         assert_eq!(state.pending, Some(Pending::Help));
         assert!(state.modal.is_some());
 
@@ -4978,7 +5178,6 @@ mod tests {
         let state = app.world().resource::<State>();
         assert!(state.pending.is_none());
         assert!(state.modal.is_none());
-        assert_eq!(state.modal_offset, 0);
         assert_eq!(state.game.turn, starting_turn);
     }
 
@@ -5164,7 +5363,7 @@ mod tests {
         {
             let mut state = app.world_mut().resource_mut::<State>();
             state.pending = Some(Pending::Drop);
-            state.modal = Some("a) bulava".into());
+            state.modal = Some(Modal::full_screen("a) bulava"));
         }
         app.world_mut()
             .resource_mut::<Time>()
@@ -5467,20 +5666,30 @@ mod tests {
         clear.game.knowledge.potions[1] = true;
         start_discoveries(&mut clear, '!');
         assert_eq!(clear.pending, Some(Pending::DiscoveryMore));
-        assert!(!clear.modal_overlay);
+        assert_eq!(
+            clear.modal.as_ref().unwrap().presentation,
+            ModalPresentation::FullScreen
+        );
         assert!(clear.modal.as_deref().unwrap().ends_with(" --Dalje--"));
 
         let mut overwrite = state(202);
         overwrite.game.options.inventory_style = mrzavec::game::InventoryStyle::Overwrite;
         start_discoveries(&mut overwrite, '*');
         assert_eq!(overwrite.pending, Some(Pending::DiscoveryMore));
-        assert!(overwrite.modal_overlay);
+        assert_eq!(
+            overwrite.modal.as_ref().unwrap().presentation,
+            ModalPresentation::Overlay(OverlayControls::EventArea)
+        );
 
         let mut slow = state(203);
         slow.game.options.inventory_style = mrzavec::game::InventoryStyle::Slow;
         start_discoveries(&mut slow, '*');
         assert_eq!(slow.pending, Some(Pending::SlowDiscoveryPrompt));
         assert_eq!(slow.slow_discovery_lines.len(), 4);
+        assert_eq!(
+            slow.modal.as_ref().unwrap().presentation,
+            ModalPresentation::InlinePrompt
+        );
         assert!(slow.modal.as_deref().unwrap().ends_with("  --Dalje--"));
     }
 
@@ -5573,6 +5782,17 @@ mod tests {
         let lines: Vec<_> = view.lines().collect();
 
         assert_eq!(lines[pos.y as usize].chars().nth(pos.x as usize), Some('$'));
+
+        let mut state = state(190);
+        state.pending = Some(Pending::MagicDetection);
+        state.modal = Some(Modal::full_screen(view));
+        let buffer = display(&state);
+        assert_eq!(
+            state.modal.as_ref().unwrap().presentation,
+            ModalPresentation::FullScreen
+        );
+        assert!(display_row(&buffer, STATUS_ROW).trim().is_empty());
+        assert!(display_row(&buffer, KEYBINDING_FIRST_ROW).trim().is_empty());
     }
 
     #[test]
@@ -5955,8 +6175,9 @@ mod tests {
         assert_eq!(message_display_text("'^H': neznany"), "'^H': neznany");
 
         let mut state = state(1160);
-        let displayed = remembered_prompt(&mut state, "v ktorų strånų? ");
-        assert_eq!(displayed, "V ktorų strånų? ");
+        let displayed = remembered_inline_prompt(&mut state, "v ktorų strånų? ");
+        assert_eq!(displayed.text, "V ktorų strånų? ");
+        assert_eq!(displayed.presentation, ModalPresentation::InlinePrompt);
         assert_eq!(state.game.recall_message, "v ktorų strånų? ");
 
         state.game.message("h\tvlěvo");
@@ -6021,7 +6242,10 @@ mod tests {
         state.game.player.inventory = vec![pack_item(60_000, ItemKind::Potion, 0, 'a')];
         state.modal = select_item_menu(&mut state, Pending::Quaff);
         state.visible_message = Some("Vse sę vrti.".into());
-        assert!(!has_inline_event_prompt(&state));
+        assert_eq!(
+            state.modal.as_ref().unwrap().presentation,
+            ModalPresentation::FullScreen
+        );
         let buffer = display(&state);
         assert!(display_row(&buffer, 0).starts_with("a) "));
     }
@@ -6084,7 +6308,7 @@ mod tests {
     fn pending_prompt_stays_visible_after_combined_events() {
         let mut prompted = state(1163);
         prompted.pending = Some(Pending::IdentifyGlyph);
-        prompted.modal = Some("Čto hoćeš opoznati? ".into());
+        prompted.modal = Some(Modal::inline_prompt("Čto hoćeš opoznati? "));
         prompted.game.message("něčto sę stalo");
         prompted.game.message("vse sę vrti");
         collect_messages(&mut prompted);
@@ -6138,9 +6362,9 @@ mod tests {
             let mut state = state(1151);
             state.game = base.game.clone();
             let menu = select_item_menu(&mut state, pending).unwrap();
-            assert!(menu.contains(expected), "{pending:?}: {menu}");
+            assert!(menu.contains(expected), "{pending:?}: {}", menu.text);
             for letter in excluded {
-                assert!(!menu.contains(letter), "{pending:?}: {menu}");
+                assert!(!menu.contains(letter), "{pending:?}: {}", menu.text);
             }
             assert_eq!(state.pending, Some(pending));
             assert!(!menu.contains("* for list"));
@@ -6359,6 +6583,10 @@ mod tests {
         ring_app.update();
         let ring_result = ring_app.world().resource::<State>();
         assert_eq!(ring_result.pending, Some(Pending::PutRingHand(ring_id)));
+        assert_eq!(
+            ring_result.modal.as_ref().unwrap().presentation,
+            ModalPresentation::InlinePrompt
+        );
         assert!(ring_result.modal.as_deref().unwrap().contains("rųka"));
 
         let call_id = 58_001;
@@ -6414,7 +6642,7 @@ mod tests {
         for ch in ['n', 'x', '\u{1b}', ' '] {
             let mut state = state(340);
             state.pending = Some(Pending::QuitConfirm);
-            state.modal = Some("istinno li ⟨v2:izhoditi⟩?".into());
+            state.modal = Some(Modal::inline_prompt("istinno li ⟨v2:izhoditi⟩?"));
             resolve_quit_confirmation(&mut state, ch);
             assert_eq!(state.game.end, mrzavec::game::EndState::Playing);
             assert_eq!(state.pending, None);
@@ -6489,24 +6717,29 @@ mod tests {
         let mut initial_state = state(323);
         initial_state.game.player.inventory = vec![potion];
         initial_state.pending = Some(Pending::Quaff);
-        initial_state.modal = Some(
+        initial_state.modal = Some(Modal::full_screen(
             (0..MODAL_PAGE_ROWS + 5)
                 .map(|line| format!("line {line}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
-        );
+        ));
         let mut app = keyboard_app(initial_state);
         press_keys(&mut app, &[KeyCode::Space]);
         app.update();
         assert_eq!(
-            app.world().resource::<State>().modal_offset,
+            app.world()
+                .resource::<State>()
+                .modal
+                .as_ref()
+                .unwrap()
+                .offset,
             MODAL_PAGE_ROWS
         );
 
         press_keys(&mut app, &[KeyCode::Space]);
         app.update();
         let state = app.world().resource::<State>();
-        assert_eq!(state.modal_offset, 0);
+        assert_eq!(state.modal.as_ref().unwrap().offset, 0);
         assert_eq!(state.pending, Some(Pending::Quaff));
         let modal = state.modal.as_deref().unwrap();
         assert!(modal.contains("' ' ne jest praviľny prědmet"));
