@@ -1,3 +1,5 @@
+#[cfg(test)]
+use bevy::math::DVec2;
 use bevy::{
     ecs::system::SystemParam,
     input::touch::Touches,
@@ -5,6 +7,7 @@ use bevy::{
     text::LineHeight,
     ui::FocusPolicy,
     window::{PrimaryWindow, WindowResizeConstraints, WindowResolution},
+    winit::{UpdateMode, WinitSettings},
 };
 use mrzavec::help::{
     COMMANDS_LABEL, CONTEXT_OPTIONS_LABEL, CommandCategory, DockImportance, HELP_ENTRIES, HelpEntry,
@@ -49,6 +52,7 @@ const MODAL_MORE_ROW: usize = DISPLAY_HEIGHT - 1;
 const MODAL_PAGE_ROWS: usize = MODAL_MORE_ROW;
 const MOVEMENT_REPEAT_DELAY: Duration = Duration::from_millis(300);
 const MOVEMENT_REPEAT_INTERVAL: Duration = Duration::from_millis(100);
+const POINTER_TRAVEL_INTERVAL: Duration = Duration::from_micros(16_667);
 const MOVEMENT_KEYS: [(KeyCode, char); 8] = [
     (KeyCode::KeyH, 'h'),
     (KeyCode::KeyJ, 'j'),
@@ -348,7 +352,7 @@ enum DockMode {
     },
 }
 
-#[derive(Resource, Debug)]
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 struct DockUi {
     mode: DockMode,
     prompt_pending: Option<Pending>,
@@ -361,6 +365,22 @@ impl Default for DockUi {
             mode: DockMode::Gameplay,
             prompt_pending: None,
             prompt_page: 0,
+        }
+    }
+}
+
+#[derive(Resource, Debug)]
+struct TerminalBuffer {
+    cells: Vec<char>,
+    updated_glyphs: usize,
+}
+
+impl Default for TerminalBuffer {
+    fn default() -> Self {
+        Self {
+            // NUL is never displayed, so the first render updates every glyph.
+            cells: vec!['\0'; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+            updated_glyphs: 0,
         }
     }
 }
@@ -424,11 +444,16 @@ struct DockOverlayLayout {
 
 #[derive(Resource, Debug, Clone, PartialEq, Default)]
 struct ScreenLayout {
+    viewport_size: Vec2,
     terminal: TerminalLayout,
     dock: DockLayout,
     base_specs: Vec<DockButtonSpec>,
     overlay: Option<DockOverlayLayout>,
 }
+
+#[cfg(test)]
+#[derive(Resource, Default)]
+struct LayoutCalculationSamples(usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DockPointer {
@@ -488,6 +513,12 @@ struct MovementRepeat {
 }
 
 #[derive(Resource, Default)]
+struct PointerTravelCadence {
+    active: bool,
+    remaining: Duration,
+}
+
+#[derive(Resource, Default)]
 struct InjectedInput(Option<char>);
 
 impl MovementRepeat {
@@ -540,6 +571,33 @@ impl MovementRepeat {
             MOVEMENT_REPEAT_INTERVAL - Duration::from_nanos(phase_nanos as u64)
         };
         Some(ch)
+    }
+}
+
+impl PointerTravelCadence {
+    fn reset(&mut self) {
+        self.active = false;
+        self.remaining = Duration::ZERO;
+    }
+
+    fn should_advance(&mut self, delta: Duration) -> bool {
+        if !self.active {
+            self.active = true;
+            self.remaining = POINTER_TRAVEL_INTERVAL;
+            return true;
+        }
+        if delta < self.remaining {
+            self.remaining -= delta;
+            return false;
+        }
+        let overrun = delta - self.remaining;
+        let phase_nanos = overrun.as_nanos() % POINTER_TRAVEL_INTERVAL.as_nanos();
+        self.remaining = if phase_nanos == 0 {
+            POINTER_TRAVEL_INTERVAL
+        } else {
+            POINTER_TRAVEL_INTERVAL - Duration::from_nanos(phase_nanos as u64)
+        };
+        true
     }
 }
 
@@ -838,6 +896,7 @@ fn main() {
             dock_input,
             keyboard,
             advance_pointer_travel,
+            sync_performance_winit_settings,
             finalize_end,
             prepare_messages,
             update_screen_layout,
@@ -877,6 +936,7 @@ fn main() {
                 dock_input,
                 keyboard,
                 advance_pointer_travel,
+                sync_performance_winit_settings,
                 finalize_end,
                 prepare_messages,
                 update_screen_layout,
@@ -897,15 +957,48 @@ fn restore_browser_game(
     save::restore_browser_game(default_slot, &storage)
 }
 
+fn performance_update_modes(pointer_traveling: bool) -> (UpdateMode, UpdateMode) {
+    let wait = if pointer_traveling {
+        POINTER_TRAVEL_INTERVAL
+    } else {
+        MOVEMENT_REPEAT_INTERVAL
+    };
+    (
+        UpdateMode::reactive(wait),
+        UpdateMode::reactive_low_power(wait),
+    )
+}
+
+fn performance_winit_settings() -> WinitSettings {
+    let (focused_mode, unfocused_mode) = performance_update_modes(false);
+    WinitSettings {
+        focused_mode,
+        unfocused_mode,
+    }
+}
+
+fn sync_performance_winit_settings(state: Res<State>, mut settings: ResMut<WinitSettings>) {
+    let (focused_mode, unfocused_mode) = performance_update_modes(state.game.is_traveling());
+    if settings.focused_mode != focused_mode || settings.unfocused_mode != unfocused_mode {
+        *settings = WinitSettings {
+            focused_mode,
+            unfocused_mode,
+        };
+    }
+}
+
 fn game_app(game: Game, wizard_prompt: bool) -> App {
     let message_serial_seen = game.message_serial;
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::BLACK))
+        .insert_resource(performance_winit_settings())
         .insert_resource(MovementRepeat::default())
+        .insert_resource(PointerTravelCadence::default())
         .insert_resource(InjectedInput::default())
         .insert_resource(DockUi::default())
         .insert_resource(DockPress::default())
         .insert_resource(ScreenLayout::default())
+        .insert_resource(TerminalBuffer::default())
         .insert_resource(State {
             game,
             modal: wizard_prompt
@@ -1232,7 +1325,6 @@ fn setup(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
                                     align_items: AlignItems::Center,
                                     ..default()
                                 },
-                                BackgroundColor(Color::BLACK),
                             ))
                             .with_child((
                                 Glyph,
@@ -1939,6 +2031,7 @@ fn calculate_screen_layout_with_prompt_page(
         let dock = calculate_dock_layout(terminal, base_specs.len(), ordinary_gameplay);
         if dock.rows == rows {
             return ScreenLayout {
+                viewport_size: window_size,
                 terminal,
                 dock,
                 overlay: overlay_layout(state, mode, prompt_page, terminal, window_size.y),
@@ -1951,6 +2044,7 @@ fn calculate_screen_layout_with_prompt_page(
     let base_specs = base_dock_specs(state, terminal.rendered_size.x);
     let dock = calculate_dock_layout(terminal, base_specs.len(), ordinary_gameplay);
     ScreenLayout {
+        viewport_size: window_size,
         terminal,
         dock,
         overlay: overlay_layout(state, mode, prompt_page, terminal, window_size.y),
@@ -2026,23 +2120,33 @@ fn update_screen_layout(
     windows: Query<&Window, With<PrimaryWindow>>,
     mut dock_ui: ResMut<DockUi>,
     mut screen: ResMut<ScreenLayout>,
+    #[cfg(test)] mut calculations: Option<ResMut<LayoutCalculationSamples>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
     };
     let window_size = Vec2::new(window.width(), window.height());
-    let one_row_terminal = calculate_terminal_layout(window_size, dock_height(1));
-    let mode = normalized_dock_mode(&state, dock_ui.mode, one_row_terminal.rendered_size.x);
-    if dock_ui.mode != mode {
-        dock_ui.mode = mode;
+    if !state.is_changed() && screen.viewport_size == window_size && !dock_ui.is_changed() {
+        return;
     }
-    normalize_prompt_choice_state(&state, &mut dock_ui);
+    #[cfg(test)]
+    if let Some(calculations) = calculations.as_mut() {
+        calculations.0 += 1;
+    }
+    let one_row_terminal = calculate_terminal_layout(window_size, dock_height(1));
+    let mut next_dock_ui = *dock_ui;
+    next_dock_ui.mode =
+        normalized_dock_mode(&state, next_dock_ui.mode, one_row_terminal.rendered_size.x);
+    normalize_prompt_choice_state(&state, &mut next_dock_ui);
     let next = calculate_screen_layout_with_prompt_page(
         window_size,
         &state,
-        dock_ui.mode,
-        dock_ui.prompt_page,
+        next_dock_ui.mode,
+        next_dock_ui.prompt_page,
     );
+    if *dock_ui != next_dock_ui {
+        *dock_ui = next_dock_ui;
+    }
     if *screen != next {
         *screen = next;
     }
@@ -2785,11 +2889,16 @@ fn pointer_input(
 }
 
 fn advance_pointer_travel(
+    time: Res<Time>,
+    mut cadence: ResMut<PointerTravelCadence>,
     mut state: ResMut<State>,
     dock_ui: Res<DockUi>,
     dock_press: Res<DockPress>,
 ) {
     if !state.game.is_traveling() {
+        if cadence.active {
+            cadence.reset();
+        }
         return;
     }
     if dock_press.armed.is_some()
@@ -2800,9 +2909,18 @@ fn advance_pointer_travel(
         || state.game.player.conditions.asleep_turns > 0
     {
         state.game.cancel_travel();
+        if cadence.active {
+            cadence.reset();
+        }
+        return;
+    }
+    if !cadence.should_advance(time.delta()) {
         return;
     }
     state.game.advance_travel();
+    if !state.game.is_traveling() {
+        cadence.reset();
+    }
 }
 
 fn keyboard(
@@ -4858,22 +4976,32 @@ fn rings_text(game: &Game) -> String {
 
 fn render(
     state: Res<State>,
-    mut cells: Query<(&Cell, &Children, &mut BackgroundColor)>,
-    mut glyphs: Query<(&mut Text, &mut TextColor), With<Glyph>>,
+    cells: Query<(&Cell, &Children)>,
+    mut glyphs: Query<&mut Text, With<Glyph>>,
+    mut terminal: ResMut<TerminalBuffer>,
 ) {
+    if terminal.updated_glyphs != 0 {
+        terminal.updated_glyphs = 0;
+    }
     if !state.is_changed() {
         return;
     }
     let buffer = display(&state);
-    for (cell, children, mut background) in &mut cells {
-        background.0 = Color::BLACK;
+    let mut updated_glyphs = 0;
+    for (cell, children) in &cells {
+        if terminal.cells[cell.0] == buffer[cell.0] {
+            continue;
+        }
+        terminal.cells[cell.0] = buffer[cell.0];
         for child in children.iter() {
-            if let Ok((mut text, mut color)) = glyphs.get_mut(child) {
-                text.0 = buffer[cell.0].to_string();
-                color.0 = GLYPH_COLOR;
+            if let Ok(mut text) = glyphs.get_mut(child) {
+                text.0.clear();
+                text.0.push(buffer[cell.0]);
+                updated_glyphs += 1;
             }
         }
     }
+    terminal.updated_glyphs = updated_glyphs;
 }
 fn display(state: &State) -> Vec<char> {
     let mut out = vec![' '; DISPLAY_WIDTH * DISPLAY_HEIGHT];
@@ -5057,7 +5185,18 @@ fn write_event_text(out: &mut [char], text: &str, content_rows: &[usize]) {
 }
 
 fn prepare_messages(mut state: ResMut<State>) {
+    if !messages_need_collection(&state) {
+        return;
+    }
     collect_messages(&mut state);
+}
+
+fn messages_need_collection(state: &State) -> bool {
+    if state.game.end != mrzavec::game::EndState::Playing && state.modal.is_some() {
+        return state.message_serial_seen != state.game.message_serial
+            || state.visible_message.is_some();
+    }
+    state.game.message_serial != state.message_serial_seen
 }
 
 fn collect_messages(state: &mut State) {
@@ -5569,6 +5708,15 @@ fn set_string_option(game: &mut Game, index: usize, input: &str) {
 mod tests {
     use super::*;
 
+    #[derive(Resource, Default)]
+    struct StateChangeSamples(Vec<bool>);
+
+    #[derive(Resource, Default)]
+    struct GlyphChangeSamples(Vec<usize>);
+
+    #[derive(Resource, Default)]
+    struct LayoutChangeSamples(Vec<(bool, bool)>);
+
     fn display_row(buffer: &[char], row: usize) -> String {
         buffer[row * DISPLAY_WIDTH..(row + 1) * DISPLAY_WIDTH]
             .iter()
@@ -5599,6 +5747,41 @@ mod tests {
         item
     }
 
+    fn sample_state_changes(state: Res<State>, mut samples: ResMut<StateChangeSamples>) {
+        samples.0.push(state.is_changed());
+    }
+
+    fn sample_glyph_changes(
+        glyphs: Query<(), (With<Glyph>, Changed<Text>)>,
+        mut samples: ResMut<GlyphChangeSamples>,
+    ) {
+        samples.0.push(glyphs.iter().count());
+    }
+
+    fn sample_layout_changes(
+        screen: Res<ScreenLayout>,
+        dock_ui: Res<DockUi>,
+        mut samples: ResMut<LayoutChangeSamples>,
+    ) {
+        samples.0.push((screen.is_changed(), dock_ui.is_changed()));
+    }
+
+    fn render_test_app(initial_state: State) -> App {
+        let mut app = App::new();
+        app.insert_resource(initial_state);
+        app.insert_resource(TerminalBuffer::default());
+        app.insert_resource(GlyphChangeSamples::default());
+        for index in 0..DISPLAY_WIDTH * DISPLAY_HEIGHT {
+            let glyph = app
+                .world_mut()
+                .spawn((Glyph, Text::new(" "), TextColor(GLYPH_COLOR)))
+                .id();
+            app.world_mut().spawn(Cell(index)).add_child(glyph);
+        }
+        app.add_systems(Update, (render, sample_glyph_changes).chain());
+        app
+    }
+
     fn keyboard_app(initial_state: State) -> App {
         let mut app = App::new();
         app.insert_resource(initial_state);
@@ -5620,6 +5803,7 @@ mod tests {
         app.insert_resource(Touches::default());
         app.insert_resource(Time::<()>::default());
         app.insert_resource(MovementRepeat::default());
+        app.insert_resource(PointerTravelCadence::default());
         app.insert_resource(InjectedInput::default());
         app.insert_resource(DockUi::default());
         app.insert_resource(DockPress::default());
@@ -5697,8 +5881,10 @@ mod tests {
         app.insert_resource(Touches::default());
         app.insert_resource(Time::<()>::default());
         app.insert_resource(MovementRepeat::default());
+        app.insert_resource(PointerTravelCadence::default());
         app.insert_resource(InjectedInput::default());
         app.insert_resource(DockUi::default());
+        app.insert_resource(DockPress::default());
         let mut screen = ScreenLayout::default();
         screen.terminal.origin = Vec2::new(12.0, 30.0);
         app.insert_resource(screen);
@@ -5765,6 +5951,279 @@ mod tests {
                 .is_some_and(|cell| cell.seen && cell.terrain.passable())
         })
         .expect("the player starts with at least one remembered neighboring floor tile")
+    }
+
+    fn seen_travel_target(game: &Game, minimum_steps: usize) -> Option<Pos> {
+        for y in 1..=STATUS_ROW - DUNGEON_FIRST_ROW {
+            for x in 0..DISPLAY_WIDTH {
+                let destination = Pos::new(x as i32, y as i32);
+                let mut probe = game.clone();
+                if !probe.start_travel(destination) {
+                    continue;
+                }
+                let mut steps = 0;
+                while probe.is_traveling() && steps < minimum_steps {
+                    probe.advance_travel();
+                    steps += 1;
+                }
+                if steps >= minimum_steps {
+                    return Some(destination);
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn no_input_message_collection_does_not_mark_state_changed() {
+        let mut app = App::new();
+        app.insert_resource(state(90_060));
+        app.insert_resource(StateChangeSamples::default());
+        app.add_systems(Update, (prepare_messages, sample_state_changes).chain());
+
+        app.update();
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<StateChangeSamples>().0,
+            [true, false],
+            "only the initial resource insertion should be observed as a change"
+        );
+    }
+
+    #[test]
+    fn terminal_render_only_changes_glyphs_whose_character_changed() {
+        let initial_state = state(90_061);
+        let expected_initial = display(&initial_state);
+        let mut app = render_test_app(initial_state);
+
+        app.update();
+        assert_eq!(
+            app.world().resource::<TerminalBuffer>().updated_glyphs,
+            DISPLAY_WIDTH * DISPLAY_HEIGHT
+        );
+        assert_eq!(
+            app.world().resource::<TerminalBuffer>().cells,
+            expected_initial
+        );
+
+        app.world_mut().resource_mut::<State>().set_changed();
+        app.update();
+        assert_eq!(
+            app.world().resource::<TerminalBuffer>().updated_glyphs,
+            0,
+            "an identical display buffer must not mutate any Text components"
+        );
+
+        let before = app.world().resource::<TerminalBuffer>().cells.clone();
+        app.world_mut().resource_mut::<State>().visible_message = Some("X".into());
+        app.update();
+        let terminal = app.world().resource::<TerminalBuffer>();
+        let expected_updates = before
+            .iter()
+            .zip(&terminal.cells)
+            .filter(|(before, after)| before != after)
+            .count();
+        assert!(expected_updates > 0);
+        assert!(expected_updates < DISPLAY_WIDTH * DISPLAY_HEIGHT);
+        assert_eq!(terminal.updated_glyphs, expected_updates);
+        assert_eq!(
+            app.world().resource::<GlyphChangeSamples>().0,
+            [DISPLAY_WIDTH * DISPLAY_HEIGHT, 0, expected_updates]
+        );
+    }
+
+    #[test]
+    fn screen_layout_skips_idle_and_cursor_updates_but_reacts_to_resize() {
+        let mut app = App::new();
+        app.insert_resource(state(90_062));
+        app.insert_resource(DockUi::default());
+        app.insert_resource(ScreenLayout::default());
+        app.insert_resource(LayoutCalculationSamples::default());
+        app.insert_resource(LayoutChangeSamples::default());
+        app.world_mut().spawn((game_window(), PrimaryWindow));
+        app.add_systems(
+            Update,
+            (update_screen_layout, sample_layout_changes).chain(),
+        );
+
+        app.update();
+        let initial = app.world().resource::<ScreenLayout>().clone();
+        assert_eq!(app.world().resource::<LayoutCalculationSamples>().0, 1);
+        app.update();
+        assert_eq!(
+            app.world().resource::<LayoutChangeSamples>().0[1],
+            (false, false),
+            "an idle update must not rewrite layout or dock state"
+        );
+        assert_eq!(app.world().resource::<LayoutCalculationSamples>().0, 1);
+
+        let mut windows = app
+            .world_mut()
+            .query_filtered::<&mut Window, With<PrimaryWindow>>();
+        windows
+            .single_mut(app.world_mut())
+            .expect("test app has one primary window")
+            .set_physical_cursor_position(Some(DVec2::new(12.0, 34.0)));
+        app.update();
+        assert_eq!(
+            app.world().resource::<LayoutCalculationSamples>().0,
+            1,
+            "cursor movement without a resize must not recalculate layout"
+        );
+        assert_eq!(
+            app.world().resource::<LayoutChangeSamples>().0[2],
+            (false, false),
+            "cursor movement must not rewrite layout or dock state"
+        );
+
+        let mut windows = app
+            .world_mut()
+            .query_filtered::<&mut Window, With<PrimaryWindow>>();
+        windows
+            .single_mut(app.world_mut())
+            .expect("test app has one primary window")
+            .resolution
+            .set(400.0, 800.0);
+        app.update();
+
+        assert_eq!(app.world().resource::<LayoutCalculationSamples>().0, 2);
+        assert!(app.world().resource::<LayoutChangeSamples>().0[3].0);
+        assert_ne!(
+            app.world()
+                .resource::<ScreenLayout>()
+                .terminal
+                .rendered_size,
+            initial.terminal.rendered_size
+        );
+    }
+
+    #[test]
+    fn winit_idle_wait_matches_the_existing_input_repeat_cadence() {
+        let settings = performance_winit_settings();
+        assert_eq!(
+            settings.focused_mode,
+            UpdateMode::reactive(MOVEMENT_REPEAT_INTERVAL)
+        );
+        assert_eq!(
+            settings.unfocused_mode,
+            UpdateMode::reactive_low_power(MOVEMENT_REPEAT_INTERVAL)
+        );
+    }
+
+    #[test]
+    fn winit_wait_shortens_only_while_pointer_travel_is_active() {
+        let mut initial = state(90_064);
+        initial.game.monsters.clear();
+        let target = seen_travel_target(&initial.game, 2)
+            .expect("the player starts with a remembered two-step route");
+        let mut app = App::new();
+        app.insert_resource(initial);
+        app.insert_resource(performance_winit_settings());
+        app.add_systems(Update, sync_performance_winit_settings);
+
+        app.update();
+        assert_eq!(
+            app.world().resource::<WinitSettings>().focused_mode,
+            UpdateMode::reactive(MOVEMENT_REPEAT_INTERVAL)
+        );
+
+        assert!(
+            app.world_mut()
+                .resource_mut::<State>()
+                .game
+                .start_travel(target)
+        );
+        app.update();
+        assert_eq!(
+            app.world().resource::<WinitSettings>().focused_mode,
+            UpdateMode::reactive(POINTER_TRAVEL_INTERVAL)
+        );
+        assert_eq!(
+            app.world().resource::<WinitSettings>().unfocused_mode,
+            UpdateMode::reactive_low_power(POINTER_TRAVEL_INTERVAL)
+        );
+
+        app.world_mut().resource_mut::<State>().game.cancel_travel();
+        app.update();
+        assert_eq!(
+            app.world().resource::<WinitSettings>().focused_mode,
+            UpdateMode::reactive(MOVEMENT_REPEAT_INTERVAL)
+        );
+    }
+
+    #[test]
+    fn pointer_travel_uses_elapsed_time_without_event_acceleration_or_bursts() {
+        let (mut initial, target) = (90_065..90_165)
+            .find_map(|seed| {
+                let mut initial = state(seed);
+                initial.game.monsters.clear();
+                seen_travel_target(&initial.game, 4).map(|target| (initial, target))
+            })
+            .expect("one fixed seed has a remembered four-step route");
+        assert!(initial.game.start_travel(target));
+        let starting_turn = initial.game.turn;
+        let mut app = App::new();
+        app.insert_resource(initial);
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(PointerTravelCadence::default());
+        app.insert_resource(DockUi::default());
+        app.insert_resource(DockPress::default());
+        app.add_systems(Update, advance_pointer_travel);
+
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 1);
+        assert!(app.world().resource::<State>().game.is_traveling());
+
+        app.update();
+        assert_eq!(
+            app.world().resource::<State>().game.turn,
+            starting_turn + 1,
+            "an event-driven update with no elapsed time must not add a travel step"
+        );
+
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(POINTER_TRAVEL_INTERVAL - Duration::from_micros(1));
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 1);
+
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_micros(1));
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn + 2);
+
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_secs(5));
+        app.update();
+        assert_eq!(
+            app.world().resource::<State>().game.turn,
+            starting_turn + 3,
+            "a stalled frame must advance at most one travel step"
+        );
+    }
+
+    #[test]
+    fn pointer_travel_still_advances_with_reactive_updates() {
+        let initial = state(90_063);
+        let starting_turn = initial.game.turn;
+        let target = seen_passable_neighbor(&initial.game);
+        let target_cell = PointerCell {
+            column: target.x as usize,
+            row: DUNGEON_FIRST_ROW + target.y as usize - 1,
+        };
+        let mut app = pointer_keyboard_app(initial);
+        app.add_systems(Update, advance_pointer_travel.after(keyboard));
+
+        click_cell(&mut app, target_cell);
+
+        let state = app.world().resource::<State>();
+        assert_eq!(state.game.player.pos, target);
+        assert!(state.game.turn > starting_turn);
+        assert!(!state.game.is_traveling());
+        assert!(!app.world().resource::<PointerTravelCadence>().active);
     }
 
     #[test]
@@ -7048,6 +7507,8 @@ mod tests {
         initial.modal = Some(Modal::full_screen(help_text()));
         let mut app = App::new();
         app.insert_resource(initial);
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(PointerTravelCadence::default());
         app.insert_resource(DockUi::default());
         app.insert_resource(DockPress::default());
         app.add_systems(Update, advance_pointer_travel);
@@ -7079,6 +7540,8 @@ mod tests {
 
             let mut app = App::new();
             app.insert_resource(initial);
+            app.insert_resource(Time::<()>::default());
+            app.insert_resource(PointerTravelCadence::default());
             app.insert_resource(dock_ui);
             app.insert_resource(DockPress::default());
             app.add_systems(Update, advance_pointer_travel);
