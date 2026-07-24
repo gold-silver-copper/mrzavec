@@ -2,13 +2,14 @@
 <html lang="isv">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <link rel="icon" href="data:," />
     <title>Mŕzavec — Rogue 5.4.5</title>
     <style>
       :root {
-        --game-width: 984;
-        --game-height: 1008;
         color-scheme: dark;
         background: #111;
         color: #d1d1c7;
@@ -21,7 +22,7 @@
       }
 
       main {
-        width: min(100%, calc(var(--game-width) * 1px));
+        width: min(100%, 984px);
         min-width: 0;
         margin: 0 auto;
       }
@@ -29,17 +30,22 @@
       .game-frame {
         position: relative;
         width: 100%;
-        height: calc(var(--game-height) * 1px);
+        height: min(760px, 100dvh);
+        min-height: min(480px, 100dvh);
+        box-sizing: border-box;
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        padding-left: env(safe-area-inset-left, 0px);
         overflow: hidden;
+        background: #000;
       }
 
       #mrzavec {
         display: block;
-        width: calc(var(--game-width) * 1px) !important;
-        max-width: none;
-        height: calc(var(--game-height) * 1px) !important;
-        aspect-ratio: var(--game-width) / var(--game-height);
-        transform-origin: top left;
+        width: 100% !important;
+        height: 100% !important;
+        touch-action: none;
         outline: 1px solid #333;
         background: #000;
       }
@@ -273,18 +279,7 @@
       const { default: init } = await import(`./pkg/mrzavec.js?v=${build}`);
 
       const canvas = document.querySelector("#mrzavec");
-      const gameFrame = document.querySelector(".game-frame");
       const status = document.querySelector("#status");
-      const rootStyle = getComputedStyle(document.documentElement);
-      const gameWidth = Number(rootStyle.getPropertyValue("--game-width"));
-      const gameHeight = Number(rootStyle.getPropertyValue("--game-height"));
-      const resizeGame = () => {
-        const scale = Math.min(1, gameFrame.clientWidth / gameWidth);
-        canvas.style.transform = `scale(${scale})`;
-        gameFrame.style.height = `${gameHeight * scale}px`;
-      };
-      window.addEventListener("resize", resizeGame);
-      resizeGame();
       canvas.addEventListener("pointerdown", () => canvas.focus());
       canvas.focus();
 

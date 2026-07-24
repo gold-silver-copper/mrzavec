@@ -3,7 +3,7 @@
 Mrzavec is a Rust/Bevy rewrite of Rogue 5.4.5. The game simulation is kept in
 ordinary serializable Rust data structures and the Bevy application presents it
 as an 80-column display with a three-row event stream, Rogue's 22-row dungeon
-view, the status row, and a two-row keybinding footer.
+view, the status row, and a responsive context-sensitive action dock.
 
 ## Build and run
 
@@ -43,11 +43,23 @@ module:
 </script>
 ```
 
-The Bevy app targets `#mrzavec` at its fixed 824×556 logical resolution and
-prevents browser default key handling while the game has focus. CSS may scale
-the canvas while preserving its `824 / 556` aspect ratio. In a single-page app,
+The Bevy app targets `#mrzavec` and prevents browser default key handling while
+the game has focus. Give the canvas parent an explicit responsive width and
+height. Bevy fits the canvas to that parent, scales the fixed 80×26 terminal
+into the remaining area, and derives the action rail from the rendered map
+width rather than the browser width. The compact dock is one row; larger prompt
+sets add rows only when their controls cannot fit. Command and contextual
+palettes overlay the map without rescaling it. Browser safe-area insets reduce
+the usable canvas before Bevy performs this calculation. In a single-page app,
 mount the canvas before importing/initializing the package and initialize it
 only once.
+
+During normal play, direct actions are ranked from most to least relevant
+across the remaining width. Urgent inverse-video actions stay at the far left;
+`Možnosti` is always immediately left of the far-right `Komandy…` control.
+Lower-ranked actions move into `Možnosti` when the rendered terminal is too
+narrow, while `Komandy…` continues to expose the complete categorized command
+palette.
 
 Ordinary gameplay events are combined into a sentence stream and wrapped over
 the three rows at the top. When the stream overflows, the newest three rows stay

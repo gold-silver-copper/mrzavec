@@ -1503,8 +1503,8 @@ mod corpus {
         out.push('\n');
         // The `?` help screen: every entry template, rendered like the game
         // does, minus key labels and the non-language placeholders.
-        for (_, description, _) in crate::help::HELP_ENTRIES {
-            let mut line = speak(description);
+        for entry in crate::help::HELP_ENTRIES {
+            let mut line = speak(entry.description);
             for skip in ["<dir>", "<SHIFT>", "<CTRL>", "^["] {
                 line = line.replace(skip, " ");
             }
@@ -1514,7 +1514,19 @@ mod corpus {
                 out.push_str(line);
                 out.push_str(".\n");
             }
+            if let Some(label) = entry.dock_label {
+                out.push_str(&speak(label));
+                out.push_str(".\n");
+            }
         }
+        for category in crate::help::CommandCategory::ALL {
+            out.push_str(&speak(category.label()));
+            out.push_str(".\n");
+        }
+        out.push_str(&speak(crate::help::COMMANDS_LABEL));
+        out.push_str(".\n");
+        out.push_str(&speak(crate::help::CONTEXT_OPTIONS_LABEL));
+        out.push_str(".\n");
         std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/target")).ok();
         std::fs::write(
             concat!(env!("CARGO_MANIFEST_DIR"), "/target/lang-corpus.txt"),

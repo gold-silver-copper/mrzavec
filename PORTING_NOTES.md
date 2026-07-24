@@ -29,24 +29,45 @@ across the three newest visible rows, and never stop at `--More--`; an
 associated one-line prompt is rendered after the events while remaining
 immediately actionable. Display-only
 capitalization leaves the raw recall buffer unchanged. Terminal tabs and
-modal/help limits are expanded into the fixed 80×41 grid before rendering; the
-layout is three event rows, 22 dungeon rows, one status row, and a 15-row full
-command bar. The bar is packed directly from the same `HELP_ENTRIES` templates
-as the `?` screen, excluding only the keyboard-only Shift/Ctrl run variants.
-Explicitly paginated menus and modal views retain their Space-driven
+modal/help limits are expanded into a fixed 80×26 virtual terminal before
+rendering: three event rows, 22 dungeon rows, and one status row. A separate
+responsive Bevy action dock supplies ordinary context actions and modal
+controls without consuming or overwriting terminal rows. Its complete command
+palette is categorized from structured `HELP_ENTRIES` metadata and excludes
+only non-command explanation rows and keyboard-only run variants. The dock and
+terminal share one screen-layout calculation: the interactive rail follows the
+rendered map width, normal gameplay remains one stable row, and prompt rows are
+added only when their controls cannot fit. Context and command palettes are
+map-aligned overlays, so opening them does not change terminal scale or pointer
+mapping. Explicitly paginated menus and modal views retain their Space-driven
 `--More--` behavior.
 
 Pointer input is a deliberate extension beyond Rogue 5.4.5. Bevy mouse and
-touch events share one logical-pixel-to-cell conversion on native and WASM;
-there is no DOM input layer. Command-bar cells inject the original command
-characters, item and direction rows route through their existing prompt state,
-and every modal exposes a pointer cancel target. Direction prompts overlay the
-remembered map so either one of the eight HELP-derived rows or a map-relative
-direction can be selected. Core-owned tap travel recomputes an eight-direction
-BFS over already-seen passable cells and executes one ordinary move per step.
-It cancels on a second tap, damage, traps, blocking UI, displaced/blocked
-movement, or a newly visible monster. Original keyboard commands, including
-both automatic-run families, are unchanged.
+touch events share the terminal's calculated origin and scale on native and
+WASM; there is no DOM input layer. Real Bevy buttons in the map-aligned dock
+remain at least 44 logical pixels high while the 80-column terminal scales
+independently. The ordinary dock ranks location and inventory actions using
+shared `HELP_ENTRIES` importance and priority metadata. Urgent inverse-video
+actions lead at the far left, followed by progressively less relevant actions;
+Search and Wait are ordinary low-priority utilities. Capacity is calculated
+from the rendered terminal width, with the final two columns permanently
+reserved for `Možnosti` and
+`Komandy…`. Commands that do not fit move, without duplication, into the
+paginated `Možnosti` chooser; the complete category palette remains reachable
+through the far-right `Komandy…` control. Both palettes use breadcrumbs and
+fixed navigation positions and intercept pointer input without moving the map
+underneath them. Dock buttons arm on pointer-down but inject an original
+command character only after release inside the same control; leaving the
+control cancels the action. They never call simulation handlers directly.
+Item and option choices use paginated, map-aligned Bevy overlays with 44-pixel
+targets while preserving their existing prompt-state and command-injection
+paths. Direction, answer, ring-hand, pagination, and cancel controls replace
+the ordinary dock during prompts. Direction prompts also
+retain their remembered map overlay and map-relative selection. Core-owned tap
+travel recomputes an eight-direction BFS over already-seen passable cells and
+executes one ordinary move per step. It cancels on a second tap, damage, traps,
+blocking UI, displaced/blocked movement, or a newly visible monster. Original
+keyboard commands, including both automatic-run families, are unchanged.
 
 The three historical inventory display strategies are explicit presentation
 states. Clear-screen is the default on the Bevy display (which always supports
@@ -96,11 +117,12 @@ attempting Rust serialization after memory corruption would not be safe.
 The browser launcher has no CLI, native environment, signal, or path model. It
 uses a browser-safe `player` name and the logical save/score slots `default` and
 `local`, consumes a saved normal game at startup, and otherwise begins a new
-seeded game. The web canvas is supplied by the host page as `#mrzavec`; the
-fixed 984×1008 logical surface preserves the 22-row dungeon view, adds the
-three-row event stream and 15-row command bar. Narrow pages transform that
-fixed canvas visually instead of resizing its Bevy window, preserving both the
-logical cell grid and pointer coordinates at mobile widths.
+seeded game. The host page supplies a responsive `#mrzavec` canvas whose
+explicit parent size is independent of the canvas child. Bevy fits its window
+to that parent after CSS safe-area insets have removed unusable browser space.
+The fixed 80×26 terminal scales uniformly into the remaining area, and its
+rendered width and origin directly determine the dock rail. Native uses the
+same layout in a resizable window.
 Explicit `S` remains the authoritative save-and-stop path. No unload or
 visibility checkpoint is created because browser lifecycle delivery is not
 reliable and a reusable background checkpoint would enable save scumming.

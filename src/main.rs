@@ -1,13 +1,16 @@
 use bevy::{
+    ecs::system::SystemParam,
     input::touch::Touches,
     prelude::*,
     text::LineHeight,
-    window::{PrimaryWindow, WindowResolution},
+    ui::FocusPolicy,
+    window::{PrimaryWindow, WindowResizeConstraints, WindowResolution},
 };
-use mrzavec::help::HELP_ENTRIES;
+use mrzavec::help::{
+    COMMANDS_LABEL, CONTEXT_OPTIONS_LABEL, CommandCategory, DockImportance, HELP_ENTRIES, HelpEntry,
+};
 use mrzavec::{
-    COMMAND_BAR_ROWS, DISPLAY_HEIGHT, DISPLAY_WIDTH, DUNGEON_FIRST_ROW, EVENT_ROWS, Game,
-    KEYBINDING_FIRST_ROW, STATUS_ROW,
+    DISPLAY_HEIGHT, DISPLAY_WIDTH, DUNGEON_FIRST_ROW, EVENT_ROWS, Game, STATUS_ROW,
     command::{Command, Direction, WizardCommand, parse},
     item::{
         ARMOR_NAMES, ARMOR_WEIGHTS, ItemKind, POTION_NAMES, POTION_WEIGHTS, RING_NAMES,
@@ -18,6 +21,7 @@ use mrzavec::{
     map::Pos,
     save, score,
 };
+use std::time::Duration;
 #[cfg(test)]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(not(target_arch = "wasm32"))]
@@ -29,11 +33,18 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use std::{sync::OnceLock, time::Duration};
 
 const CELL_W: f32 = 12.0;
 const CELL_H: f32 = 24.0;
 const FONT_SIZE: f32 = 20.0;
+const DOCK_BUTTON_HEIGHT: f32 = 48.0;
+const DOCK_NAVIGATION_HEIGHT: f32 = 44.0;
+const DOCK_HEADER_HEIGHT: f32 = 32.0;
+const DOCK_GAP: f32 = 4.0;
+const DOCK_MIN_BUTTON_WIDTH: f32 = 72.0;
+const DOCK_MAX_PROMPT_COLUMNS: usize = 5;
+const PALETTE_PAGE_SIZE: usize = 4;
+const PROMPT_CHOICE_PAGE_SIZE: usize = 6;
 const MODAL_MORE_ROW: usize = DISPLAY_HEIGHT - 1;
 const MODAL_PAGE_ROWS: usize = MODAL_MORE_ROW;
 const MOVEMENT_REPEAT_DELAY: Duration = Duration::from_millis(300);
@@ -49,100 +60,15 @@ const MOVEMENT_KEYS: [(KeyCode, char); 8] = [
     (KeyCode::KeyN, 'n'),
 ];
 const GLYPH_COLOR: Color = Color::srgb(0.82, 0.82, 0.78);
-const KEYBINDING_DIM_COLOR: Color = Color::srgb(0.55, 0.55, 0.52);
-const COMMAND_HIGHLIGHT_COLOR: Color = Color::srgb(0.16, 0.25, 0.32);
+const DOCK_BACKGROUND_COLOR: Color = Color::BLACK;
+const DOCK_BUTTON_COLOR: Color = Color::BLACK;
+const DOCK_BUTTON_HOVERED_COLOR: Color = Color::srgb(0.16, 0.16, 0.15);
+const DOCK_BUTTON_PRESSED_COLOR: Color = GLYPH_COLOR;
+const DOCK_BORDER_COLOR: Color = Color::srgb(0.48, 0.48, 0.45);
+const DOCK_DIVIDER_COLOR: Color = Color::srgb(0.24, 0.24, 0.22);
+const DOCK_DISABLED_COLOR: Color = Color::srgb(0.36, 0.36, 0.34);
+const DOCK_DISABLED_BORDER_COLOR: Color = Color::srgb(0.22, 0.22, 0.21);
 const ROGUE_RELEASE: &str = "2026-07-17";
-
-#[derive(Debug)]
-struct CommandBarEntry {
-    command: char,
-    row: usize,
-    start: usize,
-    end: usize,
-}
-
-#[derive(Debug)]
-struct CommandBarLayout {
-    rows: Vec<String>,
-    entries: Vec<CommandBarEntry>,
-}
-
-fn command_group(command: char) -> u8 {
-    match command {
-        'h' | 'j' | 'k' | 'l' | 'y' | 'u' | 'b' | 'n' | '>' | '<' | '.' | ',' | 's' => 0,
-        'f' | 'F' | 't' | 'm' | 'z' | '^' => 1,
-        '/' | 'i' | 'I' | 'q' | 'r' | 'e' | 'd' | 'c' => 2,
-        'w' | 'W' | 'T' | 'P' | 'R' | ')' | ']' | '=' | '@' => 3,
-        _ => 4,
-    }
-}
-
-fn command_bar_entry_text(command: char, description: &str) -> String {
-    help_entry_text(command, description)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn build_command_bar() -> CommandBarLayout {
-    let mut commands: Vec<_> = HELP_ENTRIES
-        .iter()
-        .filter(|(command, _, print)| *print && *command != '\0')
-        .collect();
-    commands.sort_by_key(|(command, _, _)| command_group(*command));
-
-    let mut rows = vec![String::new()];
-    let mut entries: Vec<CommandBarEntry> = Vec::new();
-    let mut current_group = None;
-    for (command, description, _) in commands {
-        let group = command_group(*command);
-        let text = command_bar_entry_text(*command, description);
-        assert!(
-            text.chars().count() <= DISPLAY_WIDTH,
-            "command bar entry exceeds the 80-column grid: {text}"
-        );
-        let row = rows.len() - 1;
-        let used = rows[row].chars().count();
-        if current_group.is_some_and(|current| current != group) && used > 0 {
-            rows.push(String::new());
-        }
-        let row = rows.len() - 1;
-        let used = rows[row].chars().count();
-        let separator = usize::from(used > 0) * 2;
-        if used + separator + text.chars().count() > DISPLAY_WIDTH {
-            rows.push(String::new());
-        }
-        let row = rows.len() - 1;
-        if !rows[row].is_empty() {
-            rows[row].push_str("  ");
-        }
-        let start = rows[row].chars().count();
-        if let Some(previous) = entries.last_mut()
-            && previous.row == row
-        {
-            previous.end = start;
-        }
-        rows[row].push_str(&text);
-        entries.push(CommandBarEntry {
-            command: *command,
-            row,
-            start,
-            end: DISPLAY_WIDTH,
-        });
-        current_group = Some(group);
-    }
-    assert_eq!(
-        rows.len(),
-        COMMAND_BAR_ROWS,
-        "COMMAND_BAR_ROWS must match the HELP_ENTRIES-derived layout"
-    );
-    CommandBarLayout { rows, entries }
-}
-
-fn command_bar() -> &'static CommandBarLayout {
-    static LAYOUT: OnceLock<CommandBarLayout> = OnceLock::new();
-    LAYOUT.get_or_init(build_command_bar)
-}
 
 fn held_repeat_keys() -> impl Iterator<Item = (KeyCode, char)> {
     MOVEMENT_KEYS.into_iter().chain([(KeyCode::Period, '.')])
@@ -205,35 +131,10 @@ fn call_prompt(game: &Game) -> String {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OverlayControls {
-    EventArea,
-    AboveStatus,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ModalPresentation {
     InlinePrompt,
-    Overlay(OverlayControls),
+    Overlay,
     FullScreen,
-}
-
-impl ModalPresentation {
-    fn control_row(self) -> usize {
-        match self {
-            Self::InlinePrompt | Self::Overlay(OverlayControls::EventArea) => EVENT_ROWS - 1,
-            Self::Overlay(OverlayControls::AboveStatus) => STATUS_ROW - 1,
-            Self::FullScreen => MODAL_MORE_ROW,
-        }
-    }
-}
-
-fn overlay_content_rows(controls: OverlayControls) -> impl DoubleEndedIterator<Item = usize> {
-    let control_row = ModalPresentation::Overlay(controls).control_row();
-    (0..STATUS_ROW).filter(move |row| *row != control_row)
-}
-
-fn overlay_content_capacity(controls: OverlayControls) -> usize {
-    overlay_content_rows(controls).count()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -252,23 +153,23 @@ impl Modal {
         }
     }
 
-    fn overlay(text: impl Into<String>, controls: OverlayControls) -> Self {
+    fn overlay(text: impl Into<String>) -> Self {
         let text = text.into();
         debug_assert!(
-            text.lines().count() <= overlay_content_capacity(controls),
-            "overlay content must leave its pointer-control row free"
+            text.lines().count() <= STATUS_ROW,
+            "overlay content must fit above the status row"
         );
         Self {
             text,
-            presentation: ModalPresentation::Overlay(controls),
+            presentation: ModalPresentation::Overlay,
             offset: 0,
         }
     }
 
     fn event_overlay_or_full_screen(text: impl Into<String>) -> Self {
         let text = text.into();
-        if text.lines().count() <= overlay_content_capacity(OverlayControls::EventArea) {
-            Self::overlay(text, OverlayControls::EventArea)
+        if text.lines().count() <= STATUS_ROW {
+            Self::overlay(text)
         } else {
             Self::full_screen(text)
         }
@@ -356,6 +257,229 @@ enum Pending {
 struct Cell(usize);
 #[derive(Component)]
 struct Glyph;
+#[derive(Component)]
+struct GameRoot;
+#[derive(Component)]
+struct TerminalViewport;
+#[derive(Component)]
+struct TerminalGrid;
+#[derive(Component)]
+struct DockRoot;
+#[derive(Component)]
+struct PaletteOverlay;
+
+type LayoutNodeQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut Node,
+        Option<&'static TerminalViewport>,
+        Option<&'static TerminalGrid>,
+        Option<&'static DockRoot>,
+    ),
+>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DockAction {
+    Command(char),
+    OpenPalette,
+    OpenContextActions,
+    OpenCategory(CommandCategory),
+    PreviousPage,
+    NextPage,
+    PreviousPromptPage,
+    NextPromptPage,
+    OptionRow(usize),
+    BackToCategories,
+    ClosePalette,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DockButtonLayout {
+    Compact,
+    FullWidth,
+    Navigation,
+    Spacer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DockButtonTone {
+    Normal,
+    Urgent,
+    Disabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DockButtonSpec {
+    action: DockAction,
+    label: String,
+    layout: DockButtonLayout,
+    tone: DockButtonTone,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RankedDockCommand {
+    command: char,
+    importance: DockImportance,
+    priority: u8,
+    declaration_order: usize,
+}
+
+#[derive(Component)]
+struct DockButton {
+    action: DockAction,
+    tone: DockButtonTone,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum DockMode {
+    #[default]
+    Gameplay,
+    ContextActions {
+        page: usize,
+    },
+    Categories {
+        page: usize,
+    },
+    Category {
+        category: CommandCategory,
+        page: usize,
+    },
+}
+
+#[derive(Resource, Debug)]
+struct DockUi {
+    mode: DockMode,
+    prompt_pending: Option<Pending>,
+    prompt_page: usize,
+}
+
+impl Default for DockUi {
+    fn default() -> Self {
+        Self {
+            mode: DockMode::Gameplay,
+            prompt_pending: None,
+            prompt_page: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TerminalLayout {
+    origin: Vec2,
+    scale: f32,
+    logical_size: Vec2,
+    rendered_size: Vec2,
+    dock_height: f32,
+}
+
+impl Default for TerminalLayout {
+    fn default() -> Self {
+        let logical_size = Vec2::new(
+            CELL_W * DISPLAY_WIDTH as f32,
+            CELL_H * DISPLAY_HEIGHT as f32,
+        );
+        Self {
+            origin: Vec2::ZERO,
+            scale: 1.0,
+            logical_size,
+            rendered_size: logical_size,
+            dock_height: dock_height(1),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DockLayout {
+    rail_left: f32,
+    rail_width: f32,
+    rows: usize,
+    columns: usize,
+    button_width: f32,
+    height: f32,
+}
+
+impl Default for DockLayout {
+    fn default() -> Self {
+        let terminal = TerminalLayout::default();
+        Self {
+            rail_left: terminal.origin.x,
+            rail_width: terminal.rendered_size.x,
+            rows: 1,
+            columns: 4,
+            button_width: (terminal.rendered_size.x - DOCK_GAP * 5.0) / 4.0,
+            height: dock_height(1),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct DockOverlayLayout {
+    heading: String,
+    height: f32,
+    content: Vec<DockButtonSpec>,
+    navigation: Vec<DockButtonSpec>,
+}
+
+#[derive(Resource, Debug, Clone, PartialEq, Default)]
+struct ScreenLayout {
+    terminal: TerminalLayout,
+    dock: DockLayout,
+    base_specs: Vec<DockButtonSpec>,
+    overlay: Option<DockOverlayLayout>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DockPointer {
+    Mouse,
+    Touch(u64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ArmedDockButton {
+    entity: Entity,
+    action: DockAction,
+    pointer: DockPointer,
+    canceled: bool,
+}
+
+#[derive(Resource, Debug, Default)]
+struct DockPress {
+    armed: Option<ArmedDockButton>,
+}
+
+impl DockPress {
+    fn try_arm(&mut self, button: ArmedDockButton) -> bool {
+        if self.armed.is_some() {
+            return false;
+        }
+        self.armed = Some(button);
+        true
+    }
+}
+
+#[derive(SystemParam)]
+struct DockPointerInput<'w, 's> {
+    mouse_buttons: Res<'w, ButtonInput<MouseButton>>,
+    touches: Res<'w, Touches>,
+    windows: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
+}
+
+type DockButtonQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static Interaction,
+        &'static DockButton,
+        &'static ComputedNode,
+        &'static UiGlobalTransform,
+        &'static mut BackgroundColor,
+        &'static mut BorderColor,
+        Option<&'static Children>,
+    ),
+>;
 
 #[derive(Resource, Default)]
 struct MovementRepeat {
@@ -365,12 +489,6 @@ struct MovementRepeat {
 
 #[derive(Resource, Default)]
 struct InjectedInput(Option<char>);
-
-#[derive(Resource, Default)]
-struct PointerUi {
-    hovered_command: Option<char>,
-    last_tapped_command: Option<char>,
-}
 
 impl MovementRepeat {
     fn reset(&mut self) {
@@ -717,10 +835,14 @@ fn main() {
         (
             handle_termination_signal,
             pointer_input,
+            dock_input,
             keyboard,
             advance_pointer_travel,
             finalize_end,
             prepare_messages,
+            update_screen_layout,
+            layout_terminal,
+            sync_dock,
             render,
         )
             .chain(),
@@ -752,10 +874,14 @@ fn main() {
             Update,
             (
                 pointer_input,
+                dock_input,
                 keyboard,
                 advance_pointer_travel,
                 finalize_end,
                 prepare_messages,
+                update_screen_layout,
+                layout_terminal,
+                sync_dock,
                 render,
             )
                 .chain(),
@@ -777,7 +903,9 @@ fn game_app(game: Game, wizard_prompt: bool) -> App {
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(MovementRepeat::default())
         .insert_resource(InjectedInput::default())
-        .insert_resource(PointerUi::default())
+        .insert_resource(DockUi::default())
+        .insert_resource(DockPress::default())
+        .insert_resource(ScreenLayout::default())
         .insert_resource(State {
             game,
             modal: wizard_prompt
@@ -803,18 +931,25 @@ fn game_app(game: Game, wizard_prompt: bool) -> App {
 fn game_window() -> Window {
     let window = Window {
         title: "Rogue 5.4.5 — Mŕzavec".into(),
-        resolution: WindowResolution::new(
-            (CELL_W * DISPLAY_WIDTH as f32 + 24.0) as u32,
-            (CELL_H * DISPLAY_HEIGHT as f32 + 24.0) as u32,
-        ),
-        resizable: false,
+        resolution: WindowResolution::new(984, 744),
+        resize_constraints: WindowResizeConstraints {
+            min_width: 400.0,
+            min_height: 480.0,
+            ..default()
+        },
+        resizable: true,
         prevent_default_event_handling: true,
         ..default()
     };
     #[cfg(target_arch = "wasm32")]
     let window = Window {
         canvas: Some("#mrzavec".into()),
-        fit_canvas_to_parent: false,
+        fit_canvas_to_parent: true,
+        resize_constraints: WindowResizeConstraints {
+            min_width: 1.0,
+            min_height: 1.0,
+            ..default()
+        },
         ..window
     };
     window
@@ -1045,52 +1180,1339 @@ fn setup(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
         .expect("install full-coverage default font");
     commands.spawn(Camera2d);
     commands
-        .spawn(Node {
-            width: percent(100),
-            height: percent(100),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            ..default()
-        })
+        .spawn((
+            GameRoot,
+            Node {
+                width: percent(100),
+                height: percent(100),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+        ))
         .with_children(|root| {
             root.spawn((
+                TerminalViewport,
                 Node {
-                    display: Display::Grid,
-                    width: px(CELL_W * DISPLAY_WIDTH as f32),
-                    height: px(CELL_H * DISPLAY_HEIGHT as f32),
-                    grid_template_columns: RepeatedGridTrack::px(DISPLAY_WIDTH as u16, CELL_W),
-                    grid_template_rows: RepeatedGridTrack::px(DISPLAY_HEIGHT as u16, CELL_H),
+                    width: percent(100),
+                    flex_grow: 1.0,
+                    min_height: px(0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
                     ..default()
                 },
-                BackgroundColor(Color::BLACK),
             ))
-            .with_children(|grid| {
-                for i in 0..DISPLAY_WIDTH * DISPLAY_HEIGHT {
-                    grid.spawn((
-                        Cell(i),
+            .with_children(|viewport| {
+                viewport
+                    .spawn((
+                        TerminalGrid,
                         Node {
-                            min_width: px(0),
-                            min_height: px(0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
+                            display: Display::Grid,
+                            width: px(CELL_W * DISPLAY_WIDTH as f32),
+                            height: px(CELL_H * DISPLAY_HEIGHT as f32),
+                            grid_template_columns: RepeatedGridTrack::px(
+                                DISPLAY_WIDTH as u16,
+                                CELL_W,
+                            ),
+                            grid_template_rows: RepeatedGridTrack::px(
+                                DISPLAY_HEIGHT as u16,
+                                CELL_H,
+                            ),
                             ..default()
                         },
                         BackgroundColor(Color::BLACK),
                     ))
-                    .with_child((
-                        Glyph,
-                        Text::new(" "),
-                        TextFont {
-                            font_size: FontSize::Px(FONT_SIZE),
-                            ..default()
-                        },
-                        LineHeight::Px(CELL_H),
-                        TextColor(GLYPH_COLOR),
-                        TextLayout::justify(Justify::Center),
-                    ));
-                }
+                    .with_children(|grid| {
+                        for i in 0..DISPLAY_WIDTH * DISPLAY_HEIGHT {
+                            grid.spawn((
+                                Cell(i),
+                                Node {
+                                    min_width: px(0),
+                                    min_height: px(0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(Color::BLACK),
+                            ))
+                            .with_child((
+                                Glyph,
+                                Text::new(" "),
+                                TextFont {
+                                    font_size: FontSize::Px(FONT_SIZE),
+                                    ..default()
+                                },
+                                LineHeight::Px(CELL_H),
+                                TextColor(GLYPH_COLOR),
+                                TextLayout::justify(Justify::Center),
+                            ));
+                        }
+                    });
             });
+            root.spawn((
+                DockRoot,
+                Node {
+                    width: percent(100),
+                    height: px(dock_height(1)),
+                    flex_shrink: 0.0,
+                    border: UiRect::top(px(1)),
+                    ..default()
+                },
+                BackgroundColor(DOCK_BACKGROUND_COLOR),
+                BorderColor::all(DOCK_DIVIDER_COLOR),
+            ));
         });
+}
+
+fn help_entry(command: char) -> Option<&'static HelpEntry> {
+    HELP_ENTRIES
+        .iter()
+        .find(|entry| entry.command == command && entry.print)
+}
+
+fn command_dock_label(command: char) -> String {
+    let label = help_entry(command)
+        .and_then(|entry| entry.dock_label)
+        .map(speak)
+        .unwrap_or_else(|| control_label(command));
+    format!("{} {label}", control_label(command))
+}
+
+fn command_palette_label(entry: &HelpEntry) -> String {
+    help_entry_text(entry.command, entry.description)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn pack_has_selection(game: &Game, pending: Pending) -> bool {
+    game.player
+        .inventory
+        .iter()
+        .any(|item| item.in_pack && item_matches_selection(game, pending, item.kind))
+}
+
+fn ranked_dock_command(command: char) -> Option<RankedDockCommand> {
+    HELP_ENTRIES
+        .iter()
+        .enumerate()
+        .find(|(_, entry)| entry.command == command && entry.print)
+        .and_then(|(declaration_order, entry)| {
+            Some(RankedDockCommand {
+                command,
+                importance: entry.dock_importance?,
+                priority: entry.dock_priority?,
+                declaration_order,
+            })
+        })
+}
+
+fn rank_dock_commands(commands: impl IntoIterator<Item = char>) -> Vec<RankedDockCommand> {
+    let mut ranked: Vec<_> = commands
+        .into_iter()
+        .filter_map(ranked_dock_command)
+        .collect();
+    ranked.sort_by_key(|command| {
+        (
+            std::cmp::Reverse(command.importance),
+            std::cmp::Reverse(command.priority),
+            command.declaration_order,
+        )
+    });
+    ranked.dedup_by_key(|command| command.command);
+    ranked
+}
+
+fn contextual_commands(state: &State) -> Vec<char> {
+    if state.pending.is_some()
+        || state.modal.is_some()
+        || state.game.end != mrzavec::game::EndState::Playing
+    {
+        return Vec::new();
+    }
+
+    let mut contextual = Vec::new();
+    if state
+        .game
+        .floor_items
+        .iter()
+        .any(|item| item.pos == Some(state.game.player.pos))
+    {
+        contextual.push(',');
+    }
+    if state.game.player.pos == state.game.dungeon.stairs {
+        if state.game.has_amulet {
+            contextual.push('<');
+        }
+        contextual.push('>');
+    }
+    for (command, pending) in [
+        ('q', Pending::Quaff),
+        ('r', Pending::Read),
+        ('e', Pending::Eat),
+        ('z', Pending::ZapSelect),
+        ('w', Pending::Wield),
+        ('W', Pending::Wear),
+        ('P', Pending::PutRing),
+    ] {
+        if pack_has_selection(&state.game, pending) {
+            contextual.push(command);
+        }
+    }
+    if state.game.player.armor.is_some() {
+        contextual.push('T');
+    }
+    if state.game.player.rings.iter().any(Option::is_some) {
+        contextual.push('R');
+    }
+    rank_dock_commands(contextual)
+        .into_iter()
+        .map(|command| command.command)
+        .collect()
+}
+
+fn player_has_inventory(state: &State) -> bool {
+    state.game.player.inventory.iter().any(|item| item.in_pack)
+}
+
+fn ranked_gameplay_commands(state: &State) -> Vec<RankedDockCommand> {
+    let mut commands = contextual_commands(state);
+    if commands.is_empty() && player_has_inventory(state) {
+        commands.push('i');
+    }
+    commands.extend(['s', '.']);
+    rank_dock_commands(commands)
+}
+
+fn dock_command_tone(command: char) -> DockButtonTone {
+    if ranked_dock_command(command)
+        .is_some_and(|command| command.importance == DockImportance::Urgent)
+    {
+        DockButtonTone::Urgent
+    } else {
+        DockButtonTone::Normal
+    }
+}
+
+fn commands_heading() -> String {
+    speak("⟨n:komanda:nom:pl:U⟩")
+}
+
+fn context_options_heading() -> String {
+    speak(CONTEXT_OPTIONS_LABEL)
+}
+
+fn context_options_count_label(count: usize) -> String {
+    format!("{} · {count}", context_options_heading())
+}
+
+fn dock_spec(
+    action: DockAction,
+    label: impl Into<String>,
+    layout: DockButtonLayout,
+    tone: DockButtonTone,
+) -> DockButtonSpec {
+    DockButtonSpec {
+        action,
+        label: label.into(),
+        layout,
+        tone,
+    }
+}
+
+fn command_spec(command: char, layout: DockButtonLayout, tone: DockButtonTone) -> DockButtonSpec {
+    let label = if layout == DockButtonLayout::Compact {
+        command_dock_label(command)
+    } else {
+        help_entry(command)
+            .map(command_palette_label)
+            .unwrap_or_else(|| modal_command_label(command))
+    };
+    dock_spec(DockAction::Command(command), label, layout, tone)
+}
+
+fn spacer_spec() -> DockButtonSpec {
+    dock_spec(
+        DockAction::Disabled,
+        "",
+        DockButtonLayout::Spacer,
+        DockButtonTone::Disabled,
+    )
+}
+
+fn rail_capacity(rail_width: f32, minimum_button_width: f32) -> usize {
+    (((rail_width - DOCK_GAP).max(0.0) / (minimum_button_width + DOCK_GAP)).floor() as usize).max(1)
+}
+
+fn gameplay_columns(rail_width: f32) -> usize {
+    rail_capacity(rail_width, DOCK_MIN_BUTTON_WIDTH).max(2)
+}
+
+fn visible_gameplay_command_count(command_count: usize, rail_width: f32) -> usize {
+    command_count.min(gameplay_columns(rail_width).saturating_sub(2))
+}
+
+fn gameplay_dock_specs(state: &State, rail_width: f32) -> Vec<DockButtonSpec> {
+    let commands = ranked_gameplay_commands(state);
+    let columns = gameplay_columns(rail_width);
+    let direct_capacity = columns.saturating_sub(2);
+    let visible = visible_gameplay_command_count(commands.len(), rail_width);
+    let mut specs: Vec<DockButtonSpec> = commands
+        .iter()
+        .take(visible)
+        .map(|command| {
+            command_spec(
+                command.command,
+                DockButtonLayout::Compact,
+                dock_command_tone(command.command),
+            )
+        })
+        .collect();
+    specs.resize_with(direct_capacity, spacer_spec);
+    let hidden_count = commands.len() - visible;
+    if hidden_count > 0 {
+        specs.push(dock_spec(
+            DockAction::OpenContextActions,
+            context_options_count_label(hidden_count),
+            DockButtonLayout::Compact,
+            DockButtonTone::Normal,
+        ));
+    } else {
+        specs.push(dock_spec(
+            DockAction::Disabled,
+            context_options_heading(),
+            DockButtonLayout::Compact,
+            DockButtonTone::Disabled,
+        ));
+    }
+    specs.push(dock_spec(
+        DockAction::OpenPalette,
+        speak(COMMANDS_LABEL),
+        DockButtonLayout::Compact,
+        DockButtonTone::Normal,
+    ));
+    specs
+}
+
+fn context_overlay_commands(state: &State, rail_width: f32) -> Vec<char> {
+    let commands = ranked_gameplay_commands(state);
+    let visible = visible_gameplay_command_count(commands.len(), rail_width);
+    commands
+        .into_iter()
+        .skip(visible)
+        .map(|command| command.command)
+        .collect()
+}
+
+fn modal_dock_commands(state: &State) -> Vec<char> {
+    if state.game.end != mrzavec::game::EndState::Playing {
+        return vec!['\u{1b}'];
+    }
+    let mut commands = match state.pending {
+        Some(Pending::SaveConfirm | Pending::SaveOverwrite | Pending::QuitConfirm) => {
+            vec!['y', 'n']
+        }
+        Some(Pending::PutRingHand(_) | Pending::RemoveRingHand) => vec!['l', 'r'],
+        Some(Pending::Discoveries) => vec!['!', '?', '=', '/', '*'],
+        Some(pending) if direction_pending(pending) => direction_menu_entries()
+            .map(|(command, _)| command)
+            .collect(),
+        _ => Vec::new(),
+    };
+    let advances = state.modal.as_ref().is_some_and(modal_has_next_page)
+        || matches!(
+            state.pending,
+            Some(
+                Pending::MagicDetection
+                    | Pending::FoodDetection
+                    | Pending::DiscoveryMore
+                    | Pending::SlowDiscoveryPrompt
+                    | Pending::SlowDiscovery(_)
+                    | Pending::SlowInventory(_)
+                    | Pending::More
+            )
+        );
+    if advances {
+        commands.push(' ');
+    }
+    if state.pending.is_some() || state.modal.is_some() {
+        commands.push('\u{1b}');
+    }
+    commands
+}
+
+fn modal_command_label(command: char) -> String {
+    match command {
+        ' ' => "Dalje".into(),
+        '\u{1b}' => "^[ Escape".into(),
+        'y' => "y Da".into(),
+        'n' => "n Ne".into(),
+        'l' => format!("l {}", speak("⟨a:lěvy:rųka:nom⟩")),
+        'r' => format!("r {}", speak("⟨a:pravy:rųka:nom⟩")),
+        command if matches!(command, 'h' | 'j' | 'k' | 'l' | 'y' | 'u' | 'b' | 'n') => {
+            help_entry(command)
+                .map(command_palette_label)
+                .unwrap_or_else(|| control_label(command))
+        }
+        command => control_label(command),
+    }
+}
+
+fn modal_dock_specs(state: &State) -> Vec<DockButtonSpec> {
+    modal_dock_commands(state)
+        .into_iter()
+        .map(|command| {
+            dock_spec(
+                DockAction::Command(command),
+                modal_command_label(command),
+                DockButtonLayout::Compact,
+                DockButtonTone::Normal,
+            )
+        })
+        .collect()
+}
+
+fn base_dock_specs(state: &State, rail_width: f32) -> Vec<DockButtonSpec> {
+    if state.pending.is_some()
+        || state.modal.is_some()
+        || state.game.end != mrzavec::game::EndState::Playing
+    {
+        modal_dock_specs(state)
+    } else {
+        gameplay_dock_specs(state, rail_width)
+    }
+}
+
+fn prompt_choice_pending(state: &State) -> Option<Pending> {
+    state.pending.filter(|pending| {
+        *pending == Pending::PickyInventory
+            || matches!(pending, Pending::Options(_))
+            || is_item_selection(*pending)
+    })
+}
+
+fn item_choice_specs(state: &State, pending: Pending) -> Vec<DockButtonSpec> {
+    state
+        .game
+        .player
+        .inventory
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| {
+            item.in_pack
+                && (pending == Pending::PickyInventory
+                    || item_matches_selection(&state.game, pending, item.kind))
+        })
+        .map(|(index, item)| {
+            let letter = item.pack_letter.unwrap_or((b'a' + index as u8) as char);
+            dock_spec(
+                DockAction::Command(letter),
+                format!("{letter}) {}", state.game.inventory_name(item, false)),
+                DockButtonLayout::FullWidth,
+                DockButtonTone::Normal,
+            )
+        })
+        .collect()
+}
+
+fn prompt_choice_specs(state: &State) -> Option<(String, Vec<DockButtonSpec>)> {
+    let pending = prompt_choice_pending(state)?;
+    match pending {
+        Pending::PickyInventory => {
+            Some((speak("⟨n:torba:nom:U⟩"), item_choice_specs(state, pending)))
+        }
+        Pending::Options(_) => {
+            let modal = state.modal.as_ref()?;
+            Some((
+                speak("⟨n:opcija:nom:pl:U⟩"),
+                modal
+                    .text
+                    .lines()
+                    .take(OPTION_COUNT)
+                    .enumerate()
+                    .map(|(index, label)| {
+                        dock_spec(
+                            DockAction::OptionRow(index),
+                            label,
+                            DockButtonLayout::FullWidth,
+                            DockButtonTone::Normal,
+                        )
+                    })
+                    .collect(),
+            ))
+        }
+        pending if is_item_selection(pending) => Some((
+            speak("⟨n:prědmet:nom:pl:U⟩"),
+            item_choice_specs(state, pending),
+        )),
+        _ => None,
+    }
+}
+
+fn palette_content_specs(state: &State, mode: DockMode, rail_width: f32) -> Vec<DockButtonSpec> {
+    match mode {
+        DockMode::Gameplay => Vec::new(),
+        DockMode::ContextActions { page } => context_overlay_commands(state, rail_width)
+            .into_iter()
+            .skip(page * PALETTE_PAGE_SIZE)
+            .take(PALETTE_PAGE_SIZE)
+            .map(|command| {
+                command_spec(
+                    command,
+                    DockButtonLayout::FullWidth,
+                    dock_command_tone(command),
+                )
+            })
+            .collect(),
+        DockMode::Categories { page } => CommandCategory::ALL
+            .into_iter()
+            .skip(page * PALETTE_PAGE_SIZE)
+            .take(PALETTE_PAGE_SIZE)
+            .map(|category| {
+                dock_spec(
+                    DockAction::OpenCategory(category),
+                    speak(category.label()),
+                    DockButtonLayout::FullWidth,
+                    DockButtonTone::Normal,
+                )
+            })
+            .collect(),
+        DockMode::Category { category, page } => {
+            let entries: Vec<&HelpEntry> = HELP_ENTRIES
+                .iter()
+                .filter(|entry| entry.print && entry.command != '\0' && entry.category == category)
+                .collect();
+            let page_count = entries.len().div_ceil(PALETTE_PAGE_SIZE).max(1);
+            let page = page.min(page_count - 1);
+            entries
+                .into_iter()
+                .skip(page * PALETTE_PAGE_SIZE)
+                .take(PALETTE_PAGE_SIZE)
+                .map(|entry| {
+                    dock_spec(
+                        DockAction::Command(entry.command),
+                        command_palette_label(entry),
+                        DockButtonLayout::FullWidth,
+                        DockButtonTone::Normal,
+                    )
+                })
+                .collect()
+        }
+    }
+}
+
+#[cfg(test)]
+fn dock_specs(state: &State, mode: DockMode) -> Vec<DockButtonSpec> {
+    let rail_width = CELL_W * DISPLAY_WIDTH as f32;
+    if state.pending.is_some()
+        || state.modal.is_some()
+        || state.game.end != mrzavec::game::EndState::Playing
+        || mode == DockMode::Gameplay
+    {
+        base_dock_specs(state, rail_width)
+    } else {
+        let mut specs = palette_content_specs(state, mode, rail_width);
+        specs.extend(palette_navigation_specs(state, mode, rail_width));
+        specs
+    }
+}
+
+fn mode_page_count(state: &State, mode: DockMode, rail_width: f32) -> usize {
+    let entries = match mode {
+        DockMode::ContextActions { .. } => context_overlay_commands(state, rail_width).len(),
+        DockMode::Category { category, .. } => HELP_ENTRIES
+            .iter()
+            .filter(|entry| entry.print && entry.command != '\0' && entry.category == category)
+            .count(),
+        DockMode::Categories { .. } => CommandCategory::ALL.len(),
+        DockMode::Gameplay => 0,
+    };
+    entries.div_ceil(PALETTE_PAGE_SIZE).max(1)
+}
+
+fn mode_page(mode: DockMode) -> usize {
+    match mode {
+        DockMode::Categories { page }
+        | DockMode::ContextActions { page }
+        | DockMode::Category { page, .. } => page,
+        DockMode::Gameplay => 0,
+    }
+}
+
+fn palette_heading(state: &State, mode: DockMode, rail_width: f32) -> String {
+    match mode {
+        DockMode::Gameplay => String::new(),
+        DockMode::Categories { .. } => commands_heading(),
+        DockMode::ContextActions { page } => {
+            let count = context_overlay_commands(state, rail_width).len();
+            let pages = mode_page_count(state, mode, rail_width);
+            format!(
+                "{} · {count} · {}/{}",
+                context_options_heading(),
+                page.min(pages - 1) + 1,
+                pages
+            )
+        }
+        DockMode::Category { category, page } => {
+            let pages = mode_page_count(state, mode, rail_width);
+            format!(
+                "{} / {} · {}/{}",
+                commands_heading(),
+                speak(category.label()),
+                page.min(pages - 1) + 1,
+                pages
+            )
+        }
+    }
+}
+
+fn navigation_spec(action: DockAction, label: impl Into<String>, enabled: bool) -> DockButtonSpec {
+    dock_spec(
+        if enabled {
+            action
+        } else {
+            DockAction::Disabled
+        },
+        label,
+        DockButtonLayout::Navigation,
+        if enabled {
+            DockButtonTone::Normal
+        } else {
+            DockButtonTone::Disabled
+        },
+    )
+}
+
+fn palette_navigation_specs(state: &State, mode: DockMode, rail_width: f32) -> Vec<DockButtonSpec> {
+    let page = mode_page(mode);
+    let page_count = mode_page_count(state, mode, rail_width);
+    vec![
+        navigation_spec(
+            DockAction::BackToCategories,
+            format!("← {}", commands_heading()),
+            matches!(mode, DockMode::Category { .. }),
+        ),
+        navigation_spec(DockAction::PreviousPage, "←", page > 0),
+        navigation_spec(DockAction::NextPage, "Dalje →", page + 1 < page_count),
+        navigation_spec(DockAction::ClosePalette, "^[ Escape", true),
+    ]
+}
+
+fn dock_height(rows: usize) -> f32 {
+    let rows = rows.max(1);
+    DOCK_BUTTON_HEIGHT * rows as f32 + DOCK_GAP * (rows + 1) as f32
+}
+
+fn calculate_terminal_layout(window_size: Vec2, dock_height: f32) -> TerminalLayout {
+    let available_height = (window_size.y - dock_height).max(1.0);
+    let logical_size = Vec2::new(
+        CELL_W * DISPLAY_WIDTH as f32,
+        CELL_H * DISPLAY_HEIGHT as f32,
+    );
+    let scale = (window_size.x / logical_size.x)
+        .min(available_height / logical_size.y)
+        .clamp(0.1, 1.0);
+    let rendered_size = logical_size * scale;
+    TerminalLayout {
+        origin: Vec2::new(
+            (window_size.x - rendered_size.x) / 2.0,
+            (available_height - rendered_size.y) / 2.0,
+        ),
+        scale,
+        logical_size,
+        rendered_size,
+        dock_height,
+    }
+}
+
+fn compact_columns(spec_count: usize, rail_width: f32, ordinary_gameplay: bool) -> usize {
+    if spec_count == 0 {
+        return 1;
+    }
+    let width_capacity = rail_capacity(rail_width, DOCK_MIN_BUTTON_WIDTH);
+    let maximum = if ordinary_gameplay {
+        spec_count
+    } else {
+        DOCK_MAX_PROMPT_COLUMNS
+    };
+    spec_count.min(width_capacity).min(maximum).max(1)
+}
+
+fn calculate_dock_layout(
+    terminal: TerminalLayout,
+    spec_count: usize,
+    ordinary_gameplay: bool,
+) -> DockLayout {
+    let columns = compact_columns(spec_count, terminal.rendered_size.x, ordinary_gameplay);
+    let rows = spec_count.max(1).div_ceil(columns);
+    let rail_width = terminal.rendered_size.x;
+    let button_width = ((rail_width - DOCK_GAP * (columns + 1) as f32) / columns as f32).max(1.0);
+    DockLayout {
+        rail_left: terminal.origin.x,
+        rail_width,
+        rows,
+        columns,
+        button_width,
+        height: dock_height(rows),
+    }
+}
+
+fn palette_overlay_height(content_count: usize) -> f32 {
+    DOCK_GAP * (content_count + 3) as f32
+        + DOCK_HEADER_HEIGHT
+        + content_count as f32 * DOCK_NAVIGATION_HEIGHT
+        + DOCK_NAVIGATION_HEIGHT
+}
+
+fn prompt_choice_overlay_layout(
+    state: &State,
+    prompt_page: usize,
+    window_height: f32,
+) -> Option<DockOverlayLayout> {
+    let (heading, choices) = prompt_choice_specs(state)?;
+    if choices.is_empty() {
+        return None;
+    }
+    let page_count = choices.len().div_ceil(PROMPT_CHOICE_PAGE_SIZE).max(1);
+    let page = prompt_page.min(page_count - 1);
+    let content: Vec<_> = choices
+        .into_iter()
+        .skip(page * PROMPT_CHOICE_PAGE_SIZE)
+        .take(PROMPT_CHOICE_PAGE_SIZE)
+        .collect();
+    let navigation = vec![
+        navigation_spec(DockAction::PreviousPromptPage, "←", page > 0),
+        navigation_spec(DockAction::NextPromptPage, "Dalje →", page + 1 < page_count),
+        dock_spec(
+            DockAction::Command('\u{1b}'),
+            "^[ Escape",
+            DockButtonLayout::Navigation,
+            DockButtonTone::Normal,
+        ),
+    ];
+    let desired_height = palette_overlay_height(content.len());
+    Some(DockOverlayLayout {
+        heading: format!("{heading} · {}/{}", page + 1, page_count),
+        height: desired_height.min((window_height - DOCK_GAP * 2.0).max(dock_height(1))),
+        content,
+        navigation,
+    })
+}
+
+fn overlay_layout(
+    state: &State,
+    mode: DockMode,
+    prompt_page: usize,
+    terminal: TerminalLayout,
+    window_height: f32,
+) -> Option<DockOverlayLayout> {
+    if let Some(overlay) = prompt_choice_overlay_layout(state, prompt_page, window_height) {
+        return Some(overlay);
+    }
+    if mode == DockMode::Gameplay {
+        return None;
+    }
+    let rail_width = terminal.rendered_size.x;
+    let content = palette_content_specs(state, mode, rail_width);
+    let navigation = palette_navigation_specs(state, mode, rail_width);
+    let desired_height = palette_overlay_height(content.len());
+    Some(DockOverlayLayout {
+        heading: palette_heading(state, mode, rail_width),
+        height: desired_height.min((window_height - DOCK_GAP * 2.0).max(dock_height(1))),
+        content,
+        navigation,
+    })
+}
+
+fn calculate_screen_layout_with_prompt_page(
+    window_size: Vec2,
+    state: &State,
+    mode: DockMode,
+    prompt_page: usize,
+) -> ScreenLayout {
+    let ordinary_gameplay = state.pending.is_none()
+        && state.modal.is_none()
+        && state.game.end == mrzavec::game::EndState::Playing;
+    let mut rows = 1;
+    for _ in 0..4 {
+        let terminal = calculate_terminal_layout(window_size, dock_height(rows));
+        let base_specs = base_dock_specs(state, terminal.rendered_size.x);
+        let dock = calculate_dock_layout(terminal, base_specs.len(), ordinary_gameplay);
+        if dock.rows == rows {
+            return ScreenLayout {
+                terminal,
+                dock,
+                overlay: overlay_layout(state, mode, prompt_page, terminal, window_size.y),
+                base_specs,
+            };
+        }
+        rows = dock.rows;
+    }
+    let terminal = calculate_terminal_layout(window_size, dock_height(rows));
+    let base_specs = base_dock_specs(state, terminal.rendered_size.x);
+    let dock = calculate_dock_layout(terminal, base_specs.len(), ordinary_gameplay);
+    ScreenLayout {
+        terminal,
+        dock,
+        overlay: overlay_layout(state, mode, prompt_page, terminal, window_size.y),
+        base_specs,
+    }
+}
+
+#[cfg(test)]
+fn calculate_screen_layout(window_size: Vec2, state: &State, mode: DockMode) -> ScreenLayout {
+    calculate_screen_layout_with_prompt_page(window_size, state, mode, 0)
+}
+
+fn normalized_dock_mode(state: &State, mode: DockMode, rail_width: f32) -> DockMode {
+    if state.pending.is_some()
+        || state.modal.is_some()
+        || state.game.end != mrzavec::game::EndState::Playing
+    {
+        return DockMode::Gameplay;
+    }
+    match mode {
+        DockMode::ContextActions { page } => {
+            let commands = context_overlay_commands(state, rail_width);
+            if commands.is_empty() {
+                DockMode::Gameplay
+            } else {
+                DockMode::ContextActions {
+                    page: page.min(commands.len().div_ceil(PALETTE_PAGE_SIZE).max(1) - 1),
+                }
+            }
+        }
+        DockMode::Category { category, page } => {
+            let entry_count = HELP_ENTRIES
+                .iter()
+                .filter(|entry| entry.print && entry.command != '\0' && entry.category == category)
+                .count();
+            DockMode::Category {
+                category,
+                page: page.min(entry_count.div_ceil(PALETTE_PAGE_SIZE).max(1) - 1),
+            }
+        }
+        DockMode::Categories { page } => {
+            let page_count = CommandCategory::ALL
+                .len()
+                .div_ceil(PALETTE_PAGE_SIZE)
+                .max(1);
+            DockMode::Categories {
+                page: page.min(page_count - 1),
+            }
+        }
+        DockMode::Gameplay => mode,
+    }
+}
+
+fn normalize_prompt_choice_state(state: &State, dock_ui: &mut DockUi) {
+    let prompt_pending = prompt_choice_pending(state);
+    if dock_ui.prompt_pending != prompt_pending {
+        dock_ui.prompt_pending = prompt_pending;
+        dock_ui.prompt_page = match prompt_pending {
+            Some(Pending::Options(index)) => index / PROMPT_CHOICE_PAGE_SIZE,
+            _ => 0,
+        };
+    }
+    if let Some((_, choices)) = prompt_choice_specs(state) {
+        let page_count = choices.len().div_ceil(PROMPT_CHOICE_PAGE_SIZE).max(1);
+        dock_ui.prompt_page = dock_ui.prompt_page.min(page_count - 1);
+    } else {
+        dock_ui.prompt_page = 0;
+    }
+}
+
+fn update_screen_layout(
+    state: Res<State>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut dock_ui: ResMut<DockUi>,
+    mut screen: ResMut<ScreenLayout>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let window_size = Vec2::new(window.width(), window.height());
+    let one_row_terminal = calculate_terminal_layout(window_size, dock_height(1));
+    let mode = normalized_dock_mode(&state, dock_ui.mode, one_row_terminal.rendered_size.x);
+    if dock_ui.mode != mode {
+        dock_ui.mode = mode;
+    }
+    normalize_prompt_choice_state(&state, &mut dock_ui);
+    let next = calculate_screen_layout_with_prompt_page(
+        window_size,
+        &state,
+        dock_ui.mode,
+        dock_ui.prompt_page,
+    );
+    if *screen != next {
+        *screen = next;
+    }
+}
+
+fn layout_terminal(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    screen: Res<ScreenLayout>,
+    mut nodes: LayoutNodeQuery,
+    mut glyphs: Query<(&mut TextFont, &mut LineHeight), With<Glyph>>,
+) {
+    if !screen.is_changed() {
+        return;
+    }
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let available_height = (window.height() - screen.dock.height).max(1.0);
+    for (mut node, viewport, grid, dock) in &mut nodes {
+        if viewport.is_some() {
+            node.height = px(available_height);
+            node.flex_grow = 0.0;
+        } else if dock.is_some() {
+            node.height = px(screen.dock.height);
+        } else if grid.is_some() {
+            node.width = px(screen.terminal.rendered_size.x);
+            node.height = px(screen.terminal.rendered_size.y);
+            node.grid_template_columns =
+                RepeatedGridTrack::px(DISPLAY_WIDTH as u16, CELL_W * screen.terminal.scale);
+            node.grid_template_rows =
+                RepeatedGridTrack::px(DISPLAY_HEIGHT as u16, CELL_H * screen.terminal.scale);
+        }
+    }
+    for (mut font, mut line_height) in &mut glyphs {
+        font.font_size = FontSize::Px(FONT_SIZE * screen.terminal.scale);
+        *line_height = LineHeight::Px(CELL_H * screen.terminal.scale);
+    }
+}
+
+fn sync_dock(
+    mut commands: Commands,
+    screen: Res<ScreenLayout>,
+    dock_root: Query<Entity, With<DockRoot>>,
+    game_root: Query<Entity, With<GameRoot>>,
+    overlays: Query<Entity, With<PaletteOverlay>>,
+    mut press: ResMut<DockPress>,
+) {
+    if !screen.is_changed() {
+        return;
+    }
+    press.armed = None;
+    for overlay in &overlays {
+        commands.entity(overlay).despawn();
+    }
+    let Ok(dock_root) = dock_root.single() else {
+        return;
+    };
+    commands.entity(dock_root).despawn_children();
+    commands.entity(dock_root).with_children(|dock| {
+        dock.spawn(Node {
+            position_type: PositionType::Absolute,
+            left: px(screen.dock.rail_left),
+            top: px(0),
+            width: px(screen.dock.rail_width),
+            height: percent(100),
+            flex_direction: FlexDirection::Row,
+            flex_wrap: if screen.dock.rows == 1 {
+                FlexWrap::NoWrap
+            } else {
+                FlexWrap::Wrap
+            },
+            justify_content: JustifyContent::Start,
+            align_content: AlignContent::Center,
+            align_items: AlignItems::Center,
+            column_gap: px(DOCK_GAP),
+            row_gap: px(DOCK_GAP),
+            padding: UiRect::all(px(DOCK_GAP)),
+            ..default()
+        })
+        .with_children(|rail| {
+            for spec in &screen.base_specs {
+                if spec.layout == DockButtonLayout::Spacer {
+                    rail.spawn(Node {
+                        width: px(screen.dock.button_width),
+                        height: px(DOCK_BUTTON_HEIGHT),
+                        flex_shrink: 0.0,
+                        ..default()
+                    });
+                    continue;
+                }
+                let (background, text, border) = button_colors(spec.tone, false, false);
+                rail.spawn((
+                    Button,
+                    DockButton {
+                        action: spec.action,
+                        tone: spec.tone,
+                    },
+                    Node {
+                        width: px(screen.dock.button_width),
+                        height: px(DOCK_BUTTON_HEIGHT),
+                        flex_shrink: 0.0,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(px(6)),
+                        border: UiRect::all(px(1)),
+                        ..default()
+                    },
+                    BackgroundColor(background),
+                    BorderColor::all(border),
+                ))
+                .with_child((
+                    Text::new(spec.label.clone()),
+                    TextFont {
+                        font_size: FontSize::Px(if screen.dock.button_width < 92.0 {
+                            14.0
+                        } else {
+                            15.0
+                        }),
+                        ..default()
+                    },
+                    TextColor(text),
+                    TextLayout::justify(Justify::Center),
+                ));
+            }
+        });
+    });
+
+    let (Ok(game_root), Some(overlay)) = (game_root.single(), screen.overlay.as_ref()) else {
+        return;
+    };
+    let navigation_width =
+        ((screen.dock.rail_width - DOCK_GAP * 5.0) / overlay.navigation.len() as f32).max(1.0);
+    commands.entity(game_root).with_children(|game| {
+        game.spawn((
+            PaletteOverlay,
+            GlobalZIndex(10),
+            FocusPolicy::Block,
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(0),
+                top: px(0),
+                width: percent(100),
+                height: percent(100),
+                ..default()
+            },
+        ))
+        .with_children(|backdrop| {
+            backdrop
+                .spawn((
+                    FocusPolicy::Block,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(screen.dock.rail_left),
+                        bottom: px(0),
+                        width: px(screen.dock.rail_width),
+                        height: px(overlay.height),
+                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::Start,
+                        align_items: AlignItems::Stretch,
+                        row_gap: px(DOCK_GAP),
+                        padding: UiRect::all(px(DOCK_GAP)),
+                        border: UiRect::all(px(1)),
+                        ..default()
+                    },
+                    BackgroundColor(DOCK_BACKGROUND_COLOR),
+                    BorderColor::all(DOCK_BORDER_COLOR),
+                ))
+                .with_children(|panel| {
+                    panel
+                        .spawn(Node {
+                            width: percent(100),
+                            height: px(DOCK_HEADER_HEIGHT),
+                            flex_shrink: 0.0,
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::bottom(px(1)),
+                            ..default()
+                        })
+                        .insert(BorderColor::all(DOCK_DIVIDER_COLOR))
+                        .with_child((
+                            Text::new(overlay.heading.clone()),
+                            TextFont {
+                                font_size: FontSize::Px(15.0),
+                                ..default()
+                            },
+                            TextColor(GLYPH_COLOR),
+                            TextLayout::justify(Justify::Center),
+                        ));
+                    for spec in &overlay.content {
+                        let (background, text, border) = button_colors(spec.tone, false, false);
+                        panel
+                            .spawn((
+                                Button,
+                                DockButton {
+                                    action: spec.action,
+                                    tone: spec.tone,
+                                },
+                                Node {
+                                    width: percent(100),
+                                    height: px(DOCK_NAVIGATION_HEIGHT),
+                                    flex_shrink: 0.0,
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    padding: UiRect::horizontal(px(8)),
+                                    border: UiRect::all(px(1)),
+                                    ..default()
+                                },
+                                BackgroundColor(background),
+                                BorderColor::all(border),
+                            ))
+                            .with_child((
+                                Text::new(spec.label.clone()),
+                                TextFont {
+                                    font_size: FontSize::Px(15.0),
+                                    ..default()
+                                },
+                                TextColor(text),
+                                TextLayout::justify(Justify::Center),
+                            ));
+                    }
+                    panel
+                        .spawn(Node {
+                            width: percent(100),
+                            height: px(DOCK_NAVIGATION_HEIGHT),
+                            flex_shrink: 0.0,
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(DOCK_GAP),
+                            ..default()
+                        })
+                        .with_children(|navigation| {
+                            for spec in &overlay.navigation {
+                                let (background, text, border) =
+                                    button_colors(spec.tone, false, false);
+                                navigation
+                                    .spawn((
+                                        Button,
+                                        DockButton {
+                                            action: spec.action,
+                                            tone: spec.tone,
+                                        },
+                                        Node {
+                                            width: px(navigation_width),
+                                            height: px(DOCK_NAVIGATION_HEIGHT),
+                                            flex_shrink: 0.0,
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            padding: UiRect::horizontal(px(4)),
+                                            border: UiRect::all(px(1)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(background),
+                                        BorderColor::all(border),
+                                    ))
+                                    .with_child((
+                                        Text::new(spec.label.clone()),
+                                        TextFont {
+                                            font_size: FontSize::Px(14.0),
+                                            ..default()
+                                        },
+                                        TextColor(text),
+                                        TextLayout::justify(Justify::Center),
+                                    ));
+                            }
+                        });
+                });
+        });
+    });
+}
+
+fn button_colors(tone: DockButtonTone, armed: bool, hovered: bool) -> (Color, Color, Color) {
+    match (tone, armed, hovered) {
+        (DockButtonTone::Disabled, _, _) => (
+            DOCK_BUTTON_COLOR,
+            DOCK_DISABLED_COLOR,
+            DOCK_DISABLED_BORDER_COLOR,
+        ),
+        (DockButtonTone::Urgent, true, _) => (DOCK_BUTTON_COLOR, GLYPH_COLOR, DOCK_BORDER_COLOR),
+        (DockButtonTone::Urgent, false, _) => {
+            (DOCK_BUTTON_PRESSED_COLOR, Color::BLACK, GLYPH_COLOR)
+        }
+        (DockButtonTone::Normal, true, _) => (DOCK_BUTTON_PRESSED_COLOR, Color::BLACK, GLYPH_COLOR),
+        (DockButtonTone::Normal, false, true) => {
+            (DOCK_BUTTON_HOVERED_COLOR, GLYPH_COLOR, DOCK_BORDER_COLOR)
+        }
+        (DockButtonTone::Normal, false, false) => {
+            (DOCK_BUTTON_COLOR, GLYPH_COLOR, DOCK_BORDER_COLOR)
+        }
+    }
+}
+
+fn apply_dock_action(
+    action: DockAction,
+    dock_ui: &mut DockUi,
+    injected: &mut InjectedInput,
+    state: &mut State,
+) {
+    match action {
+        DockAction::Command(command) => {
+            if dock_ui.mode != DockMode::Gameplay {
+                dock_ui.mode = DockMode::Gameplay;
+            }
+            injected.0 = Some(command);
+        }
+        DockAction::OpenPalette => dock_ui.mode = DockMode::Categories { page: 0 },
+        DockAction::OpenContextActions => dock_ui.mode = DockMode::ContextActions { page: 0 },
+        DockAction::OpenCategory(category) => {
+            dock_ui.mode = DockMode::Category { category, page: 0 }
+        }
+        DockAction::PreviousPage => match dock_ui.mode {
+            DockMode::ContextActions { page } => {
+                dock_ui.mode = DockMode::ContextActions {
+                    page: page.saturating_sub(1),
+                }
+            }
+            DockMode::Category { category, page } => {
+                dock_ui.mode = DockMode::Category {
+                    category,
+                    page: page.saturating_sub(1),
+                }
+            }
+            DockMode::Categories { page } => {
+                dock_ui.mode = DockMode::Categories {
+                    page: page.saturating_sub(1),
+                }
+            }
+            DockMode::Gameplay => {}
+        },
+        DockAction::NextPage => match dock_ui.mode {
+            DockMode::ContextActions { page } => {
+                dock_ui.mode = DockMode::ContextActions { page: page + 1 }
+            }
+            DockMode::Category { category, page } => {
+                dock_ui.mode = DockMode::Category {
+                    category,
+                    page: page + 1,
+                }
+            }
+            DockMode::Categories { page } => dock_ui.mode = DockMode::Categories { page: page + 1 },
+            DockMode::Gameplay => {}
+        },
+        DockAction::PreviousPromptPage => {
+            dock_ui.prompt_page = dock_ui.prompt_page.saturating_sub(1);
+        }
+        DockAction::NextPromptPage => {
+            dock_ui.prompt_page += 1;
+        }
+        DockAction::OptionRow(index) => apply_option_pointer(state, index),
+        DockAction::BackToCategories => dock_ui.mode = DockMode::Categories { page: 0 },
+        DockAction::ClosePalette => dock_ui.mode = DockMode::Gameplay,
+        DockAction::Disabled => {}
+    }
+}
+
+fn dock_input(
+    input: DockPointerInput,
+    mut buttons: DockButtonQuery,
+    mut labels: Query<&mut TextColor>,
+    mut press: ResMut<DockPress>,
+    mut dock_ui: ResMut<DockUi>,
+    mut injected: ResMut<InjectedInput>,
+    mut state: ResMut<State>,
+) {
+    let Ok(window) = input.windows.single() else {
+        return;
+    };
+    if press.armed.is_none() {
+        let pointer = if input.mouse_buttons.just_pressed(MouseButton::Left) {
+            Some(DockPointer::Mouse)
+        } else {
+            input
+                .touches
+                .iter_just_pressed()
+                .min_by_key(|touch| touch.id())
+                .map(|touch| DockPointer::Touch(touch.id()))
+        };
+        if let Some(pointer) = pointer {
+            let position = match pointer {
+                DockPointer::Mouse => window.physical_cursor_position(),
+                DockPointer::Touch(id) => input
+                    .touches
+                    .iter_just_pressed()
+                    .find(|touch| touch.id() == id)
+                    .map(|touch| touch.position() * window.scale_factor()),
+            };
+            if let Some(position) = position {
+                for (entity, interaction, button, node, transform, _, _, _) in &mut buttons {
+                    if *interaction == Interaction::Pressed
+                        && button.action != DockAction::Disabled
+                        && node.contains_point(*transform, position)
+                    {
+                        press.try_arm(ArmedDockButton {
+                            entity,
+                            action: button.action,
+                            pointer,
+                            canceled: false,
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut activation = None;
+    if let Some(mut armed) = press.armed {
+        let (position, released, canceled) = match armed.pointer {
+            DockPointer::Mouse => (
+                window.physical_cursor_position(),
+                input.mouse_buttons.just_released(MouseButton::Left),
+                false,
+            ),
+            DockPointer::Touch(id) => {
+                let held = input
+                    .touches
+                    .get_pressed(id)
+                    .map(|touch| touch.position() * window.scale_factor());
+                let released = input
+                    .touches
+                    .get_released(id)
+                    .map(|touch| touch.position() * window.scale_factor());
+                (
+                    held.or(released),
+                    input.touches.just_released(id),
+                    input.touches.just_canceled(id),
+                )
+            }
+        };
+        if canceled {
+            press.armed = None;
+        } else {
+            let inside = position.is_some_and(|position| {
+                buttons
+                    .get_mut(armed.entity)
+                    .is_ok_and(|(_, _, _, node, transform, _, _, _)| {
+                        node.contains_point(*transform, position)
+                    })
+            });
+            if !inside {
+                armed.canceled = true;
+            }
+            if released {
+                if !armed.canceled && inside {
+                    activation = Some(armed.action);
+                }
+                press.armed = None;
+            } else {
+                press.armed = Some(armed);
+            }
+        }
+    }
+    if let Some(action) = activation {
+        apply_dock_action(action, &mut dock_ui, &mut injected, &mut state);
+    }
+
+    for (entity, interaction, button, _, _, mut background, mut border, children) in &mut buttons {
+        let armed = press
+            .armed
+            .is_some_and(|armed| armed.entity == entity && !armed.canceled);
+        let (button_color, text_color, border_color) =
+            button_colors(button.tone, armed, *interaction == Interaction::Hovered);
+        background.0 = button_color;
+        border.set_all(border_color);
+        if let Some(children) = children {
+            for child in children.iter() {
+                if let Ok(mut color) = labels.get_mut(child) {
+                    color.0 = text_color;
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1106,81 +2528,22 @@ enum PointerAction {
     OptionRow(usize),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PointerControl {
-    start: usize,
-    end: usize,
-    command: char,
-    label: String,
-}
-
 /// Cursor and touch positions supplied by Bevy/winit are logical pixels.
-/// Keeping the conversion in that coordinate space makes native DPI and a
-/// CSS-scaled wasm canvas use the same hit testing.
-fn pointer_cell(position: Vec2, window_size: Vec2) -> Option<PointerCell> {
-    let grid_size = Vec2::new(
-        CELL_W * DISPLAY_WIDTH as f32,
-        CELL_H * DISPLAY_HEIGHT as f32,
-    );
-    let origin = (window_size - grid_size) / 2.0;
-    let local = position - origin;
-    if local.x < 0.0 || local.y < 0.0 || local.x >= grid_size.x || local.y >= grid_size.y {
+/// `TerminalLayout` is also used to size the rendered grid, keeping native
+/// DPI, responsive wasm canvases, rendering, and hit testing on one transform.
+fn pointer_cell(position: Vec2, layout: &TerminalLayout) -> Option<PointerCell> {
+    let local = position - layout.origin;
+    if local.x < 0.0
+        || local.y < 0.0
+        || local.x >= layout.rendered_size.x
+        || local.y >= layout.rendered_size.y
+    {
         return None;
     }
     Some(PointerCell {
-        column: (local.x / CELL_W).floor() as usize,
-        row: (local.y / CELL_H).floor() as usize,
+        column: (local.x / (CELL_W * layout.scale)).floor() as usize,
+        row: (local.y / (CELL_H * layout.scale)).floor() as usize,
     })
-}
-
-fn command_at_cell(state: &State, cell: PointerCell) -> Option<char> {
-    let footer_visible = state
-        .modal
-        .as_ref()
-        .is_none_or(|modal| modal.presentation != ModalPresentation::FullScreen);
-    if !footer_visible || cell.row < KEYBINDING_FIRST_ROW {
-        return None;
-    }
-    let row = cell.row - KEYBINDING_FIRST_ROW;
-    command_bar()
-        .entries
-        .iter()
-        .find(|entry| entry.row == row && (entry.start..entry.end).contains(&cell.column))
-        .map(|entry| entry.command)
-}
-
-fn pointer_controls(state: &State) -> (usize, Vec<PointerControl>) {
-    let Some(modal) = &state.modal else {
-        return (EVENT_ROWS - 1, Vec::new());
-    };
-    let row = modal.presentation.control_row();
-    let mut commands: Vec<char> = match state.pending {
-        Some(Pending::SaveConfirm | Pending::SaveOverwrite | Pending::QuitConfirm) => {
-            vec!['y', 'n']
-        }
-        Some(Pending::PutRingHand(_) | Pending::RemoveRingHand) => vec!['l', 'r'],
-        Some(Pending::Discoveries) => vec!['!', '?', '=', '/', '*'],
-        _ => Vec::new(),
-    };
-    commands.push('\u{1b}');
-    let segment_width = if commands.len() > 4 { 8 } else { 12 };
-    let total = commands.len() * segment_width;
-    let first = DISPLAY_WIDTH.saturating_sub(total);
-    let controls = commands
-        .into_iter()
-        .enumerate()
-        .map(|(index, command)| PointerControl {
-            start: first + index * segment_width,
-            end: first + (index + 1) * segment_width,
-            command,
-            label: match command {
-                '\u{1b}' => "Escape".into(),
-                ch if ch.is_ascii_alphabetic() => ch.to_ascii_uppercase().to_string(),
-                ch => control_label(ch),
-            },
-        })
-        .collect();
-    (row, controls)
 }
 
 fn dungeon_pos_at_cell(cell: PointerCell) -> Option<Pos> {
@@ -1271,15 +2634,6 @@ fn inventory_letters(game: &Game) -> Vec<char> {
 }
 
 fn pointer_action_at_cell(state: &State, cell: PointerCell) -> Option<PointerAction> {
-    let (control_row, controls) = pointer_controls(state);
-    if cell.row == control_row
-        && let Some(control) = controls
-            .iter()
-            .find(|control| (control.start..control.end).contains(&cell.column))
-    {
-        return Some(PointerAction::Key(control.command));
-    }
-
     if let Some(pending) = state.pending {
         if direction_pending(pending) {
             if let Some(modal) = &state.modal {
@@ -1310,7 +2664,8 @@ fn pointer_action_at_cell(state: &State, cell: PointerCell) -> Option<PointerAct
             let leading_rows = state.modal.as_deref().map_or(0, |modal| {
                 modal.lines().count().saturating_sub(letters.len())
             });
-            if let Some(index) = cell.row.checked_sub(leading_rows)
+            let absolute_row = state.modal.as_ref().map_or(0, |modal| modal.offset) + cell.row;
+            if let Some(index) = absolute_row.checked_sub(leading_rows)
                 && let Some(letter) = letters.get(index)
             {
                 return Some(PointerAction::Key(*letter));
@@ -1339,9 +2694,6 @@ fn pointer_action_at_cell(state: &State, cell: PointerCell) -> Option<PointerAct
             return Some(PointerAction::Key(' '));
         }
         return None;
-    }
-    if let Some(command) = command_at_cell(state, cell) {
-        return Some(PointerAction::Key(command));
     }
     dungeon_pos_at_cell(cell).map(PointerAction::Travel)
 }
@@ -1389,22 +2741,17 @@ fn pointer_input(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     touches: Res<Touches>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut pointer_ui: ResMut<PointerUi>,
+    screen: Res<ScreenLayout>,
+    dock_ui: Res<DockUi>,
     mut injected: ResMut<InjectedInput>,
     mut state: ResMut<State>,
 ) {
+    if dock_ui.mode != DockMode::Gameplay || dock_ui.prompt_pending.is_some() {
+        return;
+    }
     let Ok(window) = windows.single() else {
         return;
     };
-    let window_size = Vec2::new(window.width(), window.height());
-    let mouse_cell = window
-        .cursor_position()
-        .and_then(|position| pointer_cell(position, window_size));
-    let hovered_command = mouse_cell.and_then(|cell| command_at_cell(&state, cell));
-    if pointer_ui.hovered_command != hovered_command {
-        pointer_ui.hovered_command = hovered_command;
-    }
-
     let touch_position = touches
         .iter_just_pressed()
         .next()
@@ -1415,7 +2762,8 @@ fn pointer_input(
             .then(|| window.cursor_position())
             .flatten()
     });
-    let Some(cell) = activation.and_then(|position| pointer_cell(position, window_size)) else {
+    let Some(cell) = activation.and_then(|position| pointer_cell(position, &screen.terminal))
+    else {
         return;
     };
     if state.game.is_traveling() {
@@ -1427,9 +2775,6 @@ fn pointer_input(
     };
     match action {
         PointerAction::Key(command) => {
-            if command_at_cell(&state, cell) == Some(command) {
-                pointer_ui.last_tapped_command = Some(command);
-            }
             injected.0 = Some(command);
         }
         PointerAction::Travel(destination) => {
@@ -1439,11 +2784,17 @@ fn pointer_input(
     }
 }
 
-fn advance_pointer_travel(mut state: ResMut<State>) {
+fn advance_pointer_travel(
+    mut state: ResMut<State>,
+    dock_ui: Res<DockUi>,
+    dock_press: Res<DockPress>,
+) {
     if !state.game.is_traveling() {
         return;
     }
-    if state.pending.is_some()
+    if dock_press.armed.is_some()
+        || dock_ui.mode != DockMode::Gameplay
+        || state.pending.is_some()
         || state.modal.is_some()
         || state.game.end != mrzavec::game::EndState::Playing
         || state.game.player.conditions.asleep_turns > 0
@@ -1459,10 +2810,20 @@ fn keyboard(
     time: Res<Time>,
     mut movement_repeat: ResMut<MovementRepeat>,
     mut injected: ResMut<InjectedInput>,
+    mut dock_ui: ResMut<DockUi>,
     mut state: ResMut<State>,
     mut app_exit: MessageWriter<AppExit>,
 ) {
     let injected_input = injected.0.take();
+    if matches!(
+        dock_ui.mode,
+        DockMode::ContextActions { .. } | DockMode::Categories { .. } | DockMode::Category { .. }
+    ) {
+        if keys.just_pressed(KeyCode::Escape) {
+            dock_ui.mode = DockMode::Gameplay;
+        }
+        return;
+    }
     let space_pressed = keys.just_pressed(KeyCode::Space) || injected_input == Some(' ');
     let escape_pressed = keys.just_pressed(KeyCode::Escape) || injected_input == Some('\u{1b}');
     let shifted = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
@@ -1504,6 +2865,11 @@ fn keyboard(
         {
             state.game.execute(Command::Rest);
         }
+        return;
+    }
+    if state.game.end != mrzavec::game::EndState::Playing && state.score_recorded && escape_pressed
+    {
+        app_exit.write(AppExit::Success);
         return;
     }
     if matches!(
@@ -3290,21 +4656,18 @@ fn direction_prompt(state: &mut State, pending: Pending) -> Option<Modal> {
     state.game.remember_message(prompt);
     let mut lines = vec![message_display_text(prompt)];
     lines.extend(direction_menu_entries().map(|(_, text)| text));
-    Some(Modal::overlay(
-        lines.join("\n"),
-        OverlayControls::AboveStatus,
-    ))
+    Some(Modal::overlay(lines.join("\n")))
 }
 
 fn direction_menu_entries() -> impl Iterator<Item = (char, String)> {
     ['h', 'j', 'k', 'l', 'y', 'u', 'b', 'n']
         .into_iter()
         .map(|command| {
-            let (_, description, _) = HELP_ENTRIES
+            let entry = HELP_ENTRIES
                 .iter()
-                .find(|(candidate, _, _)| *candidate == command)
+                .find(|entry| entry.command == command)
                 .expect("every pointer direction is in HELP_ENTRIES");
-            (command, help_entry_text(command, description))
+            (command, help_entry_text(command, entry.description))
         })
 }
 fn ring_hand_prompt(game: &Game) -> String {
@@ -3495,38 +4858,19 @@ fn rings_text(game: &Game) -> String {
 
 fn render(
     state: Res<State>,
-    pointer_ui: Res<PointerUi>,
     mut cells: Query<(&Cell, &Children, &mut BackgroundColor)>,
     mut glyphs: Query<(&mut Text, &mut TextColor), With<Glyph>>,
 ) {
-    if !state.is_changed() && !pointer_ui.is_changed() {
+    if !state.is_changed() {
         return;
     }
     let buffer = display(&state);
-    let footer_visible = state
-        .modal
-        .as_ref()
-        .is_none_or(|modal| modal.presentation != ModalPresentation::FullScreen);
-    let highlighted = pointer_ui
-        .hovered_command
-        .or(pointer_ui.last_tapped_command);
     for (cell, children, mut background) in &mut cells {
-        let column = cell.0 % DISPLAY_WIDTH;
-        let row = cell.0 / DISPLAY_WIDTH;
-        let cell_command = command_at_cell(&state, PointerCell { column, row });
-        background.0 = if cell_command.is_some() && cell_command == highlighted {
-            COMMAND_HIGHLIGHT_COLOR
-        } else {
-            Color::BLACK
-        };
+        background.0 = Color::BLACK;
         for child in children.iter() {
             if let Ok((mut text, mut color)) = glyphs.get_mut(child) {
                 text.0 = buffer[cell.0].to_string();
-                color.0 = if footer_visible && row >= KEYBINDING_FIRST_ROW {
-                    KEYBINDING_DIM_COLOR
-                } else {
-                    GLYPH_COLOR
-                };
+                color.0 = GLYPH_COLOR;
             }
         }
     }
@@ -3558,7 +4902,6 @@ fn display(state: &State) -> Vec<char> {
         if reserve_more {
             write_terminal_text(&mut out, MODAL_MORE_ROW, 0, " --Dalje--", DISPLAY_WIDTH);
         }
-        write_pointer_controls(&mut out, state);
         return out;
     }
     let mut event_text = state.visible_message.clone().or_else(|| {
@@ -3578,13 +4921,7 @@ fn display(state: &State) -> Vec<char> {
         text.push_str(prompt.text.trim());
     }
     if let Some(text) = event_text {
-        let reserved_control_row = state
-            .modal
-            .as_ref()
-            .map(|modal| modal.presentation.control_row());
-        let content_rows: Vec<usize> = (0..EVENT_ROWS)
-            .filter(|row| Some(*row) != reserved_control_row)
-            .collect();
+        let content_rows: Vec<usize> = (0..EVENT_ROWS).collect();
         write_event_text(&mut out, &text, &content_rows);
     }
     for screen_y in DUNGEON_FIRST_ROW..STATUS_ROW {
@@ -3596,14 +4933,10 @@ fn display(state: &State) -> Vec<char> {
     }
     let status = status_text(&state.game);
     write_terminal_text(&mut out, STATUS_ROW, 0, &status, DISPLAY_WIDTH);
-    for (row, text) in command_bar().rows.iter().enumerate() {
-        write_terminal_text(&mut out, KEYBINDING_FIRST_ROW + row, 0, text, DISPLAY_WIDTH);
-    }
     if let Some(modal) = &state.modal
-        && let ModalPresentation::Overlay(controls) = modal.presentation
+        && modal.presentation == ModalPresentation::Overlay
     {
-        let content_rows: Vec<usize> = overlay_content_rows(controls).collect();
-        let lines: Vec<&str> = modal.text.lines().take(content_rows.len()).collect();
+        let lines: Vec<&str> = modal.text.lines().take(STATUS_ROW).collect();
         let width = lines
             .iter()
             .map(|line| line.chars().count())
@@ -3611,28 +4944,14 @@ fn display(state: &State) -> Vec<char> {
             .unwrap_or(0)
             .min(DISPLAY_WIDTH - 2);
         let start_x = (DISPLAY_WIDTH - 1).saturating_sub(width);
-        for (y, line) in content_rows.into_iter().zip(lines) {
+        for (y, line) in lines.into_iter().enumerate() {
             for x in start_x.saturating_sub(1)..DISPLAY_WIDTH {
                 out[y * DISPLAY_WIDTH + x] = ' ';
             }
             write_terminal_text(&mut out, y, start_x, line, DISPLAY_WIDTH);
         }
     }
-    write_pointer_controls(&mut out, state);
     out
-}
-
-fn write_pointer_controls(out: &mut [char], state: &State) {
-    let (row, controls) = pointer_controls(state);
-    for control in controls {
-        let width = control.end - control.start;
-        let label_width = control.label.chars().count();
-        let start = control.start + width.saturating_sub(label_width) / 2;
-        for column in control.start..control.end.min(DISPLAY_WIDTH) {
-            out[row * DISPLAY_WIDTH + column] = ' ';
-        }
-        write_terminal_text(out, row, start, &control.label, control.end);
-    }
 }
 
 fn modal_has_next_page(modal: &Modal) -> bool {
@@ -4049,8 +5368,8 @@ fn discoveries_prompt(game: &Game) -> String {
 fn help_text() -> String {
     HELP_ENTRIES
         .iter()
-        .filter(|(_, _, print)| *print)
-        .map(|(ch, description, _)| help_entry_text(*ch, description))
+        .filter(|entry| entry.print)
+        .map(|entry| help_entry_text(entry.command, entry.description))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -4287,9 +5606,87 @@ mod tests {
         app.insert_resource(Time::<()>::default());
         app.insert_resource(MovementRepeat::default());
         app.insert_resource(InjectedInput::default());
+        app.insert_resource(DockUi::default());
         app.add_message::<AppExit>();
         app.add_systems(Update, keyboard);
         app
+    }
+
+    fn dock_input_app(initial_state: State) -> App {
+        let mut app = App::new();
+        app.insert_resource(initial_state);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(ButtonInput::<MouseButton>::default());
+        app.insert_resource(Touches::default());
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(MovementRepeat::default());
+        app.insert_resource(InjectedInput::default());
+        app.insert_resource(DockUi::default());
+        app.insert_resource(DockPress::default());
+        app.add_message::<AppExit>();
+        app.world_mut().spawn((game_window(), PrimaryWindow));
+        app.add_systems(Update, (dock_input, keyboard).chain());
+        app
+    }
+
+    fn spawn_test_dock_button(app: &mut App, action: DockAction) -> Entity {
+        app.world_mut()
+            .spawn((
+                Button,
+                DockButton {
+                    action,
+                    tone: DockButtonTone::Normal,
+                },
+                Interaction::None,
+                ComputedNode {
+                    size: Vec2::new(100.0, DOCK_BUTTON_HEIGHT),
+                    ..default()
+                },
+                UiGlobalTransform::from_xy(50.0, DOCK_BUTTON_HEIGHT / 2.0),
+                BackgroundColor(DOCK_BUTTON_COLOR),
+                BorderColor::all(DOCK_BORDER_COLOR),
+            ))
+            .id()
+    }
+
+    fn set_test_cursor(app: &mut App, position: Vec2) {
+        let mut windows = app
+            .world_mut()
+            .query_filtered::<&mut Window, With<PrimaryWindow>>();
+        windows
+            .single_mut(app.world_mut())
+            .expect("test app has one primary window")
+            .set_physical_cursor_position(Some(position.as_dvec2()));
+    }
+
+    fn arm_test_dock_button(app: &mut App, entity: Entity) {
+        set_test_cursor(app, Vec2::new(50.0, DOCK_BUTTON_HEIGHT / 2.0));
+        *app.world_mut()
+            .entity_mut(entity)
+            .get_mut::<Interaction>()
+            .expect("test dock button has interaction") = Interaction::Pressed;
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .clear();
+    }
+
+    fn release_test_dock_button(app: &mut App, entity: Entity) {
+        set_test_cursor(app, Vec2::new(50.0, DOCK_BUTTON_HEIGHT / 2.0));
+        *app.world_mut()
+            .entity_mut(entity)
+            .get_mut::<Interaction>()
+            .expect("test dock button has interaction") = Interaction::Hovered;
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .release(MouseButton::Left);
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .clear();
     }
 
     fn pointer_keyboard_app(initial_state: State) -> App {
@@ -4301,7 +5698,10 @@ mod tests {
         app.insert_resource(Time::<()>::default());
         app.insert_resource(MovementRepeat::default());
         app.insert_resource(InjectedInput::default());
-        app.insert_resource(PointerUi::default());
+        app.insert_resource(DockUi::default());
+        let mut screen = ScreenLayout::default();
+        screen.terminal.origin = Vec2::new(12.0, 30.0);
+        app.insert_resource(screen);
         app.add_message::<AppExit>();
         app.world_mut().spawn((game_window(), PrimaryWindow));
         app.add_systems(Update, (pointer_input, keyboard).chain());
@@ -4309,10 +5709,12 @@ mod tests {
     }
 
     fn click_cell(app: &mut App, cell: PointerCell) {
-        let position = Vec2::new(
-            12.0 + CELL_W * (cell.column as f32 + 0.5),
-            12.0 + CELL_H * (cell.row as f32 + 0.5),
-        )
+        let layout = app.world().resource::<ScreenLayout>().terminal;
+        let position = (layout.origin
+            + Vec2::new(
+                CELL_W * layout.scale * (cell.column as f32 + 0.5),
+                CELL_H * layout.scale * (cell.row as f32 + 0.5),
+            ))
         .as_dvec2();
         let mut windows = app
             .world_mut()
@@ -4366,71 +5768,703 @@ mod tests {
     }
 
     #[test]
-    fn pointer_coordinate_math_uses_grid_margins_and_logical_pixels() {
-        let window_size = Vec2::new(
-            CELL_W * DISPLAY_WIDTH as f32 + 24.0,
-            CELL_H * DISPLAY_HEIGHT as f32 + 24.0,
-        );
-        let position = Vec2::new(12.0 + CELL_W * 17.5, 12.0 + CELL_H * 9.5);
+    fn responsive_terminal_geometry_and_pointer_mapping_share_one_transform() {
+        for window_size in [
+            Vec2::new(984.0, 744.0),
+            Vec2::new(1366.0, 768.0),
+            Vec2::new(400.0, 800.0),
+        ] {
+            let dock_height = dock_height(1);
+            let layout = calculate_terminal_layout(window_size, dock_height);
+            let position = layout.origin
+                + Vec2::new(CELL_W * layout.scale * 17.5, CELL_H * layout.scale * 9.5);
+            assert_eq!(
+                pointer_cell(position, &layout),
+                Some(PointerCell { column: 17, row: 9 })
+            );
+            assert_eq!(
+                pointer_cell(layout.origin, &layout),
+                Some(PointerCell { column: 0, row: 0 })
+            );
+            assert_eq!(
+                pointer_cell(
+                    layout.origin + layout.rendered_size - Vec2::splat(0.01),
+                    &layout,
+                ),
+                Some(PointerCell {
+                    column: DISPLAY_WIDTH - 1,
+                    row: DISPLAY_HEIGHT - 1,
+                })
+            );
+            assert_eq!(
+                pointer_cell(layout.origin - Vec2::new(0.1, 0.0), &layout),
+                None
+            );
+            assert_eq!(
+                pointer_cell(layout.origin - Vec2::new(0.0, 0.1), &layout),
+                None
+            );
+            assert_eq!(
+                pointer_cell(
+                    layout.origin + Vec2::new(layout.rendered_size.x + 0.1, 0.0),
+                    &layout,
+                ),
+                None
+            );
+            assert_eq!(
+                pointer_cell(
+                    layout.origin + Vec2::new(0.0, layout.rendered_size.y + 0.1),
+                    &layout,
+                ),
+                None
+            );
+            assert!(
+                layout.origin.y + layout.rendered_size.y
+                    <= window_size.y - dock_height + f32::EPSILON
+            );
+        }
+
+        let layout = calculate_terminal_layout(Vec2::new(400.0, 800.0), dock_height(1));
+        assert!((layout.scale - (400.0 / 960.0)).abs() < 0.001);
         assert_eq!(
-            pointer_cell(position, window_size),
-            Some(PointerCell { column: 17, row: 9 })
+            pointer_cell(Vec2::new(200.0, 799.0), &layout),
+            None,
+            "dock coordinates never map to terminal cells"
         );
-        assert_eq!(pointer_cell(Vec2::new(11.9, 12.0), window_size), None);
-        assert_eq!(pointer_cell(Vec2::new(12.0, 11.9), window_size), None);
 
         let mut scaled = game_window();
         scaled
             .resolution
             .set_scale_factor_and_apply_to_physical_size(2.0);
-        scaled.set_physical_cursor_position(Some(position.as_dvec2() * 2.0));
-        assert_eq!(scaled.cursor_position(), Some(position));
-        assert_eq!(
-            pointer_cell(
-                scaled.cursor_position().unwrap(),
-                Vec2::new(scaled.width(), scaled.height())
-            ),
-            Some(PointerCell { column: 17, row: 9 })
-        );
+        let logical = Vec2::new(17.5 * CELL_W, 9.5 * CELL_H);
+        scaled.set_physical_cursor_position(Some(logical.as_dvec2() * 2.0));
+        assert_eq!(scaled.cursor_position(), Some(logical));
     }
 
     #[test]
-    fn command_bar_is_help_derived_grouped_and_cell_addressable() {
-        let state = state(90_001);
-        let layout = command_bar();
-        assert_eq!(layout.rows.len(), COMMAND_BAR_ROWS);
-        assert!(
-            layout
-                .rows
-                .iter()
-                .all(|row| row.chars().count() <= DISPLAY_WIDTH)
-        );
-        for (command, description, print) in HELP_ENTRIES {
-            if !print || *command == '\0' {
+    fn browser_frame_reserves_all_four_safe_area_insets() {
+        let html = include_str!("../web/index.html");
+        for edge in ["top", "right", "bottom", "left"] {
+            assert!(
+                html.contains(&format!("padding-{edge}: env(safe-area-inset-{edge}, 0px)")),
+                "the responsive game frame must reserve the {edge} safe-area inset"
+            );
+        }
+    }
+
+    #[test]
+    fn every_printable_help_command_is_in_exactly_one_palette_category() {
+        for entry in HELP_ENTRIES {
+            if !entry.print || entry.command == '\0' {
                 continue;
             }
-            let entry = layout
-                .entries
-                .iter()
-                .find(|entry| entry.command == *command)
-                .expect("every printable non-run help entry is in the command bar");
-            assert!(
-                layout.rows[entry.row].contains(&command_bar_entry_text(*command, description))
+            let occurrences: usize = CommandCategory::ALL
+                .into_iter()
+                .map(|category| usize::from(entry.category == category))
+                .sum();
+            assert_eq!(
+                occurrences,
+                1,
+                "{} must occur in exactly one palette category",
+                control_label(entry.command)
             );
-            let action = pointer_action_at_cell(
-                &state,
-                PointerCell {
-                    column: entry.start,
-                    row: KEYBINDING_FIRST_ROW + entry.row,
-                },
+            assert!(!command_palette_label(entry).trim().is_empty());
+            assert_eq!(
+                entry.dock_label.is_some(),
+                entry.dock_priority.is_some(),
+                "{} must define its compact label and priority together",
+                control_label(entry.command)
             );
-            assert_eq!(action, Some(PointerAction::Key(*command)));
+            assert_eq!(
+                entry.dock_label.is_some(),
+                entry.dock_importance.is_some(),
+                "{} must define semantic dock importance with its compact label",
+                control_label(entry.command)
+            );
         }
-        assert!(!layout.entries.iter().any(|entry| entry.command == '\0'));
+        assert!(
+            HELP_ENTRIES
+                .iter()
+                .filter(|entry| entry.command == '\0')
+                .all(|entry| entry.print && entry.dock_label.is_none())
+        );
     }
 
     #[test]
-    fn injected_command_bar_input_uses_the_normal_keyboard_path() {
+    fn command_palette_reaches_every_printable_command_once() {
+        let state = state(90_020);
+        let expected: std::collections::BTreeSet<char> = HELP_ENTRIES
+            .iter()
+            .filter_map(|entry| (entry.print && entry.command != '\0').then_some(entry.command))
+            .collect();
+        let mut actual = std::collections::BTreeSet::new();
+
+        for category in CommandCategory::ALL {
+            let category_entries = HELP_ENTRIES
+                .iter()
+                .filter(|entry| entry.print && entry.command != '\0' && entry.category == category)
+                .count();
+            for page in 0..category_entries.div_ceil(PALETTE_PAGE_SIZE).max(1) {
+                for spec in dock_specs(&state, DockMode::Category { category, page }) {
+                    if let DockAction::Command(command) = spec.action {
+                        assert!(
+                            actual.insert(command),
+                            "{} appeared more than once in the palette",
+                            control_label(command)
+                        );
+                    }
+                }
+            }
+        }
+
+        assert_eq!(actual, expected);
+        assert!(
+            dock_specs(&state, DockMode::Categories { page: 0 })
+                .iter()
+                .all(|spec| !matches!(spec.action, DockAction::Command(_)))
+        );
+    }
+
+    #[test]
+    fn gameplay_dock_ranks_context_and_exposes_exact_overflow() {
+        let mut state = state(90_021);
+        state.game.player.inventory.clear();
+        state.game.player.weapon = None;
+        state.game.player.armor = None;
+        state.game.player.rings = [None, None];
+        state.game.floor_items.clear();
+
+        assert!(contextual_commands(&state).is_empty());
+        let empty = gameplay_dock_specs(&state, 400.0);
+        assert_eq!(empty.len(), gameplay_columns(400.0));
+        assert_eq!(empty[0].action, DockAction::Command('s'));
+        assert_eq!(empty[1].action, DockAction::Command('.'));
+        assert_eq!(empty[2].layout, DockButtonLayout::Spacer);
+        assert_eq!(empty[3].action, DockAction::Disabled);
+        assert_eq!(empty[3].label, context_options_heading());
+        assert_eq!(empty[4].action, DockAction::OpenPalette);
+
+        let mut potion = mrzavec::item::Item::basic(990_021, ItemKind::Potion, 0);
+        potion.pos = Some(state.game.player.pos);
+        state.game.floor_items.push(potion);
+        state
+            .game
+            .player
+            .inventory
+            .push(pack_item(990_022, ItemKind::Food, 0, 'a'));
+        state
+            .game
+            .player
+            .inventory
+            .push(pack_item(990_023, ItemKind::Stick, 0, 'b'));
+
+        let actions = contextual_commands(&state);
+        assert_eq!(actions[0], ',');
+        assert_eq!(actions, vec![',', 'e', 'z', 'w']);
+        let narrow = gameplay_dock_specs(&state, 400.0);
+        assert_eq!(narrow[0].action, DockAction::Command(','));
+        assert_eq!(narrow[0].tone, DockButtonTone::Urgent);
+        assert_eq!(narrow[1].action, DockAction::Command('e'));
+        assert_eq!(narrow[2].action, DockAction::Command('z'));
+        assert_eq!(narrow[3].action, DockAction::OpenContextActions);
+        assert_eq!(narrow[3].label, context_options_count_label(3));
+        assert_eq!(narrow[4].action, DockAction::OpenPalette);
+        assert_eq!(context_overlay_commands(&state, 400.0), vec!['w', 's', '.']);
+
+        let very_narrow = gameplay_dock_specs(&state, 320.0);
+        assert_eq!(very_narrow.len(), 4);
+        assert_eq!(very_narrow[0].action, DockAction::Command(','));
+        assert_eq!(very_narrow[0].tone, DockButtonTone::Urgent);
+        assert_eq!(very_narrow[1].action, DockAction::Command('e'));
+        assert_eq!(very_narrow[2].action, DockAction::OpenContextActions);
+        assert_eq!(very_narrow[2].label, context_options_count_label(4));
+        assert_eq!(very_narrow[3].action, DockAction::OpenPalette);
+        assert_eq!(
+            context_overlay_commands(&state, 320.0),
+            vec!['z', 'w', 's', '.']
+        );
+        let two_columns = gameplay_dock_specs(&state, 150.0);
+        assert_eq!(two_columns.len(), 2);
+        assert_eq!(
+            two_columns[0].action,
+            DockAction::OpenContextActions,
+            "when no direct slot fits, Možnosti retains every ranked command"
+        );
+        assert_eq!(
+            two_columns[0].label,
+            context_options_count_label(ranked_gameplay_commands(&state).len())
+        );
+        assert_eq!(two_columns[1].action, DockAction::OpenPalette);
+
+        let overlay_specs =
+            palette_content_specs(&state, DockMode::ContextActions { page: 0 }, 320.0);
+        let overlay_commands: Vec<_> = overlay_specs
+            .into_iter()
+            .filter_map(|spec| match spec.action {
+                DockAction::Command(command) => Some(command),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(overlay_commands, vec!['z', 'w', 's', '.']);
+        assert!(overlay_commands.iter().all(|command| {
+            !very_narrow[..2]
+                .iter()
+                .any(|spec| spec.action == DockAction::Command(*command))
+        }));
+
+        state.game.player.pos = state.game.dungeon.stairs;
+        state.game.floor_items.clear();
+        state.game.player.inventory.clear();
+        let without_amulet = contextual_commands(&state);
+        assert_eq!(without_amulet[0], '>');
+        assert!(!without_amulet.contains(&'<'));
+
+        state.game.has_amulet = true;
+        let with_amulet = contextual_commands(&state);
+        assert_eq!(with_amulet, vec!['<', '>']);
+        let stairs = gameplay_dock_specs(&state, 320.0);
+        assert_eq!(stairs[0].action, DockAction::Command('<'));
+        assert_eq!(stairs[1].action, DockAction::Command('>'));
+        assert_eq!(stairs[0].tone, DockButtonTone::Urgent);
+        assert_eq!(stairs[1].tone, DockButtonTone::Urgent);
+
+        state.game.player.pos = mrzavec::map::Pos::new(0, 0);
+        state.game.has_amulet = false;
+        state.game.player.inventory.clear();
+        state.game.player.armor = Some(990_024);
+        state.game.player.rings[0] = Some(990_025);
+        let equipped_actions = contextual_commands(&state);
+        assert!(equipped_actions.contains(&'T'));
+        assert!(equipped_actions.contains(&'R'));
+
+        state.pending = Some(Pending::Help);
+        state.modal = Some(Modal::full_screen(help_text()));
+        assert!(contextual_commands(&state).is_empty());
+    }
+
+    #[test]
+    fn metadata_ranking_is_urgent_first_and_stable_for_ties() {
+        let ranked = rank_dock_commands(['P', '.', 'W', '>', 's', 'w', ',']);
+        let commands: Vec<_> = ranked.iter().map(|command| command.command).collect();
+        assert_eq!(commands, vec![',', '>', 'w', 'W', 'P', 's', '.']);
+        assert_eq!(ranked[0].importance, DockImportance::Urgent);
+        assert_eq!(ranked[1].importance, DockImportance::Urgent);
+        assert_eq!(ranked[2].priority, ranked[3].priority);
+        assert!(ranked[2].declaration_order < ranked[3].declaration_order);
+    }
+
+    #[test]
+    fn urgent_tone_is_persistent_inverse_and_arms_as_inverse_of_inverse() {
+        assert_eq!(
+            button_colors(DockButtonTone::Urgent, false, false),
+            (DOCK_BUTTON_PRESSED_COLOR, Color::BLACK, GLYPH_COLOR)
+        );
+        assert_eq!(
+            button_colors(DockButtonTone::Urgent, true, false),
+            (DOCK_BUTTON_COLOR, GLYPH_COLOR, DOCK_BORDER_COLOR)
+        );
+    }
+
+    #[test]
+    fn inventory_fallback_is_nonurgent_and_options_disable_without_overflow() {
+        let mut state = state(90_029);
+        state.game.player.inventory.clear();
+        state.game.player.weapon = None;
+        state.game.player.armor = None;
+        state.game.player.rings = [None, None];
+        state.game.floor_items.clear();
+
+        let ranked = rank_dock_commands(['i', 's', '.']);
+        let commands: Vec<_> = ranked.iter().map(|command| command.command).collect();
+        assert_eq!(commands, vec!['i', 's', '.']);
+        assert_eq!(ranked[0].importance, DockImportance::Fallback);
+        assert_eq!(dock_command_tone('i'), DockButtonTone::Normal);
+
+        let wide = gameplay_dock_specs(&state, 984.0);
+        assert_eq!(wide[0].action, DockAction::Command('s'));
+        assert_eq!(wide[1].action, DockAction::Command('.'));
+        assert_eq!(wide[wide.len() - 2].action, DockAction::Disabled);
+        assert_eq!(wide[wide.len() - 2].label, context_options_heading());
+        assert_eq!(wide[wide.len() - 1].action, DockAction::OpenPalette);
+        assert!(context_overlay_commands(&state, 984.0).is_empty());
+    }
+
+    #[test]
+    fn gameplay_dock_exposes_each_matching_inventory_action_in_isolation() {
+        for (offset, kind, command) in [
+            (0, ItemKind::Potion, 'q'),
+            (1, ItemKind::Scroll, 'r'),
+            (2, ItemKind::Food, 'e'),
+            (3, ItemKind::Stick, 'z'),
+            (4, ItemKind::Weapon, 'w'),
+            (5, ItemKind::Armor, 'W'),
+            (6, ItemKind::Ring, 'P'),
+        ] {
+            let mut state = state(90_030 + offset);
+            state.game.player.inventory = vec![pack_item(990_030 + offset, kind, 0, 'a')];
+            state.game.player.weapon = None;
+            state.game.player.armor = None;
+            state.game.player.rings = [None, None];
+            state.game.floor_items.clear();
+
+            let actions = contextual_commands(&state);
+            assert!(
+                actions.contains(&command),
+                "{command} should be offered for {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn gameplay_dock_is_one_map_aligned_row_with_fixed_final_anchors() {
+        let base_state = state(90_022);
+        let mut contextual = state(90_022);
+        let mut item = mrzavec::item::Item::basic(990_022, ItemKind::Potion, 0);
+        item.pos = Some(contextual.game.player.pos);
+        contextual.game.floor_items.push(item);
+
+        for (window_size, current) in [
+            (Vec2::new(320.0, 480.0), &base_state),
+            (Vec2::new(400.0, 800.0), &base_state),
+            (Vec2::new(1366.0, 768.0), &base_state),
+            (Vec2::new(320.0, 480.0), &contextual),
+            (Vec2::new(400.0, 800.0), &contextual),
+            (Vec2::new(1366.0, 768.0), &contextual),
+        ] {
+            let screen = calculate_screen_layout(window_size, current, DockMode::Gameplay);
+            assert_eq!(screen.dock.rows, 1);
+            assert_eq!(screen.dock.height, dock_height(1));
+            assert_eq!(screen.dock.rail_left, screen.terminal.origin.x);
+            assert_eq!(screen.dock.rail_width, screen.terminal.rendered_size.x);
+            assert!(screen.dock.button_width >= DOCK_MIN_BUTTON_WIDTH);
+            let options = screen.base_specs.len() - 2;
+            assert!(
+                matches!(
+                    screen.base_specs[options].action,
+                    DockAction::OpenContextActions | DockAction::Disabled
+                ),
+                "Možnosti must be the penultimate gameplay control"
+            );
+            assert_eq!(
+                screen.base_specs[options + 1].action,
+                DockAction::OpenPalette,
+                "Komandy must be the far-right gameplay control"
+            );
+            assert!(screen.base_specs[options + 1].label.contains("Komandy"));
+            assert!(screen.base_specs[options].label.contains("Možnosti"));
+            assert_eq!(
+                screen
+                    .base_specs
+                    .iter()
+                    .filter(|spec| spec.label.contains("Komandy"))
+                    .count(),
+                1,
+                "normal gameplay exposes exactly one global Komandy control"
+            );
+        }
+
+        let narrow =
+            calculate_screen_layout(Vec2::new(320.0, 480.0), &contextual, DockMode::Gameplay);
+        let wide =
+            calculate_screen_layout(Vec2::new(1366.0, 768.0), &contextual, DockMode::Gameplay);
+        let direct_count = |layout: &ScreenLayout| {
+            layout.base_specs[..layout.base_specs.len() - 2]
+                .iter()
+                .filter(|spec| matches!(spec.action, DockAction::Command(_)))
+                .count()
+        };
+        assert!(direct_count(&wide) > direct_count(&narrow));
+    }
+
+    #[test]
+    fn responsive_density_uses_rendered_map_width_not_raw_window_width() {
+        let state = state(90_023);
+        let short_wide_window =
+            calculate_screen_layout(Vec2::new(1000.0, 400.0), &state, DockMode::Gameplay);
+        assert!(
+            gameplay_columns(short_wide_window.terminal.rendered_size.x) < gameplay_columns(1000.0)
+        );
+        assert_eq!(
+            short_wide_window.base_specs.len(),
+            gameplay_columns(short_wide_window.terminal.rendered_size.x)
+        );
+        assert_eq!(
+            short_wide_window.dock.rail_width,
+            short_wide_window.terminal.rendered_size.x
+        );
+    }
+
+    #[test]
+    fn gameplay_capacity_is_monotonic_as_the_terminal_rail_grows() {
+        let mut previous = gameplay_columns(0.0);
+        for width in 1..=1_400 {
+            let current = gameplay_columns(width as f32);
+            assert!(
+                current >= previous,
+                "capacity fell from {previous} to {current} at {width}px"
+            );
+            previous = current;
+        }
+        assert!(gameplay_columns(984.0) > gameplay_columns(400.0));
+    }
+
+    #[test]
+    fn prompt_rows_are_content_derived_and_keep_minimum_targets() {
+        let mut confirmation = state(90_024);
+        confirmation.pending = Some(Pending::QuitConfirm);
+        confirmation.modal = Some(Modal::inline_prompt("Iziti?"));
+        let confirmation_layout =
+            calculate_screen_layout(Vec2::new(400.0, 800.0), &confirmation, DockMode::Gameplay);
+        assert_eq!(confirmation_layout.base_specs.len(), 3);
+        assert_eq!(confirmation_layout.dock.rows, 1);
+        assert_eq!(confirmation_layout.dock.height, dock_height(1));
+
+        let mut direction = state(90_025);
+        direction.pending = Some(Pending::MoveDirection);
+        direction.modal = Some(Modal::overlay("Kamo?"));
+        let direction_layout =
+            calculate_screen_layout(Vec2::new(400.0, 800.0), &direction, DockMode::Gameplay);
+        assert_eq!(direction_layout.base_specs.len(), 9);
+        assert_eq!(direction_layout.dock.rows, 2);
+        assert!(direction_layout.dock.button_width >= DOCK_MIN_BUTTON_WIDTH);
+
+        let very_narrow =
+            calculate_screen_layout(Vec2::new(320.0, 480.0), &direction, DockMode::Gameplay);
+        assert_eq!(very_narrow.dock.rows, 3);
+        assert!(very_narrow.dock.button_width >= DOCK_MIN_BUTTON_WIDTH);
+        assert!(very_narrow.dock.height < 480.0);
+    }
+
+    #[test]
+    fn item_and_option_choices_use_paginated_unscaled_overlay_controls() {
+        let mut picky = state(90_051);
+        picky.game.player.inventory = (0..26)
+            .map(|index| {
+                pack_item(
+                    92_000 + index,
+                    ItemKind::Potion,
+                    0,
+                    (b'a' + index as u8) as char,
+                )
+            })
+            .collect();
+        picky.modal = picky_inventory_prompt(&mut picky);
+
+        let first = calculate_screen_layout_with_prompt_page(
+            Vec2::new(400.0, 800.0),
+            &picky,
+            DockMode::Gameplay,
+            0,
+        );
+        let first_overlay = first.overlay.expect("item choices use a Bevy overlay");
+        assert_eq!(first_overlay.content.len(), PROMPT_CHOICE_PAGE_SIZE);
+        assert!(
+            first_overlay
+                .content
+                .iter()
+                .all(|spec| spec.layout == DockButtonLayout::FullWidth)
+        );
+        assert_eq!(
+            first_overlay
+                .navigation
+                .iter()
+                .map(|spec| spec.action)
+                .collect::<Vec<_>>(),
+            vec![
+                DockAction::Disabled,
+                DockAction::NextPromptPage,
+                DockAction::Command('\u{1b}')
+            ]
+        );
+
+        let last = calculate_screen_layout_with_prompt_page(
+            Vec2::new(400.0, 800.0),
+            &picky,
+            DockMode::Gameplay,
+            4,
+        );
+        let last_overlay = last.overlay.expect("last item page remains available");
+        assert_eq!(last.terminal, first.terminal);
+        assert_eq!(
+            last_overlay
+                .content
+                .iter()
+                .map(|spec| spec.action)
+                .collect::<Vec<_>>(),
+            vec![DockAction::Command('y'), DockAction::Command('z')]
+        );
+        assert_eq!(
+            last_overlay
+                .navigation
+                .iter()
+                .map(|spec| spec.action)
+                .collect::<Vec<_>>(),
+            vec![
+                DockAction::PreviousPromptPage,
+                DockAction::Disabled,
+                DockAction::Command('\u{1b}')
+            ]
+        );
+
+        let mut options = state(90_052);
+        show_option(&mut options, 0);
+        let option_page = calculate_screen_layout_with_prompt_page(
+            Vec2::new(320.0, 480.0),
+            &options,
+            DockMode::Gameplay,
+            1,
+        );
+        let option_overlay = option_page.overlay.expect("options use a Bevy overlay");
+        assert_eq!(
+            option_overlay
+                .content
+                .iter()
+                .map(|spec| spec.action)
+                .collect::<Vec<_>>(),
+            (6..OPTION_COUNT)
+                .map(DockAction::OptionRow)
+                .collect::<Vec<_>>()
+        );
+
+        let old = options.game.options.passgo;
+        let starting_turn = options.game.turn;
+        let mut dock_ui = DockUi {
+            prompt_pending: options.pending,
+            ..default()
+        };
+        let mut injected = InjectedInput::default();
+        apply_dock_action(
+            DockAction::OptionRow(4),
+            &mut dock_ui,
+            &mut injected,
+            &mut options,
+        );
+        assert_eq!(options.game.options.passgo, !old);
+        assert_eq!(options.game.turn, starting_turn);
+        assert_eq!(injected.0, None);
+
+        dock_ui.prompt_page = 1;
+        apply_dock_action(
+            DockAction::OptionRow(7),
+            &mut dock_ui,
+            &mut injected,
+            &mut options,
+        );
+        normalize_prompt_choice_state(&options, &mut dock_ui);
+        assert_eq!(options.pending, Some(Pending::Options(7)));
+        assert_eq!(
+            dock_ui.prompt_page, 1,
+            "activating a page-two option must keep its edited row visible"
+        );
+        let edited = calculate_screen_layout_with_prompt_page(
+            Vec2::new(320.0, 480.0),
+            &options,
+            DockMode::Gameplay,
+            dock_ui.prompt_page,
+        );
+        let edited_overlay = edited.overlay.expect("edited option remains overlaid");
+        let edited_spec = edited_overlay
+            .content
+            .iter()
+            .find(|spec| spec.action == DockAction::OptionRow(7))
+            .expect("active string option remains on the visible page");
+        assert_eq!(
+            Some(edited_spec.label.as_str()),
+            options
+                .modal
+                .as_ref()
+                .and_then(|modal| modal.text.lines().nth(7))
+        );
+    }
+
+    #[test]
+    fn palette_is_a_map_aligned_overlay_that_never_rescales_the_terminal() {
+        let state = state(90_026);
+        for window_size in [
+            Vec2::new(984.0, 760.0),
+            Vec2::new(400.0, 800.0),
+            Vec2::new(800.0, 360.0),
+        ] {
+            let gameplay = calculate_screen_layout(window_size, &state, DockMode::Gameplay);
+            let categories =
+                calculate_screen_layout(window_size, &state, DockMode::Categories { page: 0 });
+            assert_eq!(categories.terminal, gameplay.terminal);
+            assert_eq!(categories.dock, gameplay.dock);
+            assert_eq!(categories.dock.rail_left, categories.terminal.origin.x);
+            assert_eq!(
+                categories.dock.rail_width,
+                categories.terminal.rendered_size.x
+            );
+            let overlay = categories.overlay.expect("categories use an overlay");
+            assert!(overlay.height <= window_size.y - DOCK_GAP * 2.0 + f32::EPSILON);
+            assert_eq!(
+                overlay.height,
+                palette_overlay_height(overlay.content.len())
+            );
+        }
+    }
+
+    #[test]
+    fn palette_breadcrumbs_page_counts_and_navigation_slots_are_stable() {
+        let state = state(90_027);
+        let context_heading = palette_heading(&state, DockMode::ContextActions { page: 0 }, 320.0);
+        assert!(context_heading.starts_with(&context_options_heading()));
+        assert!(!context_heading.contains(&commands_heading()));
+
+        let category_pages = mode_page_count(&state, DockMode::Categories { page: 0 }, 400.0);
+        assert_eq!(
+            category_pages,
+            CommandCategory::ALL.len().div_ceil(PALETTE_PAGE_SIZE)
+        );
+        assert_eq!(
+            palette_content_specs(&state, DockMode::Categories { page: 0 }, 400.0).len(),
+            PALETTE_PAGE_SIZE
+        );
+        assert_eq!(
+            palette_content_specs(&state, DockMode::Categories { page: 1 }, 400.0).len(),
+            CommandCategory::ALL.len() - PALETTE_PAGE_SIZE
+        );
+        let first_categories =
+            palette_navigation_specs(&state, DockMode::Categories { page: 0 }, 400.0);
+        let last_categories = palette_navigation_specs(
+            &state,
+            DockMode::Categories {
+                page: category_pages - 1,
+            },
+            400.0,
+        );
+        assert_eq!(first_categories[1].action, DockAction::Disabled);
+        assert_eq!(first_categories[2].action, DockAction::NextPage);
+        assert_eq!(last_categories[1].action, DockAction::PreviousPage);
+        assert_eq!(last_categories[2].action, DockAction::Disabled);
+
+        let category = CommandCategory::Information;
+        let pages = mode_page_count(&state, DockMode::Category { category, page: 0 }, 400.0);
+        assert!(pages > 1);
+        let heading = palette_heading(&state, DockMode::Category { category, page: 1 }, 400.0);
+        assert!(heading.contains('/'));
+        assert!(heading.ends_with(&format!("2/{pages}")));
+
+        let first =
+            palette_navigation_specs(&state, DockMode::Category { category, page: 0 }, 400.0);
+        let last = palette_navigation_specs(
+            &state,
+            DockMode::Category {
+                category,
+                page: pages - 1,
+            },
+            400.0,
+        );
+        assert_eq!(first.len(), 4);
+        assert_eq!(last.len(), 4);
+        assert_eq!(first[1].action, DockAction::Disabled);
+        assert_eq!(last[2].action, DockAction::Disabled);
+        assert_eq!(first[0].action, DockAction::BackToCategories);
+        assert_eq!(last[3].action, DockAction::ClosePalette);
+    }
+
+    #[test]
+    fn injected_dock_input_uses_the_normal_keyboard_path() {
         let mut initial = state(90_002);
         initial.game.player.inventory = vec![pack_item(91_000, ItemKind::Potion, 0, 'a')];
         let mut app = keyboard_app(initial);
@@ -4450,39 +6484,251 @@ mod tests {
     }
 
     #[test]
-    fn native_mouse_click_uses_the_command_path_and_second_input_cancels_travel() {
+    fn dock_button_uses_the_command_path_and_cancels_travel() {
         let mut initial = state(90_010);
         initial.game.player.inventory = vec![pack_item(91_010, ItemKind::Potion, 0, 'a')];
         let target = seen_passable_neighbor(&initial.game);
         assert!(initial.game.start_travel(target));
-        let q = command_bar()
-            .entries
-            .iter()
-            .find(|entry| entry.command == 'q')
-            .unwrap();
-        let q_cell = PointerCell {
-            column: q.start,
-            row: KEYBINDING_FIRST_ROW + q.row,
-        };
-        let mut app = pointer_keyboard_app(initial);
+        let mut app = dock_input_app(initial);
+        let button = spawn_test_dock_button(&mut app, DockAction::Command('q'));
 
-        click_cell(&mut app, q_cell);
+        arm_test_dock_button(&mut app, button);
+        assert!(app.world().resource::<State>().game.is_traveling());
+        assert_eq!(app.world().resource::<State>().pending, None);
+
+        release_test_dock_button(&mut app, button);
 
         let current = app.world().resource::<State>();
         assert!(!current.game.is_traveling());
-        assert_eq!(current.pending, None);
-
-        let mut ready = state(90_011);
-        ready.game.player.inventory = vec![pack_item(91_011, ItemKind::Potion, 0, 'a')];
-        let mut app = pointer_keyboard_app(ready);
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::ShiftLeft);
-        click_cell(&mut app, q_cell);
-        assert_eq!(
-            app.world().resource::<State>().pending,
-            Some(Pending::Quaff)
+        assert_eq!(current.pending, Some(Pending::Quaff));
+        assert!(
+            current
+                .modal
+                .as_deref()
+                .is_some_and(|modal| modal.starts_with("a) "))
         );
+        let turn = current.game.turn;
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .clear();
+        app.update();
+        assert_eq!(app.world().resource::<State>().game.turn, turn);
+    }
+
+    #[test]
+    fn pressing_any_dock_button_cancels_travel_before_another_step() {
+        let mut initial = state(90_049);
+        let target = seen_passable_neighbor(&initial.game);
+        assert!(initial.game.start_travel(target));
+        let starting_turn = initial.game.turn;
+        let mut app = dock_input_app(initial);
+        app.add_systems(Update, advance_pointer_travel.after(keyboard));
+        let button = spawn_test_dock_button(&mut app, DockAction::Command('s'));
+
+        arm_test_dock_button(&mut app, button);
+
+        let state = app.world().resource::<State>();
+        assert!(!state.game.is_traveling());
+        assert_eq!(
+            state.game.turn, starting_turn,
+            "pointer-down must cancel travel before the release activates a command"
+        );
+        assert!(app.world().resource::<DockPress>().armed.is_some());
+        assert_eq!(app.world().resource::<InjectedInput>().0, None);
+    }
+
+    #[test]
+    fn dragging_outside_cancels_a_dock_action_even_if_release_returns_inside() {
+        let initial_turn = state(90_011).game.turn;
+        let mut app = dock_input_app(state(90_011));
+        let button = spawn_test_dock_button(&mut app, DockAction::Command('.'));
+        arm_test_dock_button(&mut app, button);
+
+        set_test_cursor(&mut app, Vec2::new(200.0, 200.0));
+        *app.world_mut()
+            .entity_mut(button)
+            .get_mut::<Interaction>()
+            .expect("test dock button has interaction") = Interaction::None;
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .clear();
+
+        release_test_dock_button(&mut app, button);
+        assert_eq!(app.world().resource::<State>().game.turn, initial_turn);
+        assert_eq!(app.world().resource::<InjectedInput>().0, None);
+        assert!(app.world().resource::<DockPress>().armed.is_none());
+    }
+
+    #[test]
+    fn disabled_and_secondary_pointers_cannot_replace_an_armed_action() {
+        let first = ArmedDockButton {
+            entity: Entity::from_bits(1),
+            action: DockAction::Command('.'),
+            pointer: DockPointer::Touch(7),
+            canceled: false,
+        };
+        let second = ArmedDockButton {
+            entity: Entity::from_bits(2),
+            action: DockAction::Command('s'),
+            pointer: DockPointer::Touch(8),
+            canceled: false,
+        };
+        let mut press = DockPress::default();
+        assert!(press.try_arm(first));
+        assert!(!press.try_arm(second));
+        assert_eq!(press.armed, Some(first));
+
+        let mut dock_ui = DockUi::default();
+        let mut injected = InjectedInput::default();
+        let mut state = state(90_048);
+        apply_dock_action(
+            DockAction::Disabled,
+            &mut dock_ui,
+            &mut injected,
+            &mut state,
+        );
+        assert_eq!(dock_ui.mode, DockMode::Gameplay);
+        assert_eq!(injected.0, None);
+    }
+
+    #[test]
+    fn dock_search_wait_and_pickup_match_keyboard_commands() {
+        for (seed, command, key) in [(90_040, 's', KeyCode::KeyS), (90_041, '.', KeyCode::Period)] {
+            let initial_turn = state(seed).game.turn;
+            let mut dock_app = dock_input_app(state(seed));
+            let button = spawn_test_dock_button(&mut dock_app, DockAction::Command(command));
+            arm_test_dock_button(&mut dock_app, button);
+            assert_eq!(dock_app.world().resource::<State>().game.turn, initial_turn);
+            release_test_dock_button(&mut dock_app, button);
+
+            let mut keyboard_app = keyboard_app(state(seed));
+            press_keys(&mut keyboard_app, &[key]);
+            keyboard_app.update();
+
+            let dock_turn = dock_app.world().resource::<State>().game.turn;
+            let keyboard_turn = keyboard_app.world().resource::<State>().game.turn;
+            assert_eq!(dock_turn, keyboard_turn);
+            assert_eq!(dock_turn, initial_turn + 1);
+        }
+
+        fn pickup_state(seed: u64, id: u64) -> State {
+            let mut state = state(seed);
+            state.game.floor_items.clear();
+            let mut item = mrzavec::item::Item::basic(id, ItemKind::Potion, 0);
+            item.pos = Some(state.game.player.pos);
+            state.game.floor_items.push(item);
+            state
+        }
+
+        let item_id = 990_042;
+        let mut dock_app = dock_input_app(pickup_state(90_042, item_id));
+        let button = spawn_test_dock_button(&mut dock_app, DockAction::Command(','));
+        arm_test_dock_button(&mut dock_app, button);
+        release_test_dock_button(&mut dock_app, button);
+
+        let mut keyboard_app = keyboard_app(pickup_state(90_042, item_id));
+        press_keys(&mut keyboard_app, &[KeyCode::Comma]);
+        keyboard_app.update();
+
+        for app in [&dock_app, &keyboard_app] {
+            let state = app.world().resource::<State>();
+            assert!(
+                state
+                    .game
+                    .player
+                    .inventory
+                    .iter()
+                    .any(|item| item.id == item_id && item.in_pack)
+            );
+            assert!(state.game.floor_items.iter().all(|item| item.id != item_id));
+        }
+        assert_eq!(
+            dock_app.world().resource::<State>().game.turn,
+            keyboard_app.world().resource::<State>().game.turn
+        );
+    }
+
+    #[test]
+    fn palette_navigation_is_free_and_selection_executes_exactly_one_command() {
+        let initial = state(90_024);
+        let starting_turn = initial.game.turn;
+        let mut app = dock_input_app(initial);
+        let palette = spawn_test_dock_button(&mut app, DockAction::OpenPalette);
+        arm_test_dock_button(&mut app, palette);
+        release_test_dock_button(&mut app, palette);
+
+        assert_eq!(
+            app.world().resource::<DockUi>().mode,
+            DockMode::Categories { page: 0 }
+        );
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn);
+        assert_eq!(app.world().resource::<State>().pending, None);
+
+        press_keys(&mut app, &[KeyCode::Escape]);
+        app.update();
+
+        assert_eq!(app.world().resource::<DockUi>().mode, DockMode::Gameplay);
+        assert_eq!(app.world().resource::<State>().game.turn, starting_turn);
+        assert_eq!(app.world().resource::<State>().pending, None);
+
+        press_keys(&mut app, &[]);
+        let palette = spawn_test_dock_button(&mut app, DockAction::OpenPalette);
+        arm_test_dock_button(&mut app, palette);
+        release_test_dock_button(&mut app, palette);
+
+        let help = spawn_test_dock_button(&mut app, DockAction::Command('?'));
+        arm_test_dock_button(&mut app, help);
+        release_test_dock_button(&mut app, help);
+
+        let state = app.world().resource::<State>();
+        assert_eq!(state.pending, Some(Pending::Help));
+        assert_eq!(state.game.turn, starting_turn);
+        assert_eq!(app.world().resource::<DockUi>().mode, DockMode::Gameplay);
+    }
+
+    #[test]
+    fn palette_overlay_intercepts_map_pointer_input() {
+        let initial = state(90_028);
+        let target = seen_passable_neighbor(&initial.game);
+        let player = initial.game.player.pos;
+        let target_cell = PointerCell {
+            column: target.x as usize,
+            row: DUNGEON_FIRST_ROW + target.y as usize - 1,
+        };
+        let mut app = pointer_keyboard_app(initial);
+        app.world_mut().resource_mut::<DockUi>().mode = DockMode::Categories { page: 0 };
+
+        click_cell(&mut app, target_cell);
+
+        let state = app.world().resource::<State>();
+        assert_eq!(state.game.player.pos, player);
+        assert!(!state.game.is_traveling());
+    }
+
+    #[test]
+    fn end_screen_escape_button_and_keyboard_escape_exit() {
+        for injected in [false, true] {
+            let mut ended = state(90_025 + u64::from(injected));
+            ended.game.end = mrzavec::game::EndState::Quit;
+            ended.score_recorded = true;
+            ended.modal = Some(Modal::full_screen("Konec"));
+            assert!(
+                dock_specs(&ended, DockMode::Gameplay)
+                    .iter()
+                    .any(|spec| spec.action == DockAction::Command('\u{1b}'))
+            );
+            let mut app = keyboard_app(ended);
+            if injected {
+                app.world_mut().resource_mut::<InjectedInput>().0 = Some('\u{1b}');
+            } else {
+                press_keys(&mut app, &[KeyCode::Escape]);
+            }
+
+            app.update();
+
+            assert_eq!(app.world().resource::<Messages<AppExit>>().len(), 1);
+        }
     }
 
     #[test]
@@ -4513,10 +6759,12 @@ mod tests {
             assert!(events.contains("Čto hoćeš opoznati?"));
             assert_eq!(buffer[player_row * DISPLAY_WIDTH + player.x as usize], '@');
             assert!(display_row(&buffer, STATUS_ROW).starts_with("Stųp:"));
-            assert!(display_row(&buffer, KEYBINDING_FIRST_ROW).starts_with(&command_bar().rows[0]));
-            let (control_row, controls) = pointer_controls(state);
-            assert_eq!(control_row, EVENT_ROWS - 1);
-            assert!(controls.iter().any(|control| control.label == "Escape"));
+            assert_eq!(buffer.len(), DISPLAY_WIDTH * (STATUS_ROW + 1));
+            assert!(
+                dock_specs(state, DockMode::Gameplay)
+                    .iter()
+                    .any(|control| control.action == DockAction::Command('\u{1b}'))
+            );
         }
 
         press_keys(&mut app, &[]);
@@ -4566,7 +6814,15 @@ mod tests {
             let buffer = display(state);
             assert_eq!(buffer[player_row * DISPLAY_WIDTH + player.x as usize], '@');
             assert!(display_row(&buffer, STATUS_ROW).starts_with("Stųp:"));
-            assert!(!display_row(&buffer, KEYBINDING_FIRST_ROW).trim().is_empty());
+            let actions: Vec<_> = dock_specs(state, DockMode::Gameplay)
+                .into_iter()
+                .map(|spec| spec.action)
+                .collect();
+            assert!(actions.contains(&DockAction::Command('\u{1b}')));
+            if pending == Pending::QuitConfirm {
+                assert!(actions.contains(&DockAction::Command('y')));
+                assert!(actions.contains(&DockAction::Command('n')));
+            }
         }
     }
 
@@ -4582,17 +6838,10 @@ mod tests {
             pointer_action_at_cell(&item_state, PointerCell { column: 70, row: 1 }),
             Some(PointerAction::Key('b'))
         );
-        let (cancel_row, cancel) = pointer_controls(&item_state);
-        let escape = cancel.last().unwrap();
-        assert_eq!(
-            pointer_action_at_cell(
-                &item_state,
-                PointerCell {
-                    column: escape.start,
-                    row: cancel_row,
-                },
-            ),
-            Some(PointerAction::Key('\u{1b}'))
+        assert!(
+            dock_specs(&item_state, DockMode::Gameplay)
+                .iter()
+                .any(|spec| spec.action == DockAction::Command('\u{1b}'))
         );
 
         let mut picky = state(90_012);
@@ -4617,24 +6866,63 @@ mod tests {
                 .is_some_and(|line| line.starts_with("b) "))
         );
 
+        let mut paged_picky = state(90_013);
+        paged_picky.game.player.inventory = (0..26)
+            .map(|index| {
+                pack_item(
+                    91_100 + index,
+                    ItemKind::Potion,
+                    0,
+                    (b'a' + index as u8) as char,
+                )
+            })
+            .collect();
+        paged_picky.modal = picky_inventory_prompt(&mut paged_picky);
+        paged_picky
+            .modal
+            .as_mut()
+            .expect("full picky inventory uses a modal")
+            .offset = MODAL_PAGE_ROWS;
+        assert_eq!(
+            pointer_action_at_cell(&paged_picky, PointerCell { column: 70, row: 0 }),
+            Some(PointerAction::Key('y'))
+        );
+        assert_eq!(
+            pointer_action_at_cell(&paged_picky, PointerCell { column: 70, row: 1 }),
+            Some(PointerAction::Key('z'))
+        );
+        let mut app = pointer_keyboard_app(paged_picky);
+        click_cell(&mut app, PointerCell { column: 70, row: 1 });
+        let paged_picky = app.world().resource::<State>();
+        assert_eq!(paged_picky.pending, None);
+        assert!(
+            paged_picky
+                .game
+                .messages
+                .last()
+                .is_some_and(|line| line.starts_with("z) "))
+        );
+
         let mut direction_state = state(90_004);
         direction_state.modal = direction_prompt(&mut direction_state, Pending::ZapDirection(1));
         assert_eq!(
             direction_state.modal.as_ref().unwrap().presentation,
-            ModalPresentation::Overlay(OverlayControls::AboveStatus)
+            ModalPresentation::Overlay
         );
-        assert_eq!(pointer_controls(&direction_state).0, STATUS_ROW - 1);
+        let direction_controls = dock_specs(&direction_state, DockMode::Gameplay);
+        for command in ['h', 'j', 'k', 'l', 'y', 'u', 'b', 'n', '\u{1b}'] {
+            assert!(
+                direction_controls
+                    .iter()
+                    .any(|spec| spec.action == DockAction::Command(command))
+            );
+        }
         let direction_buffer = display(&direction_state);
         let direction_player = direction_state.game.player.pos;
         let direction_player_row = DUNGEON_FIRST_ROW + direction_player.y as usize - 1;
         assert_eq!(
             direction_buffer[direction_player_row * DISPLAY_WIDTH + direction_player.x as usize],
             '@'
-        );
-        assert!(
-            !display_row(&direction_buffer, KEYBINDING_FIRST_ROW)
-                .trim()
-                .is_empty()
         );
         let start_x = overlay_start_x(direction_state.modal.as_deref().unwrap());
         assert_eq!(
@@ -4682,29 +6970,23 @@ mod tests {
         let mut confirm = state(90_006);
         confirm.pending = Some(Pending::QuitConfirm);
         confirm.modal = Some(Modal::inline_prompt("Istinno li izhoditi?"));
-        let (row, controls) = pointer_controls(&confirm);
-        assert_eq!(row, EVENT_ROWS - 1);
+        let controls = dock_specs(&confirm, DockMode::Gameplay);
         assert_eq!(
             controls
                 .iter()
-                .map(|control| control.label.as_str())
+                .map(|control| control.action)
                 .collect::<Vec<_>>(),
-            vec!["Y", "N", "Escape"]
+            vec![
+                DockAction::Command('y'),
+                DockAction::Command('n'),
+                DockAction::Command('\u{1b}')
+            ]
         );
-        for (control, expected) in controls.iter().zip(['y', 'n', '\u{1b}']) {
-            assert_eq!(
-                pointer_action_at_cell(
-                    &confirm,
-                    PointerCell {
-                        column: control.start,
-                        row,
-                    },
-                ),
-                Some(PointerAction::Key(expected))
-            );
-        }
-        let rendered = display(&confirm);
-        assert!(display_row(&rendered, row).contains("Escape"));
+        assert!(
+            display_row(&display(&confirm), EVENT_ROWS - 1)
+                .trim()
+                .is_empty()
+        );
 
         let mut options = state(90_007);
         options.pending = Some(Pending::Options(0));
@@ -4714,7 +6996,11 @@ mod tests {
             None,
             None,
         )));
-        assert_eq!(pointer_controls(&options).0, MODAL_MORE_ROW);
+        assert!(
+            dock_specs(&options, DockMode::Gameplay)
+                .iter()
+                .any(|spec| spec.action == DockAction::Command('\u{1b}'))
+        );
         let old = options.game.options.passgo;
         assert_eq!(
             pointer_action_at_cell(&options, PointerCell { column: 40, row: 4 }),
@@ -4728,7 +7014,12 @@ mod tests {
         let mut more = state(90_008);
         more.pending = Some(Pending::More);
         more.modal = Some(Modal::full_screen("Torba\n --Dalje--"));
-        assert_eq!(pointer_controls(&more).0, MODAL_MORE_ROW);
+        let more_actions: Vec<_> = dock_specs(&more, DockMode::Gameplay)
+            .into_iter()
+            .map(|spec| spec.action)
+            .collect();
+        assert!(more_actions.contains(&DockAction::Command(' ')));
+        assert!(more_actions.contains(&DockAction::Command('\u{1b}')));
         assert_eq!(
             pointer_action_at_cell(
                 &more,
@@ -4740,14 +7031,9 @@ mod tests {
             Some(PointerAction::Key(' '))
         );
 
-        let (control_row, controls) = pointer_controls(&more);
-        let escape = controls.last().unwrap();
-        let escape_cell = PointerCell {
-            column: escape.start,
-            row: control_row,
-        };
-        let mut app = pointer_keyboard_app(more);
-        click_cell(&mut app, escape_cell);
+        let mut app = keyboard_app(more);
+        app.world_mut().resource_mut::<InjectedInput>().0 = Some('\u{1b}');
+        app.update();
         let state = app.world().resource::<State>();
         assert_eq!(state.pending, None);
         assert_eq!(state.modal, None);
@@ -4762,11 +7048,49 @@ mod tests {
         initial.modal = Some(Modal::full_screen(help_text()));
         let mut app = App::new();
         app.insert_resource(initial);
+        app.insert_resource(DockUi::default());
+        app.insert_resource(DockPress::default());
         app.add_systems(Update, advance_pointer_travel);
 
         app.update();
 
         assert!(!app.world().resource::<State>().game.is_traveling());
+    }
+
+    #[test]
+    fn opening_either_palette_cancels_core_pointer_travel() {
+        for (offset, action, expected_mode) in [
+            (0, DockAction::OpenPalette, DockMode::Categories { page: 0 }),
+            (
+                1,
+                DockAction::OpenContextActions,
+                DockMode::ContextActions { page: 0 },
+            ),
+        ] {
+            let mut initial = state(90_050 + offset);
+            let target = seen_passable_neighbor(&initial.game);
+            assert!(initial.game.start_travel(target));
+            let starting_turn = initial.game.turn;
+
+            let mut dock_ui = DockUi::default();
+            let mut injected = InjectedInput::default();
+            apply_dock_action(action, &mut dock_ui, &mut injected, &mut initial);
+            assert_eq!(dock_ui.mode, expected_mode);
+
+            let mut app = App::new();
+            app.insert_resource(initial);
+            app.insert_resource(dock_ui);
+            app.insert_resource(DockPress::default());
+            app.add_systems(Update, advance_pointer_travel);
+            app.update();
+
+            assert!(!app.world().resource::<State>().game.is_traveling());
+            assert_eq!(
+                app.world().resource::<State>().game.turn,
+                starting_turn,
+                "opening a palette must cancel before another travel step"
+            );
+        }
     }
 
     #[test]
@@ -4842,12 +7166,13 @@ mod tests {
         let mut state = state(1);
         state.game.options.inventory_style = mrzavec::game::InventoryStyle::Overwrite;
         let overwrite = inventory_modal(&mut state).unwrap();
-        assert_eq!(
-            overwrite.presentation,
-            ModalPresentation::Overlay(OverlayControls::EventArea)
-        );
+        assert_eq!(overwrite.presentation, ModalPresentation::Overlay);
         state.modal = Some(overwrite);
-        assert_eq!(pointer_controls(&state).0, EVENT_ROWS - 1);
+        assert!(
+            dock_specs(&state, DockMode::Gameplay)
+                .iter()
+                .any(|spec| spec.action == DockAction::Command('\u{1b}'))
+        );
         state.modal = None;
 
         state.game.options.inventory_style = mrzavec::game::InventoryStyle::Clear;
@@ -4867,14 +7192,7 @@ mod tests {
                 Modal::inline_prompt("prompt"),
                 ModalPresentation::InlinePrompt,
             ),
-            (
-                Modal::overlay("overlay", OverlayControls::EventArea),
-                ModalPresentation::Overlay(OverlayControls::EventArea),
-            ),
-            (
-                Modal::overlay("direction", OverlayControls::AboveStatus),
-                ModalPresentation::Overlay(OverlayControls::AboveStatus),
-            ),
+            (Modal::overlay("overlay"), ModalPresentation::Overlay),
             (Modal::full_screen("page"), ModalPresentation::FullScreen),
         ];
 
@@ -4883,14 +7201,14 @@ mod tests {
             assert_eq!(modal.offset, 0);
         }
 
-        let capacity = overlay_content_capacity(OverlayControls::EventArea);
+        let capacity = STATUS_ROW;
         let fitting = (0..capacity)
             .map(|line| format!("line {line}"))
             .collect::<Vec<_>>()
             .join("\n");
         assert_eq!(
             Modal::event_overlay_or_full_screen(fitting).presentation,
-            ModalPresentation::Overlay(OverlayControls::EventArea)
+            ModalPresentation::Overlay
         );
         let oversized = (0..=capacity)
             .map(|line| format!("line {line}"))
@@ -4903,7 +7221,7 @@ mod tests {
     }
 
     #[test]
-    fn modal_controls_reserve_rows_instead_of_overwriting_content() {
+    fn modal_controls_live_outside_the_terminal_and_do_not_overwrite_content() {
         let marker = "PROMPT-END-MUST-REMAIN";
         let mut inline = state(90_015);
         inline.visible_message = Some("x".repeat(205));
@@ -4911,20 +7229,25 @@ mod tests {
         inline.modal = Some(Modal::inline_prompt(marker));
 
         let inline_buffer = display(&inline);
-        assert!(display_row(&inline_buffer, EVENT_ROWS - 2).contains(marker));
-        assert!(display_row(&inline_buffer, EVENT_ROWS - 1).contains("Escape"));
+        assert!(display_row(&inline_buffer, EVENT_ROWS - 1).contains(marker));
+        assert!(
+            dock_specs(&inline, DockMode::Gameplay)
+                .iter()
+                .any(|spec| spec.action == DockAction::Command('\u{1b}'))
+        );
 
         let overlay_marker = "THIRD-CONTENT-LINE-MUST-REMAIN";
         let mut overlay = state(90_016);
         overlay.pending = Some(Pending::More);
-        overlay.modal = Some(Modal::overlay(
-            format!("first\nsecond\n{overlay_marker}"),
-            OverlayControls::EventArea,
-        ));
+        overlay.modal = Some(Modal::overlay(format!("first\nsecond\n{overlay_marker}")));
 
         let overlay_buffer = display(&overlay);
-        assert!(display_row(&overlay_buffer, EVENT_ROWS - 1).contains("Escape"));
-        assert!(display_row(&overlay_buffer, EVENT_ROWS).contains(overlay_marker));
+        assert!(display_row(&overlay_buffer, EVENT_ROWS - 1).contains(overlay_marker));
+        assert!(
+            dock_specs(&overlay, DockMode::Gameplay)
+                .iter()
+                .any(|spec| spec.action == DockAction::Command('\u{1b}'))
+        );
     }
 
     #[test]
@@ -5113,7 +7436,7 @@ mod tests {
     }
 
     #[test]
-    fn clear_screen_modal_pages_use_every_row_above_the_command_bar() {
+    fn clear_screen_modal_pages_use_the_compact_terminal() {
         let mut state = state(103);
         state.modal = Some(Modal::full_screen(
             (0..MODAL_PAGE_ROWS + 5)
@@ -5132,7 +7455,7 @@ mod tests {
     }
 
     #[test]
-    fn normal_display_uses_three_event_rows_then_map_status_and_full_command_bar() {
+    fn normal_display_uses_three_event_rows_then_map_and_status() {
         let mut state = state(104);
         state.visible_message = Some("Hello.".into());
         let player = state.game.player.pos;
@@ -5154,25 +7477,8 @@ mod tests {
             display_row(&buffer, STATUS_ROW).trim_end(),
             expected_status.trim_end()
         );
-        let layout = command_bar();
-        assert_eq!(layout.rows.len(), COMMAND_BAR_ROWS);
-        for (offset, expected) in layout.rows.iter().enumerate() {
-            assert_eq!(
-                display_row(&buffer, KEYBINDING_FIRST_ROW + offset).trim_end(),
-                expected
-            );
-        }
-        let printed_commands: Vec<char> = HELP_ENTRIES
-            .iter()
-            .filter_map(|(command, _, print)| (*print && *command != '\0').then_some(*command))
-            .collect();
-        let bar_commands: Vec<char> = layout.entries.iter().map(|entry| entry.command).collect();
-        assert_eq!(bar_commands.len(), printed_commands.len());
-        assert!(
-            printed_commands
-                .iter()
-                .all(|command| bar_commands.contains(command))
-        );
+        assert_eq!(DISPLAY_HEIGHT, 26);
+        assert_eq!(STATUS_ROW + 1, DISPLAY_HEIGHT);
     }
 
     #[test]
@@ -5200,8 +7506,8 @@ mod tests {
         let starting_turn = initial_state.game.turn;
         let expected_lines: Vec<_> = HELP_ENTRIES
             .iter()
-            .filter(|(_, _, print)| *print)
-            .map(|(ch, description, _)| help_entry_text(*ch, description))
+            .filter(|entry| entry.print)
+            .map(|entry| help_entry_text(entry.command, entry.description))
             .collect();
         assert!(expected_lines.len() > MODAL_PAGE_ROWS);
 
@@ -5749,7 +8055,7 @@ mod tests {
         assert_eq!(overwrite.pending, Some(Pending::DiscoveryMore));
         assert_eq!(
             overwrite.modal.as_ref().unwrap().presentation,
-            ModalPresentation::Overlay(OverlayControls::EventArea)
+            ModalPresentation::Overlay
         );
 
         let mut slow = state(203);
@@ -5844,8 +8150,8 @@ mod tests {
     fn complete_help_lists_every_printable_entry_without_truncation() {
         let expected: Vec<_> = HELP_ENTRIES
             .iter()
-            .filter(|(_, _, print)| *print)
-            .map(|(ch, description, _)| help_entry_text(*ch, description))
+            .filter(|entry| entry.print)
+            .map(|entry| help_entry_text(entry.command, entry.description))
             .collect();
         let full = help_text();
         let lines: Vec<_> = full.lines().collect();
@@ -5891,7 +8197,7 @@ mod tests {
             ModalPresentation::FullScreen
         );
         assert!(display_row(&buffer, STATUS_ROW).trim().is_empty());
-        assert!(display_row(&buffer, KEYBINDING_FIRST_ROW).trim().is_empty());
+        assert_eq!(buffer.len(), DISPLAY_WIDTH * DISPLAY_HEIGHT);
     }
 
     #[test]
