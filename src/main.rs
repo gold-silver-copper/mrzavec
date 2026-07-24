@@ -5,6 +5,7 @@ use bevy::{
     text::LineHeight,
     ui::FocusPolicy,
     window::{PrimaryWindow, WindowResizeConstraints, WindowResolution},
+    winit::{UpdateMode, WinitSettings},
 };
 use mrzavec::help::{
     COMMANDS_LABEL, CONTEXT_OPTIONS_LABEL, CommandCategory, DockImportance, HELP_ENTRIES, HelpEntry,
@@ -348,7 +349,7 @@ enum DockMode {
     },
 }
 
-#[derive(Resource, Debug)]
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 struct DockUi {
     mode: DockMode,
     prompt_pending: Option<Pending>,
@@ -361,6 +362,22 @@ impl Default for DockUi {
             mode: DockMode::Gameplay,
             prompt_pending: None,
             prompt_page: 0,
+        }
+    }
+}
+
+#[derive(Resource, Debug)]
+struct TerminalBuffer {
+    cells: Vec<char>,
+    updated_glyphs: usize,
+}
+
+impl Default for TerminalBuffer {
+    fn default() -> Self {
+        Self {
+            // NUL is never displayed, so the first render updates every glyph.
+            cells: vec!['\0'; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+            updated_glyphs: 0,
         }
     }
 }
@@ -897,15 +914,24 @@ fn restore_browser_game(
     save::restore_browser_game(default_slot, &storage)
 }
 
+fn performance_winit_settings() -> WinitSettings {
+    WinitSettings {
+        focused_mode: UpdateMode::reactive(MOVEMENT_REPEAT_INTERVAL),
+        unfocused_mode: UpdateMode::reactive_low_power(MOVEMENT_REPEAT_INTERVAL),
+    }
+}
+
 fn game_app(game: Game, wizard_prompt: bool) -> App {
     let message_serial_seen = game.message_serial;
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::BLACK))
+        .insert_resource(performance_winit_settings())
         .insert_resource(MovementRepeat::default())
         .insert_resource(InjectedInput::default())
         .insert_resource(DockUi::default())
         .insert_resource(DockPress::default())
         .insert_resource(ScreenLayout::default())
+        .insert_resource(TerminalBuffer::default())
         .insert_resource(State {
             game,
             modal: wizard_prompt
@@ -1232,7 +1258,6 @@ fn setup(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
                                     align_items: AlignItems::Center,
                                     ..default()
                                 },
-                                BackgroundColor(Color::BLACK),
                             ))
                             .with_child((
                                 Glyph,
@@ -2023,26 +2048,31 @@ fn normalize_prompt_choice_state(state: &State, dock_ui: &mut DockUi) {
 
 fn update_screen_layout(
     state: Res<State>,
-    windows: Query<&Window, With<PrimaryWindow>>,
+    windows: Query<Ref<Window>, With<PrimaryWindow>>,
     mut dock_ui: ResMut<DockUi>,
     mut screen: ResMut<ScreenLayout>,
 ) {
     let Ok(window) = windows.single() else {
         return;
     };
+    if !state.is_changed() && !window.is_changed() && !dock_ui.is_changed() {
+        return;
+    }
     let window_size = Vec2::new(window.width(), window.height());
     let one_row_terminal = calculate_terminal_layout(window_size, dock_height(1));
-    let mode = normalized_dock_mode(&state, dock_ui.mode, one_row_terminal.rendered_size.x);
-    if dock_ui.mode != mode {
-        dock_ui.mode = mode;
-    }
-    normalize_prompt_choice_state(&state, &mut dock_ui);
+    let mut next_dock_ui = *dock_ui;
+    next_dock_ui.mode =
+        normalized_dock_mode(&state, next_dock_ui.mode, one_row_terminal.rendered_size.x);
+    normalize_prompt_choice_state(&state, &mut next_dock_ui);
     let next = calculate_screen_layout_with_prompt_page(
         window_size,
         &state,
-        dock_ui.mode,
-        dock_ui.prompt_page,
+        next_dock_ui.mode,
+        next_dock_ui.prompt_page,
     );
+    if *dock_ui != next_dock_ui {
+        *dock_ui = next_dock_ui;
+    }
     if *screen != next {
         *screen = next;
     }
@@ -4858,22 +4888,32 @@ fn rings_text(game: &Game) -> String {
 
 fn render(
     state: Res<State>,
-    mut cells: Query<(&Cell, &Children, &mut BackgroundColor)>,
-    mut glyphs: Query<(&mut Text, &mut TextColor), With<Glyph>>,
+    cells: Query<(&Cell, &Children)>,
+    mut glyphs: Query<&mut Text, With<Glyph>>,
+    mut terminal: ResMut<TerminalBuffer>,
 ) {
+    if terminal.updated_glyphs != 0 {
+        terminal.updated_glyphs = 0;
+    }
     if !state.is_changed() {
         return;
     }
     let buffer = display(&state);
-    for (cell, children, mut background) in &mut cells {
-        background.0 = Color::BLACK;
+    let mut updated_glyphs = 0;
+    for (cell, children) in &cells {
+        if terminal.cells[cell.0] == buffer[cell.0] {
+            continue;
+        }
+        terminal.cells[cell.0] = buffer[cell.0];
         for child in children.iter() {
-            if let Ok((mut text, mut color)) = glyphs.get_mut(child) {
-                text.0 = buffer[cell.0].to_string();
-                color.0 = GLYPH_COLOR;
+            if let Ok(mut text) = glyphs.get_mut(child) {
+                text.0.clear();
+                text.0.push(buffer[cell.0]);
+                updated_glyphs += 1;
             }
         }
     }
+    terminal.updated_glyphs = updated_glyphs;
 }
 fn display(state: &State) -> Vec<char> {
     let mut out = vec![' '; DISPLAY_WIDTH * DISPLAY_HEIGHT];
@@ -5057,7 +5097,18 @@ fn write_event_text(out: &mut [char], text: &str, content_rows: &[usize]) {
 }
 
 fn prepare_messages(mut state: ResMut<State>) {
+    if !messages_need_collection(&state) {
+        return;
+    }
     collect_messages(&mut state);
+}
+
+fn messages_need_collection(state: &State) -> bool {
+    if state.game.end != mrzavec::game::EndState::Playing && state.modal.is_some() {
+        return state.message_serial_seen != state.game.message_serial
+            || state.visible_message.is_some();
+    }
+    state.game.message_serial != state.message_serial_seen
 }
 
 fn collect_messages(state: &mut State) {
@@ -5569,6 +5620,15 @@ fn set_string_option(game: &mut Game, index: usize, input: &str) {
 mod tests {
     use super::*;
 
+    #[derive(Resource, Default)]
+    struct StateChangeSamples(Vec<bool>);
+
+    #[derive(Resource, Default)]
+    struct GlyphChangeSamples(Vec<usize>);
+
+    #[derive(Resource, Default)]
+    struct LayoutChangeSamples(Vec<(bool, bool)>);
+
     fn display_row(buffer: &[char], row: usize) -> String {
         buffer[row * DISPLAY_WIDTH..(row + 1) * DISPLAY_WIDTH]
             .iter()
@@ -5597,6 +5657,41 @@ mod tests {
         let mut item = mrzavec::item::Item::basic(id, kind, which);
         item.pack_letter = Some(letter);
         item
+    }
+
+    fn sample_state_changes(state: Res<State>, mut samples: ResMut<StateChangeSamples>) {
+        samples.0.push(state.is_changed());
+    }
+
+    fn sample_glyph_changes(
+        glyphs: Query<(), (With<Glyph>, Changed<Text>)>,
+        mut samples: ResMut<GlyphChangeSamples>,
+    ) {
+        samples.0.push(glyphs.iter().count());
+    }
+
+    fn sample_layout_changes(
+        screen: Res<ScreenLayout>,
+        dock_ui: Res<DockUi>,
+        mut samples: ResMut<LayoutChangeSamples>,
+    ) {
+        samples.0.push((screen.is_changed(), dock_ui.is_changed()));
+    }
+
+    fn render_test_app(initial_state: State) -> App {
+        let mut app = App::new();
+        app.insert_resource(initial_state);
+        app.insert_resource(TerminalBuffer::default());
+        app.insert_resource(GlyphChangeSamples::default());
+        for index in 0..DISPLAY_WIDTH * DISPLAY_HEIGHT {
+            let glyph = app
+                .world_mut()
+                .spawn((Glyph, Text::new(" "), TextColor(GLYPH_COLOR)))
+                .id();
+            app.world_mut().spawn(Cell(index)).add_child(glyph);
+        }
+        app.add_systems(Update, (render, sample_glyph_changes).chain());
+        app
     }
 
     fn keyboard_app(initial_state: State) -> App {
@@ -5699,6 +5794,7 @@ mod tests {
         app.insert_resource(MovementRepeat::default());
         app.insert_resource(InjectedInput::default());
         app.insert_resource(DockUi::default());
+        app.insert_resource(DockPress::default());
         let mut screen = ScreenLayout::default();
         screen.terminal.origin = Vec2::new(12.0, 30.0);
         app.insert_resource(screen);
@@ -5765,6 +5861,140 @@ mod tests {
                 .is_some_and(|cell| cell.seen && cell.terrain.passable())
         })
         .expect("the player starts with at least one remembered neighboring floor tile")
+    }
+
+    #[test]
+    fn no_input_message_collection_does_not_mark_state_changed() {
+        let mut app = App::new();
+        app.insert_resource(state(90_060));
+        app.insert_resource(StateChangeSamples::default());
+        app.add_systems(Update, (prepare_messages, sample_state_changes).chain());
+
+        app.update();
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<StateChangeSamples>().0,
+            [true, false],
+            "only the initial resource insertion should be observed as a change"
+        );
+    }
+
+    #[test]
+    fn terminal_render_only_changes_glyphs_whose_character_changed() {
+        let initial_state = state(90_061);
+        let expected_initial = display(&initial_state);
+        let mut app = render_test_app(initial_state);
+
+        app.update();
+        assert_eq!(
+            app.world().resource::<TerminalBuffer>().updated_glyphs,
+            DISPLAY_WIDTH * DISPLAY_HEIGHT
+        );
+        assert_eq!(
+            app.world().resource::<TerminalBuffer>().cells,
+            expected_initial
+        );
+
+        app.world_mut().resource_mut::<State>().set_changed();
+        app.update();
+        assert_eq!(
+            app.world().resource::<TerminalBuffer>().updated_glyphs,
+            0,
+            "an identical display buffer must not mutate any Text components"
+        );
+
+        let before = app.world().resource::<TerminalBuffer>().cells.clone();
+        app.world_mut().resource_mut::<State>().visible_message = Some("X".into());
+        app.update();
+        let terminal = app.world().resource::<TerminalBuffer>();
+        let expected_updates = before
+            .iter()
+            .zip(&terminal.cells)
+            .filter(|(before, after)| before != after)
+            .count();
+        assert!(expected_updates > 0);
+        assert!(expected_updates < DISPLAY_WIDTH * DISPLAY_HEIGHT);
+        assert_eq!(terminal.updated_glyphs, expected_updates);
+        assert_eq!(
+            app.world().resource::<GlyphChangeSamples>().0,
+            [DISPLAY_WIDTH * DISPLAY_HEIGHT, 0, expected_updates]
+        );
+    }
+
+    #[test]
+    fn screen_layout_skips_idle_updates_but_reacts_to_resize() {
+        let mut app = App::new();
+        app.insert_resource(state(90_062));
+        app.insert_resource(DockUi::default());
+        app.insert_resource(ScreenLayout::default());
+        app.insert_resource(LayoutChangeSamples::default());
+        app.world_mut().spawn((game_window(), PrimaryWindow));
+        app.add_systems(
+            Update,
+            (update_screen_layout, sample_layout_changes).chain(),
+        );
+
+        app.update();
+        let initial = app.world().resource::<ScreenLayout>().clone();
+        app.update();
+        assert_eq!(
+            app.world().resource::<LayoutChangeSamples>().0[1],
+            (false, false),
+            "an idle update must not rewrite layout or dock state"
+        );
+
+        let mut windows = app
+            .world_mut()
+            .query_filtered::<&mut Window, With<PrimaryWindow>>();
+        windows
+            .single_mut(app.world_mut())
+            .expect("test app has one primary window")
+            .resolution
+            .set(400.0, 800.0);
+        app.update();
+
+        assert!(app.world().resource::<LayoutChangeSamples>().0[2].0);
+        assert_ne!(
+            app.world()
+                .resource::<ScreenLayout>()
+                .terminal
+                .rendered_size,
+            initial.terminal.rendered_size
+        );
+    }
+
+    #[test]
+    fn winit_wait_matches_the_existing_input_repeat_cadence() {
+        let settings = performance_winit_settings();
+        assert_eq!(
+            settings.focused_mode,
+            UpdateMode::reactive(MOVEMENT_REPEAT_INTERVAL)
+        );
+        assert_eq!(
+            settings.unfocused_mode,
+            UpdateMode::reactive_low_power(MOVEMENT_REPEAT_INTERVAL)
+        );
+    }
+
+    #[test]
+    fn pointer_travel_still_advances_with_reactive_updates() {
+        let initial = state(90_063);
+        let starting_turn = initial.game.turn;
+        let target = seen_passable_neighbor(&initial.game);
+        let target_cell = PointerCell {
+            column: target.x as usize,
+            row: DUNGEON_FIRST_ROW + target.y as usize - 1,
+        };
+        let mut app = pointer_keyboard_app(initial);
+        app.add_systems(Update, advance_pointer_travel.after(keyboard));
+
+        click_cell(&mut app, target_cell);
+
+        let state = app.world().resource::<State>();
+        assert_eq!(state.game.player.pos, target);
+        assert!(state.game.turn > starting_turn);
+        assert!(!state.game.is_traveling());
     }
 
     #[test]
