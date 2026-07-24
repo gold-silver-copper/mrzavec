@@ -2,7 +2,10 @@
 <html lang="isv">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <link rel="icon" href="data:," />
     <title>Mŕzavec — Rogue 5.4.5</title>
     <style>
@@ -24,12 +27,25 @@
         margin: 0 auto;
       }
 
+      .game-frame {
+        position: relative;
+        width: 100%;
+        height: min(760px, 100dvh);
+        min-height: min(480px, 100dvh);
+        box-sizing: border-box;
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        padding-left: env(safe-area-inset-left, 0px);
+        overflow: hidden;
+        background: #000;
+      }
+
       #mrzavec {
         display: block;
         width: 100% !important;
-        max-width: 100%;
-        height: auto !important;
-        aspect-ratio: 984 / 696;
+        height: 100% !important;
+        touch-action: none;
         outline: 1px solid #333;
         background: #000;
       }
@@ -108,12 +124,14 @@
   </head>
   <body>
     <main>
-      <canvas
-        id="mrzavec"
-        tabindex="0"
-        autofocus
-        aria-label="Igra Mŕzavec"
-      ></canvas>
+      <div class="game-frame">
+        <canvas
+          id="mrzavec"
+          tabindex="0"
+          autofocus
+          aria-label="Igra Mŕzavec"
+        ></canvas>
+      </div>
       <p id="status">Igra načinaje sę…</p>
 
       <section>
